@@ -1,6 +1,9 @@
 // RetentionSweepWorkflow (SPEC.md section 14.5). Instance id retention-<as_of> or retention-<as_of>-max<N>.
 // Objects past retention are deleted, or minimized to held subjects' rows when they contain any, through the same
 // etag compare-and-swap rewrite as deletion, so a concurrent deletion and a minimization never overwrite each other.
+// Workers Free (SPEC.md section 30.3.1): export expiry advances through byte-capped steps `expire-r2-<n>` with the
+// same line prefilter as erasure (only lines that contain a held subject's id are parsed). Expiry deletes objects,
+// so its cursor is the last basis date handled in the current part (a date, never a key), not a listing digest.
 // Terminated employees past 3 years become subject deletion requests through the Queue (held ones are recorded held).
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
@@ -13,6 +16,7 @@ import { ExecutorResult, createTaskStore, type ExecutorResult as ExecutorResultT
 import { activeHeldRefs } from "../holds/holds.ts";
 import { POLICY } from "../policy/compiled.ts";
 import { ActiveRequestExists, insertRequest } from "../requests.ts";
+import { MAX_CURSOR_STEPS, listSorted, registeredR2Parts } from "../erase/r2-cursor.ts";
 import { rewriteObject } from "../storage/r2-rewrite.ts";
 import { newCounter, withOpBudget } from "../storage/op-budget.ts";
 import { cutoffFor, exportBasisDate, isPast, minusDays, minusYears, monthEnd } from "../retention/rules.ts";
@@ -46,17 +50,65 @@ async function listKeys(bucket: R2Bucket, prefix: string): Promise<{ key: string
 }
 
 /** Deletes an object past retention, or minimizes it to rows of held subjects (both etag-conditional). */
-async function expireObject(bucket: R2Bucket, key: string, format: "jsonl" | "csv", subjectColumn: string, held: Set<string>, runId: string) {
+export async function expireObject(bucket: R2Bucket, key: string, format: "jsonl" | "csv", subjectColumn: string, held: Set<string>, runId: string) {
   return rewriteObject(
     bucket,
     key,
     (body) => {
-      const t = transformRows(body, format, { remove: (row) => !held.has(String(row[subjectColumn])), refColumns: [], refValue: null });
+      const t = transformRows(body, format, {
+        remove: (row) => !held.has(String(row[subjectColumn])),
+        refColumns: [],
+        refValue: null,
+        prefilter: { needles: [...held], unmatched: "remove" },
+      });
       const keptRows = body.split("\n").filter((l) => l.trim()).length - (format === "csv" ? 1 : 0) - t.rowsRemoved;
       return keptRows > 0 ? t : { body: null, rowsRemoved: t.rowsRemoved, refsScrubbed: 0 };
     },
     { metadata: { pv_minimized_by: runId } },
   );
+}
+
+/** Export expiry cursor: the part index and the last basis date handled in it. */
+export interface ExpiryCursor {
+  part: number;
+  after: string | null;
+}
+
+/** One expiry step over the export parts: whole basis-date groups of past-retention objects until the byte cap. */
+async function expireStep(e: Env, asOf: string, from: ExpiryCursor, capBytes: number, held: Set<string>, runId: string) {
+  const parts = registeredR2Parts().filter((p) => p.binding === "EXPORTS");
+  let c = { ...from };
+  let bytes = 0;
+  let objects = 0;
+  let deleted = 0;
+  let minimized = 0;
+  let rowsRemoved = 0;
+  while (c.part < parts.length) {
+    const ref = parts[c.part]!;
+    const cutoff = cutoffFor(ref.part, asOf);
+    const due = cutoff
+      ? (await listSorted(e.EXPORTS, ref.part.location ?? ""))
+          .map((o) => ({ ...o, basis: exportBasisDate(o.key) }))
+          .filter((o): o is typeof o & { basis: string } => !!o.basis && isPast(o.basis, cutoff) && (c.after === null || o.basis > c.after))
+          .sort((a, b) => (a.basis === b.basis ? (a.key < b.key ? -1 : 1) : a.basis < b.basis ? -1 : 1))
+      : [];
+    for (const basis of [...new Set(due.map((o) => o.basis))]) {
+      const group = due.filter((o) => o.basis === basis);
+      const size = group.reduce((n, o) => n + o.size, 0);
+      if (objects > 0 && bytes + size > capBytes) return { cursor: c, done: false, deleted, minimized, rowsRemoved, objects };
+      for (const o of group) {
+        const r = await expireObject(e.EXPORTS, o.key, ref.part.format ?? "jsonl", "employee_id", held, runId);
+        if (r.deleted) deleted++;
+        else if (r.changed) minimized++;
+        rowsRemoved += r.rowsRemoved;
+      }
+      bytes += size;
+      objects += group.length;
+      c = { ...c, after: basis };
+    }
+    c = { part: c.part + 1, after: null };
+  }
+  return { cursor: c, done: true, deleted, minimized, rowsRemoved, objects };
 }
 
 export class RetentionSweepWorkflow extends WorkflowEntrypoint<Env, RetentionParams> {
@@ -79,28 +131,23 @@ export class RetentionSweepWorkflow extends WorkflowEntrypoint<Env, RetentionPar
       }),
     );
 
-    const exportsOut = await step.do("expire-r2-exports", STEP_CONFIG, () =>
-      counted(async (e) => {
-        const held = await heldIdentity(e.DB);
-        const a = asset("src.r2.exports");
-        let deleted = 0;
-        let minimized = 0;
-        let rowsRemoved = 0;
-        for (const part of a.parts) {
-          const cutoff = cutoffFor(part, asOf);
-          if (!cutoff) continue;
-          for (const { key } of await listKeys(e.EXPORTS, part.location ?? "")) {
-            const basis = exportBasisDate(key);
-            if (!basis || !isPast(basis, cutoff)) continue;
-            const r = await expireObject(e.EXPORTS, key, part.format ?? "jsonl", "employee_id", held.ids, runId);
-            if (r.deleted) deleted++;
-            else if (r.changed) minimized++;
-            rowsRemoved += r.rowsRemoved;
-          }
-        }
-        return { deleted, minimized, rowsRemoved };
-      }),
-    );
+    const exportsOut = { deleted: 0, minimized: 0, rowsRemoved: 0 };
+    let expiry: ExpiryCursor = { part: 0, after: null };
+    for (let n = 1, done = false; !done; n++) {
+      if (n > MAX_CURSOR_STEPS) throw new Error("expiry cursor did not finish");
+      const from = expiry;
+      const out = await step.do(`expire-r2-${n}`, STEP_CONFIG, () =>
+        counted(async (e) => {
+          const held = await heldIdentity(e.DB);
+          return await expireStep(e, asOf, from, cfg.r2EraseStepBytes, held.ids, runId);
+        }),
+      );
+      exportsOut.deleted += out.deleted;
+      exportsOut.minimized += out.minimized;
+      exportsOut.rowsRemoved += out.rowsRemoved;
+      expiry = out.cursor;
+      done = out.done;
+    }
 
     const extractsOut = await step.do("expire-r2-extracts", STEP_CONFIG, () =>
       counted(async (e) => {

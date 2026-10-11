@@ -19,10 +19,10 @@ async function start(id: string, employeeRef: string): Promise<WorldIdentity> {
 }
 
 const tokensOf = (i: WorldIdentity) => [i.employee_id, i.work_email, i.full_name, i.employee_ref, i.warehouse_key, i.analytics_id];
+// the fixture world's objects are small: one erase and one probe cursor step each
 const steps = [
-  "load-request", "check-legal-hold", "start-and-suppress", "discover-worker-assets", "erase-r2-exports-hris", "erase-r2-exports-payroll",
-  "erase-r2-exports-leave", "erase-r2-exports-performance", "erase-r2-extracts", "erase-kv-caches", "enqueue-executor-erase", "record-executor-erase",
-  "verify-r2", "verify-kv", "verify-d1", "combine-verdicts", "decide-identity-erasure", "erase-identity-records", "record-executor-identity",
+  "load-request", "check-legal-hold", "start-and-suppress", "discover-worker-assets", "erase-r2-1", "erase-kv-caches", "enqueue-executor-erase", "record-executor-erase",
+  "verify-r2-1", "verify-kv", "verify-d1", "combine-verdicts", "decide-identity-erasure", "erase-identity-records", "record-executor-identity",
   "record-residuals", "redact-request", "finalize",
 ];
 
@@ -35,7 +35,7 @@ describe("held subject", () => {
     await instance.modify(async (m) => m.disableSleeps());
     await env.DELETION.create({ id: "req-held", params: { requestId: "req-held" } });
     await instance.waitForStatus("complete");
-    expect(await instance.getOutput()).toEqual({ status: "held" });
+    expect(await instance.getOutput()).toEqual({ status: "held", steps: 3 });
     const r = await env.DB.prepare("SELECT status, employee_id FROM deletion_requests WHERE id = 'req-held'").first();
     expect(r).toEqual({ status: "held", employee_id: ident.employee_id });
     const rows = await env.DB.prepare("SELECT applicability, action_status, verify_status, COUNT(*) AS n FROM deletion_asset_results WHERE request_id = 'req-held' GROUP BY 1, 2, 3").all();

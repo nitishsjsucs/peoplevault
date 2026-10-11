@@ -81,3 +81,17 @@ describe("plan-dependent constants", () => {
     expect(py).toMatch(/^D1_TIME_TRAVEL_DAYS = 7$/m);
   });
 });
+
+describe("Workflow code makes no external fetch (Free allows 50 per invocation; the design uses 0)", () => {
+  it("no module a Workflow step runs calls fetch", async () => {
+    const { readdirSync } = await import("node:fs");
+    const dirs = ["workflows", "erase", "verify", "storage", "retention", "executor", "holds", "residuals", "audit", "assets"];
+    const offenders: string[] = [];
+    for (const dir of dirs) {
+      for (const f of readdirSync(path.join(REPO_ROOT, "src", "worker", dir))) {
+        if (f.endsWith(".ts") && /\bfetch\(/.test(src(`src/worker/${dir}/${f}`))) offenders.push(`${dir}/${f}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});

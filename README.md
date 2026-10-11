@@ -30,6 +30,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
 | The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built; the local rehearsal ran (Results); the production run is written, not yet executed |
 | Workers Free production template (no `limits`, no `pipelines`, Free capacity vars), 3-day Workflow retention, 7-day D1 Time Travel residual, byte-capped BigQuery queries (Worker 100 MiB, Python and dbt 1 GiB) | built, tested; not yet executed |
+| Workflow steps sized for Free's 10 ms of CPU: byte-capped cursor steps for R2 erasure (4 MiB) and probing (2 MiB) with a line prefilter, retention expiry in byte-capped steps | built, tested locally (Miniflare does not enforce CPU limits; the budgets are counted in tests) |
 | Audit copy into the Iceberg table `governance.audit_events` | Basin Pipelines removed from the production path (Workers Paid only); the pulled replacement `pv audit export` is not built yet |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
