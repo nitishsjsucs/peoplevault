@@ -68,6 +68,8 @@ export interface ProdResources {
   access_team_domain?: string;
   catalog_uri?: string;
   catalog_warehouse?: string;
+  /** RETENTION_CRON of the rendered config; off until the production eval result is committed (SPEC.md 30.3.4) */
+  retention_cron?: "on" | "off";
   service_tokens?: Record<string, { id: string; client_id: string }>;
   policy_tags?: Record<string, string>;
   taxonomy?: string;
@@ -92,6 +94,8 @@ export interface RenderValues {
   accessTeamDomain: string;
   accessAud: string;
   gcpProject: string;
+  /** default off: the retention cron stays off until the production eval result is committed */
+  retentionCron?: "on" | "off";
 }
 
 /** Template with every placeholder replaced; throws if a value is empty or a placeholder is left. */
@@ -108,7 +112,9 @@ export function renderConfig(template: string, v: RenderValues): string {
   for (const [k, val] of Object.entries(map)) out = out.split(k).join(val);
   const left = out.match(/__[A-Z0-9_]+__/g);
   if (left) throw new Error(`placeholders left: ${[...new Set(left)].join(", ")}`);
-  return out;
+  const cronOff = '"RETENTION_CRON": "off"';
+  if (!out.includes(cronOff)) throw new Error("the template must set RETENTION_CRON to off");
+  return v.retentionCron === "on" ? out.replace(cronOff, '"RETENTION_CRON": "on"') : out;
 }
 
 /** Value used for ACCESS_AUD before the Access application exists: the Worker rejects every token (fail closed). */

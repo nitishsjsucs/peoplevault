@@ -163,6 +163,20 @@ describe("setup:prod --dry-run", () => {
     expect(text).toMatch(/"invocation_logs": false/);
   });
 
+  it("renders RETENTION_CRON off until --retention-cron on is recorded, and re-renders (and redeploys) when it changes", () => {
+    const s = complete();
+    const off = desiredRender(s, completeEnv())!;
+    expect(off).toContain('"RETENTION_CRON": "off"');
+    s.renderedText = off;
+    expect(planSetup(s, completeEnv(), off).map((x) => x.id)).not.toContain("worker:render");
+    s.resources = { ...s.resources, retention_cron: "on" };
+    const on = desiredRender(s, completeEnv())!;
+    expect(on).toContain('"RETENTION_CRON": "on"');
+    const ids = planSetup(s, completeEnv(), on).map((x) => x.id);
+    expect(ids).toContain("worker:render");
+    expect(ids).toContain("worker:deploy");
+  });
+
   it("builds the Access application body from the template", () => {
     const body = accessAppBody(readFileSync(path.join(REPO_ROOT, "infra", "cloudflare", "access-app.template.json"), "utf8"), {
       subdomain: "nitish-pv",

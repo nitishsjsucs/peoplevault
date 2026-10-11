@@ -25,6 +25,7 @@ Everything a script can do is in `npm run setup:prod`. This section lists, in or
 | 15 | Choice | Persona sign-in emails, for example Gmail plus-addresses: `PV_ACCESS_ALLOWED_EMAILS=<you>+hr@gmail.com,<you>+mgr@gmail.com,<you>+analyst@gmail.com,<you>+privacy@gmail.com` and `PV_ACCESS_PERSONA_EMAILS=<you>+hr@gmail.com=hrbp-01,<you>+mgr@gmail.com=mgr-001,<you>+analyst@gmail.com=analyst-01,<you>+privacy@gmail.com=privacy-01` | `.secrets/prod.env` | free | signing in as each of the four personas | |
 | 16 | Choice | After the first `setup:prod`, copy `PV_PSEUDONYM_MASTER_KEY` from `.secrets/worker-secrets.env` into a password manager | password manager | free | pseudonym stability; losing it orphans every pseudonym | |
 | 17 | GitHub | Push the repository (`git push origin main`; you publish it), then answer yes when `npm run setup:prod -- --only github` asks to write the executor secrets and `PV_PROD_ENABLED=true`. Optional but recommended: without it, deletions wait for you to run `pv executor run --target prod --drain` and fail after 24 hours | terminal | free (Actions minutes are free for public repositories) | the hourly production executor (`executor.yml`) and the daily residual check | GitHub docs on disabling and enabling workflows |
+| 18 | Choice | After the production eval result is committed, turn the retention cron on: `npm run setup:prod -- --only worker --retention-cron on` (re-renders `RETENTION_CRON=on` and redeploys). The 70-subject retention backlog then drains at 8 a day. Until then the daily cron only re-admits deferred and orphaned requests | terminal | free | automated retention in production within the daily admission cap | SPEC.md section 30.3.4 |
 
 Not needed: Workers Paid, Basin Pipelines, and any Workers AI or AI Gateway setup for v1 (P1, no resume claim depends on them). Basin Pipelines is Workers Paid only, so `setup:prod` creates no stream, sink or pipeline; the audit copy `governance.audit_events` is pulled by `pv audit export` instead (SPEC.md section 30.3.3).
 
@@ -111,19 +112,20 @@ npm run doctor -- --prod
 # IAM grants take about 30 seconds and policy tag changes up to 30 minutes to propagate (column-level access control docs); wait before the next line
 uv run --project pipelines pv authz warehouse --target bigquery --write-results --ceiling-probes
 uv run --directory pipelines pytest -m bigquery                    # the live BigQuery suite (48 cases, 37 ceiling probes, controls, time travel)
-uv run --project pipelines pv eval deletion --profile prod         # once, on the freshly seeded project; runs the production executor itself
+uv run --project pipelines pv eval deletion --profile prod         # once, before any DSR; one canary DSR alone first, then the other 11 (12 of the day's 16 starts)
 npm run authz:prod -- --allow-writes                               # the 100-case file through Access with the service tokens (after the eval: it creates a deletion request and a hold)
 uv run --project pipelines pv executor run --target prod --drain   # P0: the production executor runs from this Mac (P1 executor.yml automates it)
 # 48 hours later (BigQuery time travel window) and again after 1 day for Basin snapshot expiration
 uv run --project pipelines pv residuals check --target prod
 npm run readme:results
 git add evals/results README.md && git commit -m "docs: production results"
+npm run setup:prod -- --only worker --retention-cron on            # only after the production eval result is committed
 # after you push: the hourly executor in GitHub Actions (asks before writing anything to GitHub)
 npm run setup:prod -- --only github
 npm run doctor -- --prod                                       # the GitHub lines turn ok after the first successful run
 ```
 
-`pv eval deletion --profile prod` plants 5 residues of designed types (one per store) straight into R2, KV, D1, BigQuery and the Basin Catalog, warms the production caches through Access with the persona service tokens, submits 6 deletions, 1 held request and the 5 planted subjects as `privacy-01`, runs the production executor in-process until every request is terminal, runs the residual check, scans every production store with the independent oracle, removes the planted residues and writes `evals/results/deletion-prod-<date>.{json,md}`. It runs once per seeded project (its subjects are gone afterwards) and refuses to start when deletion requests already exist.
+`pv eval deletion --profile prod` plants 5 residues of designed types (one per store) straight into R2, KV, D1, BigQuery and the Basin Catalog, warms the production caches through Access with the persona service tokens, submits 6 deletions, 1 held request and the 5 planted subjects as `privacy-01`, runs the production executor in-process until every request is terminal, runs the residual check, scans every production store with the independent oracle, removes the planted residues and writes `evals/results/deletion-prod-<date>.{json,md}`. It runs once per seeded project (its subjects are gone afterwards): it refuses to start when any data subject request exists, when a request already names one of its cohort subjects, or when fewer than 12 of the day's 16 deletion starts are left. It submits one deletion alone first (the canary) and stops if that one does not complete, so a Workers Free limit that only production enforces fails one request closed instead of twelve.
 
 If a run leaves the probe dataset behind (for example after an interrupted ceiling-probe run), `uv run --project pipelines pv authz warehouse --target bigquery --cleanup` removes it and its grants.
 

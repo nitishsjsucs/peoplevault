@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import threading
 import time
 
@@ -38,6 +39,41 @@ from peoplevault.evals.warmup import warm_kv
 PROD_ENVIRONMENT = "production (Cloudflare Workers, Workflows, R2, D1, KV and Access; BigQuery; Basin Catalog)"
 PROD_GENERATED = config.REPO_ROOT / "data" / "generated-prod"
 TIMEOUT_S = 90 * 60
+
+
+def _today() -> str:
+    from datetime import UTC, datetime
+
+    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+def daily_cap() -> int | None:
+    """DAILY_DELETION_STARTS of the rendered production config (16), None when unset."""
+    path = config.REPO_ROOT / "infra" / "cloudflare" / "wrangler.production.jsonc"
+    m = re.search(r'"DAILY_DELETION_STARTS"\s*:\s*"(\d*)"', path.read_text()) if path.exists() else None
+    return int(m.group(1)) if m and m.group(1) else None
+
+
+def precondition_problem(query, cohort_subject_refs: list[str], needed: int, cap: int | None, today: str) -> str | None:
+    """Why the production eval must not start, or None (SPEC.md section 30.3.4). It refuses when any DSR exists or any
+    request names one of its cohort subjects (their data would already be gone); retention requests of other subjects
+    do not block it (retention subjects are disjoint from the eval cohorts by construction). Its requests must also fit
+    today's remaining admissions."""
+    dsrs = int(query("SELECT COUNT(*) AS n FROM deletion_requests WHERE kind = 'dsr'")[0]["n"])
+    if dsrs:
+        return f"the production eval runs once, before any data subject request ({dsrs} exist; their subjects are gone)"
+    refs = ", ".join(f"'{r}'" for r in cohort_subject_refs if re.fullmatch(r"sr_[a-z2-7]{26}", r))
+    if refs and int(query(f"SELECT COUNT(*) AS n FROM deletion_requests WHERE subject_ref IN ({refs})")[0]["n"]):
+        return "a deletion request already names one of the eval's cohort subjects"
+    if cap is not None:
+        admitted = int(query(f"SELECT COUNT(*) AS n FROM deletion_requests WHERE admitted_at >= '{today}T00:00:00.000Z'")[0]["n"])
+        if cap - admitted < needed:
+            return f"only {max(0, cap - admitted)} of today's {cap} deletion starts are left; the eval needs {needed} (run it on another UTC day)"
+    return None
+
+
+def canary_ok(status: str) -> bool:
+    return status in ("completed", "completed_with_residuals")
 
 
 def _truth(name: str):
@@ -75,8 +111,9 @@ def run_prod(*, keep_faults: bool = False) -> dict:
                                     "warehouse_key": tokens[e].warehouse_key, "analytics_id": tokens[e].analytics_id}} for e in cohort_ids}
     plan, actions, planted = faults_mod.build_plan(cohorts["F"], [], plan_subjects, other)
 
-    if int(d1_query("SELECT COUNT(*) AS n FROM deletion_requests")[0]["n"]):
-        raise RuntimeError("the production eval runs once, on a freshly seeded project (deletion requests already exist; their subjects are gone)")
+    problem = precondition_problem(d1_query, [tokens[e].subject_ref for e in sorted(cohort_ids)], len(cohort_ids), daily_cap(), _today())
+    if problem:
+        raise RuntimeError(problem)
     cf = CloudflareRest(account, oauth_token())
     wh = BqWarehouse(project)
     cat = open_catalog("prod")
@@ -88,15 +125,31 @@ def run_prod(*, keep_faults: bool = False) -> dict:
         _log("warming production caches through the API")
         warm = warm_kv(client, warmup)
         kv_after = len(cf.kv_keys(kv_ns))
-        _log("submitting D, H and F requests; running the production executor")
+        _log("submitting the canary DSR alone; running the production executor")
         submitted: dict[str, str] = {}
-        for e in list(cohorts["D"]) + list(cohorts["H"]) + [f["subject"] for f in cohorts["F"]]:
+        order = list(cohorts["D"]) + list(cohorts["H"]) + [f["subject"] for f in cohorts["F"]]
+
+        def submit(e: str) -> str:
             r = client.request("privacy-01", "POST", "/api/v1/privacy/deletion-requests", {"employee_ref": tokens[e].employee_ref, "reason": "eval data subject request"})
             if r.status_code != 202:
                 raise RuntimeError(f"DSR submission failed with {r.status_code}")
+            if r.json().get("deferred"):
+                raise RuntimeError("a DSR was deferred by the daily admission cap: run the production eval on a day with 12 starts left")
             submitted[r.json()["requestId"]] = e
+            return r.json()["requestId"]
+
         ctx = prod_context()
         start_thread(prod_api(), ctx, stop, poll=PROD_POLL_S)
+        # Canary (SPEC.md section 30.6): one deletion alone first. If Workers Free limits (10 ms of CPU per step, 50 D1
+        # queries per invocation) break a step in production, this request fails closed and the eval stops before the
+        # other 11 requests; nothing is reported clean.
+        canary = submit(order[0])
+        rows = _wait_requests(client, {canary}, TIMEOUT_S, poll_s=PROD_REQUEST_POLL_S)
+        if not canary_ok(rows[canary]["status"]):
+            raise RuntimeError(f"the canary deletion ended {rows[canary]['status']}: stopping before the other requests (check its receipt and the Workflow instance)")
+        _log("canary completed; submitting the other D, H and F requests")
+        for e in order[1:]:
+            submit(e)
         _wait_requests(client, set(submitted), TIMEOUT_S, poll_s=PROD_REQUEST_POLL_S)
         stop.set()
         report_before = client.request("privacy-01", "GET", "/api/v1/privacy/reports/deletion").json()

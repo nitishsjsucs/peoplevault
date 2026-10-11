@@ -28,7 +28,7 @@ gcp: 1 step(s)
   uv run --project pipelines pv setup gcp (idempotent; its own plan: uv run --project pipelines pv setup gcp --dry-run)
 worker: 4 step(s)
   generate PV_PSEUDONYM_MASTER_KEY (32 random bytes) into .secrets/worker-secrets.env, once; copy it to your password manager
-  render infra/cloudflare/wrangler.production.jsonc from the template (D1 id, KV id, ACCESS_TEAM_DOMAIN, ACCESS_AUD = pending-access-application until the Access application exists, GCP_PROJECT_ID)
+  render infra/cloudflare/wrangler.production.jsonc from the template (D1 id, KV id, ACCESS_TEAM_DOMAIN, ACCESS_AUD = pending-access-application until the Access application exists, GCP_PROJECT_ID, RETENTION_CRON=off)
   npx wrangler d1 migrations apply pv-control --remote -c infra/cloudflare/wrangler.production.jsonc
   npm run deploy (npx wrangler deploy -c infra/cloudflare/wrangler.production.jsonc --secrets-file .secrets/worker-secrets.env)
 access: 7 step(s)

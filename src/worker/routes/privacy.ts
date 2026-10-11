@@ -10,7 +10,8 @@ import { identityByRef } from "../identity/refs.ts";
 import { decide, type Action } from "../policy/pdp.ts";
 import { deletionReport, REPORT_FAILURES_MAX } from "../reports/deletion-report.ts";
 import { utcToday } from "../retention/rules.ts";
-import { ActiveRequestExists, getRequest, insertRequest, nextInstanceId, publicRequest, startDeletionInstance, type DeletionRequestRow } from "../requests.ts";
+import { startOrDefer } from "../admission.ts";
+import { ActiveRequestExists, getRequest, insertRequest, nextInstanceId, publicRequest, type DeletionRequestRow } from "../requests.ts";
 
 export const privacy = new Hono<AppEnv>();
 
@@ -43,9 +44,11 @@ privacy.post(DR, async (c) => {
     if (e instanceof ActiveRequestExists) return deny(c, "privacy_compliance", "create_deletion_request", DR, 409, "active_request_exists");
     throw e;
   }
-  await startDeletionInstance(c.env, c.env.DB, requestId, requestId);
-  await audit(c, { purpose: "privacy_compliance", action: "create_deletion_request", route: DR, subjectRef: ident.subjectRef, requestId, decision: "allow", reason: "ok" });
-  return c.json({ requestId, status: "received" }, 202);
+  // Workers Free: at most DAILY_DELETION_STARTS instances start per UTC day; over the cap the request is deferred
+  // and the daily cron starts it (SPEC.md section 30.3.4).
+  const start = await startOrDefer(c.env, c.env.DB, requestId, requestId, c.get("cfg").dailyDeletionStarts);
+  await audit(c, { purpose: "privacy_compliance", action: "create_deletion_request", route: DR, subjectRef: ident.subjectRef, requestId, decision: "allow", reason: start.deferred ? "deferred" : "ok" });
+  return c.json(start.deferred ? { requestId, status: "received", deferred: true } : { requestId, status: "received" }, 202);
 });
 
 privacy.get(DR, async (c) => {
@@ -92,9 +95,9 @@ privacy.post(DR_RETRY, async (c) => {
   const instanceId = nextInstanceId(r.id, r.workflow_instance_id);
   const upd = await c.env.DB.prepare("UPDATE deletion_requests SET status = 'received', completed_at = NULL WHERE id = ? AND status = 'failed'").bind(r.id).run().catch((e: unknown) => e);
   if (upd instanceof Error) return deny(c, "privacy_compliance", "create_deletion_request", DR_RETRY, 409, "active_request_exists");
-  await startDeletionInstance(c.env, c.env.DB, r.id, instanceId);
-  await audit(c, { purpose: "privacy_compliance", action: "create_deletion_request", route: DR_RETRY, subjectRef: r.subject_ref, requestId: r.id, decision: "allow", reason: "retry" });
-  return c.json({ requestId: r.id, instanceId, status: "received" }, 202);
+  const start = await startOrDefer(c.env, c.env.DB, r.id, instanceId, c.get("cfg").dailyDeletionStarts);
+  await audit(c, { purpose: "privacy_compliance", action: "create_deletion_request", route: DR_RETRY, subjectRef: r.subject_ref, requestId: r.id, decision: "allow", reason: start.deferred ? "retry_deferred" : "retry" });
+  return c.json(start.deferred ? { requestId: r.id, instanceId: null, status: "received", deferred: true } : { requestId: r.id, instanceId, status: "received" }, 202);
 });
 
 // ---- legal holds ----------------------------------------------------------------------------------------------------
@@ -117,11 +120,11 @@ const LH_RELEASE = "/api/v1/privacy/legal-holds/:id/release";
 privacy.post(LH_RELEASE, async (c) => {
   const denied = await authorize(c, "legal_hold_management", "release_legal_hold", LH_RELEASE);
   if (denied) return denied;
-  const res = await releaseHold(c.env, c.env.DB, c.req.param("id"), c.get("principal").id);
+  const res = await releaseHold(c.env, c.env.DB, c.req.param("id"), c.get("principal").id, c.get("cfg").dailyDeletionStarts);
   if (!res) return deny(c, "legal_hold_management", "release_legal_hold", LH_RELEASE, 404, "not_found");
   const remaining = (await activeHolds(c.env.DB, res.hold.subject_ref)).length;
-  await audit(c, { purpose: "legal_hold_management", action: "release_legal_hold", route: LH_RELEASE, subjectRef: res.hold.subject_ref, decision: "allow", reason: "ok", detail: { resubmitted: res.resubmitted.length, remaining_holds: remaining } });
-  return c.json({ hold: publicHold(res.hold), resubmitted: res.resubmitted, remainingHolds: remaining });
+  await audit(c, { purpose: "legal_hold_management", action: "release_legal_hold", route: LH_RELEASE, subjectRef: res.hold.subject_ref, decision: "allow", reason: "ok", detail: { resubmitted: res.resubmitted.length, deferred: res.deferred.length, remaining_holds: remaining } });
+  return c.json({ hold: publicHold(res.hold), resubmitted: res.resubmitted, deferred: res.deferred, remainingHolds: remaining });
 });
 
 privacy.get(LH, async (c) => {

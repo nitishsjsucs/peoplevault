@@ -85,11 +85,26 @@ export class SubjectDeletionWorkflow extends WorkflowEntrypoint<Env, DeletionPar
       return { ...out, ops: counter.total(), d1Statements: counter.d1Statements, r2Bytes: counter.r2Bytes };
     };
 
-    const startedAt = await step.do("load-request", STEP_CONFIG, async () => {
-      const r = await db.prepare("SELECT status, created_at FROM deletion_requests WHERE id = ?").bind(requestId).first<{ status: string; created_at: string }>();
+    // Request-level idempotency (SPEC.md section 30.3.4): Workers Free keeps finished instances only 3 days, so a re-sent
+    // queue message can create a second instance for a request another instance already handled. Only a request in
+    // `received` whose workflow_instance_id is this instance (or unset: a retention request, claimed here) runs; any
+    // other instance ends here without changing a row.
+    const loaded = await step.do("load-request", STEP_CONFIG, async () => {
+      const r = await db.prepare("SELECT status, created_at, workflow_instance_id FROM deletion_requests WHERE id = ?").bind(requestId).first<{ status: string; created_at: string; workflow_instance_id: string | null }>();
       if (!r) throw new Error("request not found");
-      return r.created_at;
+      if (r.status !== "received") return { skip: r.status === "completed" || r.status === "completed_with_residuals" || r.status === "failed" ? "terminal" : r.status, createdAt: r.created_at };
+      if (r.workflow_instance_id !== null && r.workflow_instance_id !== instanceId) return { skip: "other_instance", createdAt: r.created_at };
+      if (r.workflow_instance_id === null) {
+        const claim = await db.prepare("UPDATE deletion_requests SET workflow_instance_id = ? WHERE id = ? AND workflow_instance_id IS NULL AND status = 'received'").bind(instanceId, requestId).run();
+        if (claim.meta.changes !== 1) return { skip: "other_instance", createdAt: r.created_at };
+      }
+      return { skip: null, createdAt: r.created_at };
     });
+    if (loaded.skip !== null) {
+      console.log("deletion_instance_skipped", loaded.skip);
+      return { status: "skipped", reason: loaded.skip, steps };
+    }
+    const startedAt = loaded.createdAt;
 
     try {
       const hold = await step.do("check-legal-hold", STEP_CONFIG, () =>

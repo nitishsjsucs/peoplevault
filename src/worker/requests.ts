@@ -14,6 +14,7 @@ export interface DeletionRequestRow {
   created_at: string;
   completed_at: string | null;
   summary_json: string | null;
+  admitted_at?: string | null;
 }
 
 export class ActiveRequestExists extends Error {
@@ -34,11 +35,6 @@ export async function insertRequest(
     if (String(e).includes("UNIQUE")) throw new ActiveRequestExists("active_request_exists");
     throw e;
   }
-}
-
-export async function startDeletionInstance(env: Env, db: D1Database, requestId: string, instanceId: string): Promise<void> {
-  await db.prepare("UPDATE deletion_requests SET workflow_instance_id = ? WHERE id = ?").bind(instanceId, requestId).run();
-  await env.DELETION.create({ id: instanceId, params: { requestId }, retention: INSTANCE_RETENTION });
 }
 
 /** `<id>` -> `<id>-r1` -> `<id>-r2` ... */
@@ -63,6 +59,7 @@ export function publicRequest(r: DeletionRequestRow) {
     workflowInstanceId: r.workflow_instance_id,
     createdAt: r.created_at,
     completedAt: r.completed_at,
+    admittedAt: r.admitted_at ?? null,
     summary: r.summary_json ? JSON.parse(r.summary_json) : null,
   };
 }

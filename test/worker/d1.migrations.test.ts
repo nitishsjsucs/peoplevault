@@ -29,6 +29,13 @@ describe("D1 control-plane schema", () => {
     }
   });
 
+  it("migration 0005 adds deletion_requests.admitted_at with an index (Workers Free daily admission)", async () => {
+    const cols = (await env.DB.prepare("PRAGMA table_info(deletion_requests)").all<{ name: string }>()).results.map((c) => c.name);
+    expect(cols).toContain("admitted_at");
+    const idx = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'deletion_requests_admitted'").first();
+    expect(idx).toEqual({ name: "deletion_requests_admitted" });
+  });
+
   it("allows only one active request per subject (unique partial index)", async () => {
     await insertRequest("r1", "sr_subject_one", "running");
     await expect(insertRequest("r2", "sr_subject_one", "received")).rejects.toThrow(/UNIQUE/);

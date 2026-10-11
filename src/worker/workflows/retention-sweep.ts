@@ -15,7 +15,7 @@ import { transformRows } from "../erase/jsonl-objects.ts";
 import { ExecutorResult, createTaskStore, type ExecutorResult as ExecutorResultT } from "../executor/task-store.ts";
 import { activeHeldRefs } from "../holds/holds.ts";
 import { POLICY } from "../policy/compiled.ts";
-import { ActiveRequestExists, insertRequest } from "../requests.ts";
+import { remainingToday } from "../admission.ts";
 import { MAX_CURSOR_STEPS, listSorted, registeredR2Parts } from "../erase/r2-cursor.ts";
 import { rewriteObject } from "../storage/r2-rewrite.ts";
 import { newCounter, withOpBudget } from "../storage/op-budget.ts";
@@ -27,8 +27,10 @@ export interface RetentionParams {
   maxSubjects?: number;
 }
 
+/** Queue message: the request to start, and the instance id when it is not the request id (a deferred retry). */
 export interface SweepMessage {
   requestId: string;
+  instanceId?: string;
 }
 
 async function heldIdentity(db: D1Database): Promise<{ ids: Set<string>; analytics: Set<string> }> {
@@ -66,6 +68,21 @@ export async function expireObject(bucket: R2Bucket, key: string, format: "jsonl
     },
     { metadata: { pv_minimized_by: runId } },
   );
+}
+
+/**
+ * Which eligible subjects (already in employee id order) this sweep turns into requests: held ones always (recorded
+ * `held`), and at most min(max_subjects, RETENTION_DAILY_MAX, today's remaining admissions) others, in order.
+ */
+export function planRetentionSubjects<T extends { subject_ref: string }>(
+  eligible: T[],
+  held: ReadonlySet<string>,
+  caps: { maxSubjects: number | null; retentionDailyMax: number | null; remaining: number | null },
+): { newRows: T[]; heldRows: T[] } {
+  const limit = Math.min(caps.maxSubjects ?? Infinity, caps.retentionDailyMax ?? Infinity, caps.remaining ?? Infinity);
+  const heldRows = eligible.filter((r) => held.has(r.subject_ref));
+  const others = eligible.filter((r) => !held.has(r.subject_ref));
+  return { newRows: Number.isFinite(limit) ? others.slice(0, Math.max(0, limit)) : others, heldRows };
 }
 
 /** Export expiry cursor: the part index and the last basis date handled in it. */
@@ -193,6 +210,10 @@ export class RetentionSweepWorkflow extends WorkflowEntrypoint<Env, RetentionPar
       timeout: cfg.executorWaitTimeout as `${number} ${"second" | "minute" | "hour" | "day"}s`,
     });
 
+    // Terminated subjects past retention become retention requests (SPEC.md sections 14.5 and 30.3.4): in employee id
+    // order, at most max_subjects (when set), RETENTION_DAILY_MAX and today's remaining admission cap of new ones; held
+    // subjects are recorded `held` without a cap. One INSERT OR IGNORE for all of them (an ignored row is a subject
+    // with another active request, counted already_active), so the step's D1 statements stay constant.
     const subjects = await step.do("enqueue-retention-subjects", STEP_CONFIG, () =>
       counted(async (e) => {
         const cutoff = minusYears(asOf, POLICY.retention.terminated_subject_years);
@@ -202,33 +223,40 @@ export class RetentionSweepWorkflow extends WorkflowEntrypoint<Env, RetentionPar
           .bind(cutoff)
           .all<{ employee_id: string; subject_ref: string }>();
         const held = await activeHeldRefs(e.DB);
-        let queued = 0;
-        let heldRecorded = 0;
-        let alreadyActive = 0;
-        const messages: { body: SweepMessage }[] = [];
-        for (const r of results) {
-          const isHeld = held.has(r.subject_ref);
-          if (!isHeld && maxSubjects !== undefined && queued + alreadyActive >= maxSubjects) continue;
-          const requestId = `${runId}-${r.subject_ref.slice(3, 15)}`;
-          try {
-            await insertRequest(e.DB, { id: requestId, kind: "retention", subjectRef: r.subject_ref, employeeId: r.employee_id, requestedBy: "retention-sweep", status: isHeld ? "held" : "received" });
-          } catch (err) {
-            if (err instanceof ActiveRequestExists) {
-              alreadyActive++;
-              continue;
-            }
-            if (String(err).includes("UNIQUE")) continue; // the same run re-executing this step
-            throw err;
-          }
-          if (isHeld) {
-            heldRecorded++;
-            continue;
-          }
-          messages.push({ body: { requestId } });
-          queued++;
+        const now = new Date();
+        const remaining = await remainingToday(e.DB, cfg.dailyDeletionStarts, now);
+        const { newRows, heldRows } = planRetentionSubjects(results, held, { maxSubjects: maxSubjects ?? null, retentionDailyMax: cfg.retentionDailyMax, remaining });
+        const rows = [
+          ...newRows.map((r) => ({ id: `${runId}-${r.subject_ref.slice(3, 15)}`, subject_ref: r.subject_ref, employee_id: r.employee_id, status: "received", admitted_at: now.toISOString() })),
+          ...heldRows.map((r) => ({ id: `${runId}-${r.subject_ref.slice(3, 15)}`, subject_ref: r.subject_ref, employee_id: r.employee_id, status: "held", admitted_at: null })),
+        ];
+        let mine = new Set<string>();
+        if (rows.length > 0) {
+          await e.DB.prepare(
+            `INSERT OR IGNORE INTO deletion_requests (id, kind, subject_ref, employee_id, status, requested_by, created_at, admitted_at)
+             SELECT json_extract(value, '$.id'), 'retention', json_extract(value, '$.subject_ref'), json_extract(value, '$.employee_id'), json_extract(value, '$.status'),
+                    'retention-sweep', ?2, json_extract(value, '$.admitted_at')
+             FROM json_each(?1)`,
+          )
+            .bind(JSON.stringify(rows), now.toISOString())
+            .run();
+          // rows of this run: inserted now or by an earlier attempt of this step; the others hit the one-active index
+          const { results: present } = await e.DB.prepare("SELECT id FROM deletion_requests WHERE id IN (SELECT json_extract(value, '$.id') FROM json_each(?1))")
+            .bind(JSON.stringify(rows))
+            .all<{ id: string }>();
+          mine = new Set(present.map((r) => r.id));
         }
+        const queued = rows.filter((r) => r.status === "received" && mine.has(r.id));
+        const heldRecorded = rows.filter((r) => r.status === "held" && mine.has(r.id)).length;
+        const messages: { body: SweepMessage }[] = queued.map((r) => ({ body: { requestId: r.id } }));
         for (let i = 0; i < messages.length; i += 100) await e.SWEEP_QUEUE.sendBatch(messages.slice(i, i + 100));
-        return { eligible: results.length, queued, held: heldRecorded, alreadyActive };
+        return {
+          eligible: results.length,
+          queued: queued.length,
+          held: heldRecorded,
+          alreadyActive: rows.length - queued.length - heldRecorded,
+          capped: results.length - heldRows.length - newRows.length,
+        };
       }),
     );
 

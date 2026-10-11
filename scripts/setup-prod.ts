@@ -98,7 +98,14 @@ export function desiredRender(s: SetupState, env: Record<string, string>): strin
   const d1Id = s.resources.d1_id;
   const kvId = s.resources.kv_id;
   if (!d1Id || !kvId || !s.teamDomain || !env.PV_GCP_PROJECT || !existsSync(TEMPLATE)) return null;
-  return renderConfig(readFileSync(TEMPLATE, "utf8"), { d1Id, kvId, accessTeamDomain: s.teamDomain, accessAud: s.accessApp?.aud ?? AUD_PENDING, gcpProject: env.PV_GCP_PROJECT });
+  return renderConfig(readFileSync(TEMPLATE, "utf8"), {
+    d1Id,
+    kvId,
+    accessTeamDomain: s.teamDomain,
+    accessAud: s.accessApp?.aud ?? AUD_PENDING,
+    gcpProject: env.PV_GCP_PROJECT,
+    retentionCron: s.resources.retention_cron ?? "off",
+  });
 }
 
 export function planSetup(s: SetupState, env: Record<string, string>, render: string | null = null): Step[] {
@@ -125,7 +132,7 @@ export function planSetup(s: SetupState, env: Record<string, string>, render: st
   if (!s.workerSecretsFile.includes("PV_PSEUDONYM_MASTER_KEY"))
     add("worker", "worker:master-key", "generate PV_PSEUDONYM_MASTER_KEY (32 random bytes) into .secrets/worker-secrets.env, once; copy it to your password manager");
   const renderChanged = render === null || s.renderedText !== render;
-  if (renderChanged) add("worker", "worker:render", `render ${RENDERED_REL} from the template (D1 id, KV id, ACCESS_TEAM_DOMAIN, ACCESS_AUD ${s.accessApp ? "from the Access application" : `= ${AUD_PENDING} until the Access application exists`}, GCP_PROJECT_ID)`);
+  if (renderChanged) add("worker", "worker:render", `render ${RENDERED_REL} from the template (D1 id, KV id, ACCESS_TEAM_DOMAIN, ACCESS_AUD ${s.accessApp ? "from the Access application" : `= ${AUD_PENDING} until the Access application exists`}, GCP_PROJECT_ID, RETENTION_CRON=${s.resources.retention_cron ?? "off"})`);
   add("worker", "worker:migrate", `${W} d1 migrations apply pv-control --remote -c ${RENDERED_REL}`);
   const secretsMissing = ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"].some((n) => !s.workerSecrets.includes(n));
   if (!s.workerId || renderChanged || secretsMissing) add("worker", "worker:deploy", `npm run deploy (${W} deploy -c ${RENDERED_REL} --secrets-file .secrets/worker-secrets.env)`);
@@ -440,9 +447,18 @@ async function main(): Promise<void> {
   const i = argv.indexOf("--only");
   const only = i >= 0 ? (argv[i + 1] as Group) : null;
   if (only && !(GROUPS as readonly string[]).includes(only)) throw new Error(`--only takes one of ${GROUPS.join(", ")}`);
+  // --retention-cron on|off: RETENTION_CRON of the rendered config (SPEC.md section 30.3.4). Turn it on only after the
+  // production eval result is committed; the worker group then re-renders and redeploys.
+  const c = argv.indexOf("--retention-cron");
+  const cron = c >= 0 ? argv[c + 1] : null;
+  if (cron !== null && cron !== "on" && cron !== "off") throw new Error("--retention-cron takes on or off");
   const deps = realDeps();
   let env = prodEnv();
   let state = await gatherState(deps, env);
+  if (cron) {
+    if (dryRun) state.resources = { ...state.resources, retention_cron: cron };
+    else state.resources = writeResources({ retention_cron: cron });
+  }
   const missing = preflight(state, env);
   if (dryRun) {
     console.log(renderPlan(missing, planSetup(state, env, desiredRender(state, env)), only));

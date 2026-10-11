@@ -2,7 +2,8 @@
 // While active: deletion stops after check-legal-hold with status held, no suppression entry is written, retention
 // skips the subject. Release: if no other active hold covers the subject, every held request is resubmitted as a new
 // workflow instance <requestId>-r<n>.
-import { nextInstanceId, startDeletionInstance } from "../requests.ts";
+import { startOrDefer } from "../admission.ts";
+import { nextInstanceId } from "../requests.ts";
 
 export interface HoldRow {
   id: string;
@@ -46,9 +47,11 @@ export async function placeHold(db: D1Database, h: { matterId: string; subjectRe
 export interface ReleaseResult {
   hold: HoldRow;
   resubmitted: string[];
+  /** requests over today's admission cap: resubmitted by the daily cron */
+  deferred: string[];
 }
 
-export async function releaseHold(env: Env, db: D1Database, holdId: string, releasedBy: string): Promise<ReleaseResult | null> {
+export async function releaseHold(env: Env, db: D1Database, holdId: string, releasedBy: string, cap: number | null = null): Promise<ReleaseResult | null> {
   const now = new Date().toISOString();
   const hold = await db
     .prepare("UPDATE legal_holds SET released_at = ?, released_by = ? WHERE id = ? AND released_at IS NULL RETURNING *")
@@ -56,6 +59,7 @@ export async function releaseHold(env: Env, db: D1Database, holdId: string, rele
     .first<HoldRow>();
   if (!hold) return null;
   const resubmitted: string[] = [];
+  const deferred: string[] = [];
   if ((await activeHolds(db, hold.subject_ref)).length === 0) {
     const { results } = await db
       .prepare("SELECT id, workflow_instance_id FROM deletion_requests WHERE subject_ref = ? AND status = 'held' ORDER BY created_at")
@@ -64,9 +68,10 @@ export async function releaseHold(env: Env, db: D1Database, holdId: string, rele
     for (const r of results) {
       const instanceId = nextInstanceId(r.id, r.workflow_instance_id);
       await db.prepare("UPDATE deletion_requests SET status = 'received' WHERE id = ? AND status = 'held'").bind(r.id).run();
-      await startDeletionInstance(env, db, r.id, instanceId);
-      resubmitted.push(instanceId);
+      const out = await startOrDefer(env, db, r.id, instanceId, cap);
+      if (out.deferred) deferred.push(r.id);
+      else resubmitted.push(instanceId);
     }
   }
-  return { hold, resubmitted };
+  return { hold, resubmitted, deferred };
 }
