@@ -1,4 +1,4 @@
-enable apis: bigquery.googleapis.com bigquerydatapolicy.googleapis.com datacatalog.googleapis.com iam.googleapis.com iamcredentials.googleapis.com
+enable apis: bigquery.googleapis.com bigquerydatapolicy.googleapis.com cloudresourcemanager.googleapis.com datacatalog.googleapis.com iam.googleapis.com iamcredentials.googleapis.com
 create service account: peoplevault-er-reader
 create service account: peoplevault-tm-reader
 create service account: peoplevault-wa-reader

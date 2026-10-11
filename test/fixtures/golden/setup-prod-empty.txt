@@ -10,9 +10,9 @@ Preflight: missing (only you can do these; docs/PRODUCTION.md)
   [missing] PV_GCP_PROJECT
       fix: add PV_GCP_PROJECT=<PROJECT_ID> to .secrets/prod.env (docs/PRODUCTION.md step 10)
   [missing] PV_ACCESS_ALLOWED_EMAILS
-      fix: add the persona sign-in emails to .secrets/prod.env (docs/PRODUCTION.md step 15)
+      fix: add the persona sign-in emails to .secrets/prod.env (docs/PRODUCTION.md step 16)
   [missing] PV_ACCESS_PERSONA_EMAILS
-      fix: add email=principalId pairs to .secrets/prod.env (docs/PRODUCTION.md step 15)
+      fix: add email=principalId pairs to .secrets/prod.env (docs/PRODUCTION.md step 16)
   [missing] Google Cloud: gcloud
       fix: brew install --cask gcloud-cli
 cloudflare: 9 step(s)

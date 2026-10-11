@@ -499,7 +499,7 @@ def setup_gcp(dry_run: bool) -> None:
     except Exception as e:
         if "disableServiceAccountKeyCreation" in str(e):
             raise click.ClickException("organization policy iam.disableServiceAccountKeyCreation blocks the peoplevault-gateway key: use a project outside that "
-                                       "organization or ask for an exception (docs/PRODUCTION.md step 14)") from None
+                                       "organization or ask for an exception (docs/PRODUCTION.md step 15)") from None
         raise
     gcp.record(res.resources)
     for step in res.steps:

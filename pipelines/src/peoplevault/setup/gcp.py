@@ -7,8 +7,11 @@ Creator for the owner on peoplevault-executor and the purpose readers, for peopl
 10 datasets with max_time_travel_hours = 48 on the data datasets, the dataset grant of the custom role, the policy tag
 taxonomy and its 6 tags (resource names recorded in .secrets/prod-resources.json for `pv dbt --vars`),
 roles/datacatalog.viewer for the executor on the taxonomy resource, Fine-Grained Reader grants, data masking
-policies, and one key: the peoplevault-gateway key (created only if none is recorded locally). Status: written, not yet executed against Google Cloud;
-the dry-run plans are golden-tested with a fake client (tests/test_setup_gcp_dryrun.py).
+policies, and one key: the peoplevault-gateway key (created only if none is recorded locally). The APIs come first:
+IAM, IAM credentials, Cloud Resource Manager and Data Catalog are off on the shared project, so the plan reads nothing
+through an API that is off and apply() enables them before planning again. Status: the dry run has read the shared
+project (read-only, 2026-10-11: 84 steps); applying it is not yet executed. The plans are golden-tested with a fake
+client that answers like that project (tests/test_setup_gcp_dryrun.py).
 """
 
 from __future__ import annotations
@@ -83,30 +86,47 @@ class SetupResult:
 FGR = "roles/datacatalog.categoryFineGrainedReader"
 
 
+# The API each kind of read goes through. Google answers 403 SERVICE_DISABLED for a read through an API that is not
+# enabled on the project (seen read-only on master-magnet-444903-u4 on 2026-10-11 for IAM, Cloud Resource Manager and
+# Data Catalog), so plan() skips those reads and plans every create step behind them: nothing can have been created
+# through an API that was never on. apply() enables the APIs first and then plans again with real reads.
+IAM_API = "iam.googleapis.com"
+CRM_API = "cloudresourcemanager.googleapis.com"
+BQ_API = "bigquery.googleapis.com"
+CATALOG_API = "datacatalog.googleapis.com"
+DATAPOLICY_API = "bigquerydatapolicy.googleapis.com"
+
+
 def plan(client: GcpClient, project: str, user: str, *, gateway_key_recorded: bool) -> SetupResult:
     """Reads state and returns the ordered create steps (empty when everything exists)."""
     out = SetupResult()
     add = out.steps.append
     iam = fill(spec("iam_bindings"), project, user)
-    missing_apis = sorted(set(iam["apis"]) - client.enabled_apis())
+    enabled = client.enabled_apis()
+    missing_apis = sorted(set(iam["apis"]) - enabled)
     if missing_apis:
         add(Step("enable apis", " ".join(missing_apis), lambda: client.enable_apis(missing_apis)))
-    have_sas = client.service_accounts()
+
+    def read(api: str, fn, empty):
+        return fn() if api in enabled else empty
+
+    have_sas = read(IAM_API, client.service_accounts, set())
     for s in spec("service_accounts"):
         if s["account_id"] not in have_sas:
             add(Step("create service account", s["account_id"], lambda s=s: client.create_service_account(s["account_id"], s["display_name"])))
-    roles = client.custom_roles()
+    roles = read(IAM_API, client.custom_roles, set())
     for r in spec("custom_roles"):
         if r["role_id"] not in roles:
             add(Step("create custom role", f"projects/{project}/roles/{r['role_id']} ({', '.join(r['permissions'])})", lambda r=r: client.create_custom_role(r)))
-    have_bindings = client.project_bindings()
+    have_bindings = read(CRM_API, client.project_bindings, set())
     missing = [(b["role"], b["member"]) for b in iam["project"] if (b["role"], b["member"]) not in have_bindings]
     if missing:
         add(Step("add project iam bindings", "; ".join(f"{r} -> {m}" for r, m in missing), lambda: client.add_project_bindings(missing)))
     for b in iam["service_account"]:
-        if (b["role"], b["member"]) not in client.sa_bindings(b["service_account"]):
+        sa_exists = b["service_account"].split("@")[0] in have_sas
+        if not sa_exists or (b["role"], b["member"]) not in client.sa_bindings(b["service_account"]):
             add(Step("add service account iam binding", f"{b['service_account']}: {b['role']} -> {b['member']}", lambda b=b: client.add_sa_binding(b["service_account"], b["role"], b["member"])))
-    have_ds = client.datasets()
+    have_ds = read(BQ_API, client.datasets, {})
     for ds in fill(spec("datasets"), project, user):
         cur = have_ds.get(ds["dataset"])
         if cur is None:
@@ -124,7 +144,7 @@ def plan(client: GcpClient, project: str, user: str, *, gateway_key_recorded: bo
             if (role, g["member"]) not in (have_ds.get(g["dataset"]) or {"access": set()})["access"]:
                 add(Step("grant custom role on dataset", f"{g['dataset']}: {role} -> {g['member']}", lambda g=g, role=role: client.add_dataset_access(g["dataset"], role, g["member"])))
     tax_spec = spec("taxonomy")
-    tax = client.taxonomy(tax_spec["display_name"])
+    tax = read(CATALOG_API, lambda: client.taxonomy(tax_spec["display_name"]), None)
     tags: dict[str, str] = dict((tax or {}).get("tags", {}))
     if tax is None:
         add(Step("create taxonomy", f"{tax_spec['display_name']} in {tax_spec['location']} (fine-grained access control)", None))
@@ -141,7 +161,7 @@ def plan(client: GcpClient, project: str, user: str, *, gateway_key_recorded: bo
         for m in members:
             if m not in have:
                 add(Step("grant fine-grained reader", f"{cls}: {FGR} -> {m}", None))
-    have_dp = client.data_policies()
+    have_dp = read(DATAPOLICY_API, client.data_policies, set())
     for dp in fill(spec("data_policies"), project, user):
         if dp["data_policy_id"] not in have_dp:
             add(Step("create data masking policy", f"{dp['data_policy_id']} ({dp['predefined_expression']} on {dp['policy_tag']}; grantees {', '.join(dp['grantees'])})", None))
@@ -152,11 +172,23 @@ def plan(client: GcpClient, project: str, user: str, *, gateway_key_recorded: bo
 
 
 def apply(client: GcpClient, project: str, user: str, *, gateway_key_recorded: bool) -> SetupResult:
-    """Executes the plan in order; taxonomy, tags, tag IAM, data policies and the key need results of earlier calls."""
+    """Executes the plan in order; taxonomy, tags, tag IAM, data policies and the key need results of earlier calls.
+    Missing APIs are enabled first (the client waits until they answer), then the plan is made again from real reads."""
     result = plan(client, project, user, gateway_key_recorded=gateway_key_recorded)
-    for s in result.steps:
+    done: list[Step] = []
+    if result.steps and result.steps[0].action == "enable apis":
+        result.steps[0].run()
+        done = result.steps[:1]
+        result = plan(client, project, user, gateway_key_recorded=gateway_key_recorded)  # real reads now that every API answers
+        result.steps = done + [s for s in result.steps if s.action != "enable apis"]
+    for s in result.steps[len(done):]:
         if s.run is not None:
             s.run()
+    return _finish(client, project, user, result, gateway_key_recorded=gateway_key_recorded)
+
+
+def _finish(client: GcpClient, project: str, user: str, result: SetupResult, *, gateway_key_recorded: bool) -> SetupResult:
+    """Taxonomy, policy tags, tag IAM, data policies and the gateway key (each needs a resource name created above)."""
     tax_spec = spec("taxonomy")
     tax = client.taxonomy(tax_spec["display_name"]) or client.create_taxonomy(tax_spec)
     tags = dict(tax.get("tags", {}))

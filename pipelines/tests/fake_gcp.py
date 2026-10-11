@@ -5,8 +5,45 @@ from __future__ import annotations
 from peoplevault.setup.gcp import fill, spec
 
 
+class ServiceDisabled(Exception):
+    """What Google answers for a call through an API that is off: 403 PERMISSION_DENIED, reason SERVICE_DISABLED."""
+
+
+class NotFound(Exception):
+    """404 for a resource that does not exist (for example the IAM policy of a service account not yet created)."""
+
+
 class FakeGcp:
-    def __init__(self, project: str = "pv-test", user: str = "owner@example.test", complete: bool = False):
+    """`strict=True` behaves like the real project on 2026-10-11 (read-only check of master-magnet-444903-u4): a read
+    or write through an API that is not enabled raises ServiceDisabled, and the IAM policy of a missing service account
+    raises NotFound. The default is lenient (every read finds what exists)."""
+
+    API_OF = {"service_accounts": "iam.googleapis.com", "create_service_account": "iam.googleapis.com", "custom_roles": "iam.googleapis.com",
+              "create_custom_role": "iam.googleapis.com", "sa_bindings": "iam.googleapis.com", "add_sa_binding": "iam.googleapis.com", "create_sa_key": "iam.googleapis.com",
+              "project_bindings": "cloudresourcemanager.googleapis.com", "add_project_bindings": "cloudresourcemanager.googleapis.com",
+              "datasets": "bigquery.googleapis.com", "create_dataset": "bigquery.googleapis.com", "set_time_travel": "bigquery.googleapis.com", "add_dataset_access": "bigquery.googleapis.com",
+              "taxonomy": "datacatalog.googleapis.com", "create_taxonomy": "datacatalog.googleapis.com", "create_policy_tag": "datacatalog.googleapis.com",
+              "taxonomy_bindings": "datacatalog.googleapis.com", "add_taxonomy_binding": "datacatalog.googleapis.com", "tag_readers": "datacatalog.googleapis.com",
+              "add_tag_reader": "datacatalog.googleapis.com", "data_policies": "bigquerydatapolicy.googleapis.com", "create_data_policy": "bigquerydatapolicy.googleapis.com"}
+
+    def __getattribute__(self, name):
+        attr = object.__getattribute__(self, name)
+        api = FakeGcp.API_OF.get(name)
+        if api is None or not object.__getattribute__(self, "strict"):
+            return attr
+
+        def guarded(*args, **kwargs):
+            if api not in object.__getattribute__(self, "apis"):
+                object.__getattribute__(self, "calls").append(f"refused:{name}")
+                raise ServiceDisabled(f"403 {api} has not been used in project or it is disabled (SERVICE_DISABLED)")
+            if name in ("sa_bindings", "add_sa_binding") and args[0].split("@")[0] not in object.__getattribute__(self, "sas"):
+                raise NotFound(f"404 service account {args[0]} does not exist")
+            return attr(*args, **kwargs)
+
+        return guarded
+
+    def __init__(self, project: str = "pv-test", user: str = "owner@example.test", complete: bool = False, strict: bool = False, apis: set[str] | None = None):
+        self.strict = strict
         self.project, self.user = project, user
         self.apis: set[str] = set()
         self.sas: set[str] = set()
@@ -21,6 +58,8 @@ class FakeGcp:
         self.calls: list[str] = []
         if complete:
             self._complete()
+        if apis is not None:
+            self.apis = set(apis)
 
     def _complete(self):
         iam = fill(spec("iam_bindings"), self.project, self.user)

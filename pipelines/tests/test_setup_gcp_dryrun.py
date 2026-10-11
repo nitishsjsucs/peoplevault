@@ -47,3 +47,35 @@ def test_the_executor_reads_the_taxonomy_through_a_resource_level_grant():
     fake.taxb = set()
     lines = _lines(plan(fake, "pv-test", "owner@example.test", gateway_key_recorded=True).steps)
     assert lines == ["grant taxonomy role: peoplevault: roles/datacatalog.viewer -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com"]
+
+
+# The shared project on 2026-10-11 (read-only check): BigQuery and the data policy API on; IAM, IAM credentials, Cloud
+# Resource Manager and Data Catalog off, and every read through them answered 403 SERVICE_DISABLED.
+REAL_ON = {"bigquery.googleapis.com", "bigquerydatapolicy.googleapis.com"}
+
+
+def test_plan_reads_nothing_through_a_disabled_api():
+    fake = FakeGcp(strict=True, apis=REAL_ON)
+    got = _lines(plan(fake, "pv-test", "owner@example.test", gateway_key_recorded=False).steps)
+    assert not [c for c in fake.calls if c.startswith("refused:")]
+    assert got[0] == "enable apis: cloudresourcemanager.googleapis.com datacatalog.googleapis.com iam.googleapis.com iamcredentials.googleapis.com"
+    # behind APIs that were never on nothing can exist, so every create step is planned, exactly as for an empty project
+    assert got[1:] == GOLDEN.read_text().splitlines()[1:]
+
+
+def test_apply_enables_the_apis_first_then_plans_again_from_real_reads():
+    fake = FakeGcp(strict=True, apis=REAL_ON)
+    res = apply(fake, "pv-test", "owner@example.test", gateway_key_recorded=False)
+    assert fake.calls[0] == "enable_apis" and fake.calls.count("enable_apis") == 1
+    assert not [c for c in fake.calls if c.startswith("refused:")]
+    assert res.steps[0].action == "enable apis"
+    assert plan(fake, "pv-test", "owner@example.test", gateway_key_recorded=True).steps == []
+
+
+def test_service_account_policies_are_not_read_before_the_accounts_exist():
+    # every API on, no service account yet: reading a missing account's IAM policy would be a 404
+    fake = FakeGcp(strict=True, apis=set(FakeGcp(complete=True).apis))
+    lines = _lines(plan(fake, "pv-test", "owner@example.test", gateway_key_recorded=False).steps)
+    assert sum(1 for x in lines if x.startswith("add service account iam binding")) == 11
+    apply(fake, "pv-test", "owner@example.test", gateway_key_recorded=False)
+    assert plan(fake, "pv-test", "owner@example.test", gateway_key_recorded=True).steps == []

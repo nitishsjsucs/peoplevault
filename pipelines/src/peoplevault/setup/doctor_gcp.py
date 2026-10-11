@@ -3,7 +3,8 @@
 One line per check, ok / warn / missing, and for every non-ok line the exact command or console step that fixes it.
 gcloud is called without a shell and its output stays in memory (`print-access-token` output is never printed). The
 BigQuery and Basin Catalog lines go through an injectable `Probes` object, so tests drive every branch with fakes.
-Status: written; the live probes are not yet executed against Google Cloud.
+Status: the gcloud lines and the setup-state line ran read-only against the shared project on 2026-10-11; the BigQuery
+data probes wait for the setup steps, so they have not run against Google Cloud yet.
 """
 
 from __future__ import annotations
@@ -23,7 +24,11 @@ B = "BigQuery objects"
 C = "Cloudflare resources"
 ADC_PATH = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
 PROBE_DATASET = "peoplevault_authz_probe"
-REQUIRED_APIS = ["bigquery.googleapis.com", "datacatalog.googleapis.com", "bigquerydatapolicy.googleapis.com", "iamcredentials.googleapis.com", "iam.googleapis.com"]
+
+
+def required_apis() -> list[str]:
+    """The APIs `pv setup gcp` enables (infra/bigquery/iam_bindings.json, generated from the policy)."""
+    return list(json.loads((config.REPO_ROOT / "infra" / "bigquery" / "iam_bindings.json").read_text())["spec"]["apis"])
 
 Runner = Callable[[list[str]], tuple[int, str]]
 
@@ -91,25 +96,39 @@ def gcloud_checks(run: Runner, env: dict[str, str], adc_path: Path = ADC_PATH) -
     adc = code == 0
     out.append(ok(G, "application default credentials", "available") if adc else missing(G, "application default credentials", "none", "gcloud auth application-default login"))
     project = env.get("PV_GCP_PROJECT")
+    code, text = run(["gcloud", "config", "get-value", "project"])
+    current = text.strip() if code == 0 else ""
     if not project:
-        out.append(missing(G, "project", "PV_GCP_PROJECT not set", "add PV_GCP_PROJECT=<PROJECT_ID> to .secrets/prod.env (docs/PRODUCTION.md step 10)"))
+        value = current or "<PROJECT_ID>"
+        out.append(missing(G, "project", "PV_GCP_PROJECT not set", f"add PV_GCP_PROJECT={value} to .secrets/prod.env"
+                           + (" (gcloud's current project; " if current else " (") + "docs/PRODUCTION.md step 10 names the shared project)"))
         return out, False
     quota = _json(adc_path.read_text(), {}).get("quota_project_id") if adc_path.exists() else None
     out.append(ok(G, "ADC quota project", project) if quota == project else
                missing(G, "ADC quota project", f"{quota or 'none'} (want {project})", f"gcloud auth application-default set-quota-project {project}"))
-    code, text = run(["gcloud", "config", "get-value", "project"])
-    current = text.strip() if code == 0 else ""
     out.append(ok(G, "gcloud project", project) if current == project else warn(G, "gcloud project", f"{current or 'unset'} (want {project})", f"gcloud config set project {project}"))
     code, text = run(["gcloud", "billing", "projects", "describe", project, "--format=json"])
-    billing = code == 0 and _json(text, {}).get("billingEnabled") is True
-    out.append(ok(G, "billing", "enabled") if billing else
-               missing(G, "billing", "not enabled or not readable", f"gcloud billing projects link {project} --billing-account=<BILLING_ACCOUNT_ID> (docs/PRODUCTION.md step 11)"))
+    info = _json(text, {}) if code == 0 else {}
+    account = str(info.get("billingAccountName") or "").removeprefix("billingAccounts/")
+    if info.get("billingEnabled") is True:
+        out.append(ok(G, "billing", "enabled"))
+    elif account:
+        # the project names a billing account but billing is off: the account is closed or the link was disabled
+        out.append(missing(G, "billing", f"not enabled (the project names billing account {account})",
+                           f"check that billing account {account} is open, then gcloud billing projects link {project} --billing-account={account} (docs/PRODUCTION.md step 11)"))
+    else:
+        out.append(missing(G, "billing", "not enabled or not readable", f"gcloud billing projects link {project} --billing-account=<BILLING_ACCOUNT_ID> (docs/PRODUCTION.md step 11)"))
     code, text = run(["gcloud", "services", "list", "--enabled", "--project", project, "--format=json"])
     enabled = {s.get("config", {}).get("name") for s in _json(text, [])} if code == 0 else set()
-    absent = [a for a in REQUIRED_APIS if a not in enabled]
-    out.append(ok(G, "APIs", f"{len(REQUIRED_APIS)} of {len(REQUIRED_APIS)} enabled") if not absent else
-               missing(G, "APIs", f"not enabled: {', '.join(absent)}", "gcloud services enable " + " ".join(REQUIRED_APIS)))
+    apis = required_apis()
+    absent = [a for a in apis if a not in enabled]
+    # `pv setup gcp` enables them itself (setup:prod does not stop on this line); the command is for doing it by hand
+    out.append(ok(G, "APIs", f"{len(apis)} of {len(apis)} enabled") if not absent else
+               missing(G, "APIs", f"not enabled: {', '.join(absent)}", "npm run setup:prod (pv setup gcp enables them), or gcloud services enable " + " ".join(absent)))
     return out, adc and bool(active)
+
+
+DATA_CHECKS = "impersonation, protected tables, probe dataset, data loaded"
 
 
 def bigquery_checks(probes: Probes, project: str, expected: dict[str, int], purpose_sas: list[str]) -> list[Check]:
@@ -119,7 +138,12 @@ def bigquery_checks(probes: Probes, project: str, expected: dict[str, int], purp
         out.append(ok(B, "service accounts, IAM, datasets, taxonomy, tags, data policies", "nothing left to create") if not steps else
                    missing(B, "service accounts, IAM, datasets, taxonomy, tags, data policies", f"{len(steps)} setup step(s) outstanding, first: {steps[0]}", "npm run setup:prod"))
     except Exception as e:  # noqa: BLE001
+        steps = None
         out.append(missing(B, "setup state", f"could not read ({type(e).__name__})", "npm run setup:prod"))
+    if steps is None or steps:
+        # the identities, datasets and tags these checks use come from the setup steps above
+        out.append(missing(B, "BigQuery data checks", f"skipped until the setup steps above are done: {DATA_CHECKS}", "npm run setup:prod, then npm run doctor -- --prod"))
+        return out
     failed = []
     for sa in [f"peoplevault-executor@{project}.iam.gserviceaccount.com", *purpose_sas]:
         try:

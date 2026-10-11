@@ -86,14 +86,15 @@ export function preflight(s: SetupState, env: Record<string, string>): Missing[]
     ["PV_CF_API_TOKEN", "create the account API token (docs/PRODUCTION.md step 7) and add it to .secrets/prod.env"],
     ["PV_R2_CATALOG_TOKEN", "create the R2 API token (docs/PRODUCTION.md step 8) and add it to .secrets/prod.env"],
     ["PV_GCP_PROJECT", "add PV_GCP_PROJECT=<PROJECT_ID> to .secrets/prod.env (docs/PRODUCTION.md step 10)"],
-    ["PV_ACCESS_ALLOWED_EMAILS", "add the persona sign-in emails to .secrets/prod.env (docs/PRODUCTION.md step 15)"],
-    ["PV_ACCESS_PERSONA_EMAILS", "add email=principalId pairs to .secrets/prod.env (docs/PRODUCTION.md step 15)"],
+    ["PV_ACCESS_ALLOWED_EMAILS", "add the persona sign-in emails to .secrets/prod.env (docs/PRODUCTION.md step 16)"],
+    ["PV_ACCESS_PERSONA_EMAILS", "add email=principalId pairs to .secrets/prod.env (docs/PRODUCTION.md step 16)"],
   ] as const)
     if (!env[name]) out.push({ item: name, fix });
   if (env.PV_CF_API_TOKEN && !s.teamDomain) out.push({ item: "Zero Trust organization", fix: "Zero Trust onboarding in the dashboard (docs/PRODUCTION.md steps 5 and 6)" });
   if (env.PV_CF_API_TOKEN && !s.subdomain && !env.PV_WORKERS_SUBDOMAIN)
     out.push({ item: "workers.dev subdomain", fix: `https://dash.cloudflare.com/${acct(s)}/workers/onboarding, or set PV_WORKERS_SUBDOMAIN in .secrets/prod.env` });
-  for (const g of s.gcpMissing) out.push({ item: `Google Cloud: ${g.name}`, fix: g.fix });
+  // the APIs line does not stop setup: `pv setup gcp` enables the missing APIs itself (SPEC.md section 30.3.8)
+  for (const g of s.gcpMissing) if (g.name !== "APIs") out.push({ item: `Google Cloud: ${g.name}`, fix: g.fix });
   // shared Cloudflare account (SPEC.md section 30.3.9): never adopt a same-named resource this repo has no record of
   for (const c of nameConflicts({ ...s, aiGateway: s.aiGateway !== null }, s.resources)) out.push({ item: `conflict: ${c.item}`, fix: c.fix });
   return out;

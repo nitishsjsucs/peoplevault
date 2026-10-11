@@ -96,6 +96,11 @@ describe("setup:prod --dry-run", () => {
     expect(text).toContain("rotate");
   });
 
+  it("preflight stops on missing Google Cloud prerequisites except the APIs, which pv setup gcp enables itself", () => {
+    const s = { ...complete(), gcpMissing: [{ name: "billing", fix: "link billing" }, { name: "APIs", fix: "npm run setup:prod (pv setup gcp enables them)" }] };
+    expect(preflight(s, completeEnv()).map((m) => m.item)).toEqual(["Google Cloud: billing"]);
+  });
+
   it("complete account: nothing to create (migrations re-apply as a no-op)", () => {
     const s = complete();
     const env = completeEnv();

@@ -1,14 +1,49 @@
-"""Real Google Cloud client for `pv setup gcp` (user ADC with a quota project). Status: written, not yet executed
-against Google Cloud; its calls follow the REST and client-library references cited in SPEC.md section 27."""
+"""Real Google Cloud client for `pv setup gcp` (user ADC with a quota project). Status: its reads ran read-only against
+the shared project on 2026-10-11 (the doctor and the dry run); its writes are not yet executed. Its calls follow the
+REST and client-library references cited in SPEC.md section 27."""
 
 from __future__ import annotations
 
 import base64
 import json
+import time
+from collections.abc import Callable
 
 IAM = "https://iam.googleapis.com/v1"
 CRM = "https://cloudresourcemanager.googleapis.com/v1"
 SU = "https://serviceusage.googleapis.com/v1"
+# project IAM policies are read and written at version 3, so conditional bindings of the other repos sharing the
+# project survive the read-modify-write (a version 1 read cannot be written back when the policy has conditions)
+POLICY_VERSION = 3
+
+
+def is_service_disabled(e: BaseException) -> bool:
+    """Google's answer for a call through an API that is not enabled (or not yet propagated) on the project: 403 with
+    reason SERVICE_DISABLED (REST) or "... has not been used in project ... or it is disabled" (gRPC clients)."""
+    response = getattr(e, "response", None)
+    text = f"{e} {getattr(response, 'text', '') or ''}"
+    return "SERVICE_DISABLED" in text or "has not been used in project" in text
+
+
+def wait_for(ready: Callable[[], bool], what: str, *, timeout_s: float = 300, interval_s: float = 10,
+             sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
+    """Polls `ready` until it returns True; TimeoutError after `timeout_s` (enabling an API takes up to a few minutes)."""
+    deadline = clock() + timeout_s
+    while not ready():
+        if clock() >= deadline:
+            raise TimeoutError(f"timed out waiting for {what}; run the setup again in a few minutes")
+        sleep(interval_s)
+
+
+def answers(read: Callable[[], object]) -> bool:
+    """True when the read succeeds, False while its API still answers SERVICE_DISABLED; other errors propagate."""
+    try:
+        read()
+        return True
+    except Exception as e:  # noqa: BLE001
+        if is_service_disabled(e):
+            return False
+        raise
 
 
 class RealGcpClient:
@@ -46,7 +81,23 @@ class RealGcpClient:
                 return out
 
     def enable_apis(self, apis: list[str]) -> None:
-        self._post(f"{SU}/projects/{self.project}/services:batchEnable", {"serviceIds": apis})
+        """batchEnable, then wait for its operation and until each API with a read used by the plan answers."""
+        op = self._post(f"{SU}/projects/{self.project}/services:batchEnable", {"serviceIds": apis})
+
+        def op_done() -> bool:
+            nonlocal op
+            if not op.get("done") and op.get("name"):
+                op = self._get(f"{SU}/{op['name']}")
+            if op.get("error"):
+                raise RuntimeError(f"enabling {', '.join(apis)} failed: {op['error'].get('message', 'unknown error')}")
+            return bool(op.get("done")) or not op.get("name")
+
+        wait_for(op_done, f"Service Usage to enable {', '.join(apis)}")
+        probes = {"iam.googleapis.com": self.service_accounts, "cloudresourcemanager.googleapis.com": self.project_bindings,
+                  "datacatalog.googleapis.com": lambda: self.taxonomy("peoplevault"), "bigquerydatapolicy.googleapis.com": self.data_policies}
+        for api in apis:
+            if api in probes:
+                wait_for(lambda read=probes[api]: answers(read), f"{api} to answer after enabling")
 
     # ---- service accounts and roles -----------------------------------------------------------------------------
     def service_accounts(self) -> set[str]:
@@ -64,19 +115,25 @@ class RealGcpClient:
         self._post(f"{IAM}/projects/{self.project}/roles", {"roleId": role["role_id"], "role": {"title": role["title"], "description": role["description"],
                                                                                                 "includedPermissions": role["permissions"], "stage": role["stage"]}})
 
+    def _project_policy(self) -> dict:
+        return self._post(f"{CRM}/projects/{self.project}:getIamPolicy", {"options": {"requestedPolicyVersion": POLICY_VERSION}})
+
     def project_bindings(self) -> set[tuple[str, str]]:
-        policy = self._post(f"{CRM}/projects/{self.project}:getIamPolicy", {})
-        return {(b["role"], m) for b in policy.get("bindings", []) for m in b.get("members", [])}
+        """Unconditional project bindings (this repo never adds a conditional one)."""
+        policy = self._project_policy()
+        return {(b["role"], m) for b in policy.get("bindings", []) if "condition" not in b for m in b.get("members", [])}
 
     def add_project_bindings(self, bindings: list[tuple[str, str]]) -> None:
-        policy = self._post(f"{CRM}/projects/{self.project}:getIamPolicy", {})
-        by_role = {b["role"]: b for b in policy.setdefault("bindings", [])}
+        """Read-modify-write with the policy's etag (a concurrent change by another repo makes the write fail, not lose it)."""
+        policy = self._project_policy()
+        by_role = {b["role"]: b for b in policy.setdefault("bindings", []) if "condition" not in b}
         for role, member in bindings:
             b = by_role.setdefault(role, {"role": role, "members": []})
             if b not in policy["bindings"]:
                 policy["bindings"].append(b)
             if member not in b["members"]:
                 b["members"].append(member)
+        policy["version"] = POLICY_VERSION
         self._post(f"{CRM}/projects/{self.project}:setIamPolicy", {"policy": policy})
 
     def sa_bindings(self, sa_email: str) -> set[tuple[str, str]]:

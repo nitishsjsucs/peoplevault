@@ -6,7 +6,8 @@
       "datacatalog.googleapis.com",
       "bigquerydatapolicy.googleapis.com",
       "iamcredentials.googleapis.com",
-      "iam.googleapis.com"
+      "iam.googleapis.com",
+      "cloudresourcemanager.googleapis.com"
     ],
     "project": [
       {
