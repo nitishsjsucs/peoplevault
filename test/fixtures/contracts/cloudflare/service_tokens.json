@@ -1,0 +1,2 @@
+{ "_note": "Constructed from the Cloudflare API reference on 2026-10-10 (no production response captured yet); replace with a captured response after the first production run.", "_source": "https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/service_tokens/methods/list/",
+  "status": 200, "body": { "success": true, "errors": [], "messages": [], "result": [ { "id": "st-1", "name": "pv-executor", "client_id": "exec.access" }, { "id": "st-2", "name": "pv-persona-hr", "client_id": "hr.access" } ] } }

@@ -1,0 +1,13 @@
+{
+  "_note": "Body of POST /client/v4/accounts/{account_id}/access/apps, rendered by `npm run setup:prod` (keys starting with _ are dropped). Field names from the API reference (applications create, 2026-10-10): `type` and `domain` are required for self_hosted; a `worker` destination protects every hostname of the Worker (workers.dev, routes, previews) and takes the Worker's immutable id from GET /accounts/{account_id}/workers/workers (field `id`), which the reference describes only as 'the ID of the Cloudflare Worker'. Inline policies: allow-owner (decision allow, one email rule per address) and service-tokens (decision non_identity, Service Auth, one rule per service token id). Unverified until the first production run: whether `session_duration` and inline `policies` are accepted alongside `destinations` exactly as written.",
+  "type": "self_hosted",
+  "name": "PeopleVault",
+  "domain": "peoplevault.__WORKERS_SUBDOMAIN__.workers.dev",
+  "destinations": [{ "type": "worker", "worker_id": "__WORKER_ID__" }],
+  "session_duration": "24h",
+  "app_launcher_visible": false,
+  "policies": [
+    { "name": "allow-owner", "decision": "allow", "precedence": 1, "include": "__EMAIL_RULES__" },
+    { "name": "service-tokens", "decision": "non_identity", "precedence": 2, "include": "__SERVICE_TOKEN_RULES__" }
+  ]
+}

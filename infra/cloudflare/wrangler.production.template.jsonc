@@ -1,0 +1,58 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  // Production template. `npm run setup:prod` renders it into wrangler.production.jsonc (gitignored, same directory,
+  // so the ../../ paths stay valid: wrangler resolves main and migrations_dir relative to this file) with the ids it
+  // records in .secrets/prod-resources.json. `npm run deploy:check` dry-runs this template with placeholder ids.
+  "name": "peoplevault",
+  "main": "../../src/worker/index.ts",
+  "workers_dev": true,
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Invocation logs would record the method and URL of every request for 7 days (Workers Paid); console logs carry
+  // no identifiers (test/worker/logging.test.ts).
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  // Production secrets only: every listed name becomes an inherit binding at deploy time, uploaded by
+  // `wrangler deploy --secrets-file .secrets/worker-secrets.env`.
+  "secrets": { "required": ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"] },
+  // Workflow steps rewrite R2 objects and probe whole stores: up to 5 minutes of CPU per step on Workers Paid.
+  "limits": { "cpu_ms": 300000 },
+  "workflows": [
+    { "name": "pv-subject-deletion", "binding": "DELETION", "class_name": "SubjectDeletionWorkflow" },
+    { "name": "pv-retention-sweep", "binding": "RETENTION", "class_name": "RetentionSweepWorkflow" }
+  ],
+  "queues": {
+    "producers": [{ "binding": "SWEEP_QUEUE", "queue": "pv-retention-sweep" }],
+    "consumers": [
+      { "queue": "pv-retention-sweep", "max_batch_size": 25, "max_batch_timeout": 2, "max_retries": 3, "dead_letter_queue": "pv-retention-dlq" }
+    ]
+  },
+  "d1_databases": [{ "binding": "DB", "database_name": "pv-control", "database_id": "__D1_ID__", "migrations_dir": "../../migrations" }],
+  "r2_buckets": [
+    { "binding": "EXPORTS", "bucket_name": "pv-source-exports" },
+    { "binding": "DERIVED", "bucket_name": "pv-derived" }
+  ],
+  "kv_namespaces": [{ "binding": "CACHE", "id": "__KV_ID__" }],
+  "triggers": { "crons": ["0 3 * * *"] },
+  "vars": {
+    "PV_ENV": "production",
+    "AUTH_MODE": "access",
+    "WAREHOUSE_MODE": "bigquery",
+    "AUDIT_STREAM_MODE": "disabled",
+    "KV_PROPAGATION_WAIT": "70 seconds",
+    "EXECUTOR_WAIT_TIMEOUT": "24 hours",
+    "RETENTION_AS_OF": "",
+    "DEV_ACCESS_ISSUER": "",
+    "DEV_ACCESS_AUD": "",
+    "WAREHOUSE_SHIM_URL": "",
+    "ACCESS_TEAM_DOMAIN": "__ACCESS_TEAM_DOMAIN__",
+    "ACCESS_AUD": "__ACCESS_AUD__",
+    "GCP_PROJECT_ID": "__GCP_PROJECT_ID__",
+    "BQ_LOCATION": "US",
+    "BQ_GATEWAY_SA_EMAIL": "pv-gateway@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_EMPLOYEE_RELATIONS": "pv-er-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_TEAM_MANAGEMENT": "pv-tm-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_WORKFORCE_ANALYTICS": "pv-wa-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_PRIVACY_COMPLIANCE": "pv-pc-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_LEGAL_HOLD_MANAGEMENT": "pv-lh-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com"
+  }
+}

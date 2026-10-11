@@ -21,7 +21,8 @@ def main(log_level: str) -> None:
 
 @main.command()
 @click.option("--out", "out_dir", default=None, help="output directory (default data/generated)")
-@click.option("--master-key-b64", default=None, help="pseudonym master key (default: PV_PSEUDONYM_MASTER_KEY from .dev.vars)")
+@click.option("--master-key-b64", default=None, envvar="PV_SYNTH_MASTER_KEY_B64", show_envvar=True,
+              help="pseudonym master key (default: PV_PSEUDONYM_MASTER_KEY from .dev.vars); seed:prod passes the production key in the environment")
 @click.option("--write-expected", is_flag=True, help="rewrite the committed data/expected_counts.json")
 def synth(out_dir: str | None, master_key_b64: str | None, write_expected: bool) -> None:
     """Deterministic synthetic workforce generator."""
@@ -52,10 +53,13 @@ def synth(out_dir: str | None, master_key_b64: str | None, write_expected: bool)
 def load(target: str, from_r2: bool) -> None:
     """Raw tables, identity xref, 13-step snapshot replay, dbt build, Iceberg employee_monthly."""
     if target == "prod":
-        raise click.ClickException("pv load --target prod is not implemented yet; it lands with the production commit (see PROGRESS.md)")
-    from peoplevault.load.run import load_local
+        from peoplevault.load.prod import load_prod
 
-    result = load_local(from_r2=from_r2)
+        result = load_prod(from_r2=from_r2)
+    else:
+        from peoplevault.load.run import load_local
+
+        result = load_local(from_r2=from_r2)
     raw = result["raw"]
     click.echo(f"load: {raw['objects_loaded']} objects, rows {raw['rows_loaded']}, xref {result['identity_xref']}, "
                f"snapshot replays {result['snapshot_replays']}, lake {result['lake']}")
@@ -114,10 +118,19 @@ def executor() -> None:
 @click.option("--once", is_flag=True, help="process one claimed batch and exit")
 @click.option("--drain", is_flag=True, help="process until no task is pending, then exit")
 def executor_run(target: str, once: bool, drain: bool) -> None:
-    if target == "prod":
-        raise click.ClickException("the production executor context lands with the production commit (see PROGRESS.md)")
-    from peoplevault.executor.local import local_api, local_context
     from peoplevault.executor.loop import run_loop
+
+    if target == "prod":
+        from peoplevault.executor.prod import prod_api, prod_context
+
+        ctx = prod_context()
+        try:
+            n = run_loop(prod_api(), ctx, once=once, drain=drain)
+        finally:
+            ctx.wh.close()
+        click.echo(f"executor: {n} task(s) completed")
+        return
+    from peoplevault.executor.local import local_api, local_context
     from peoplevault.warehouse.duck import DuckWarehouse
 
     wh = DuckWarehouse.open()
@@ -138,7 +151,8 @@ def authz() -> None:
 @click.option("--write-results", is_flag=True, help="write evals/results/authz-local-<date>.json")
 @click.option("--pdp-report", type=click.Path(exists=True, dir_okay=False), default=None, help="vitest JSON report of the 100 pdp cases")
 @click.option("--ceiling-probes", is_flag=True, help="BigQuery only: the 37 ceiling probes (section 15.8)")
-def authz_warehouse(target: str, write_results: bool, pdp_report: str | None, ceiling_probes: bool) -> None:
+@click.option("--cleanup", is_flag=True, help="BigQuery only: remove a leftover pv_authz_probe dataset and its pv_core grants, then exit")
+def authz_warehouse(target: str, write_results: bool, pdp_report: str | None, ceiling_probes: bool, cleanup: bool) -> None:
     """Runs the 48 warehouse-layer cases (DuckDB from world.yaml locally; BigQuery as each purpose SA in production)."""
     import tempfile
     from pathlib import Path
@@ -146,9 +160,10 @@ def authz_warehouse(target: str, write_results: bool, pdp_report: str | None, ce
     from peoplevault.authz.warehouse_runner import run_all
 
     if target == "bigquery":
-        raise click.ClickException("the BigQuery authorization suite lands with the production commit (see PROGRESS.md)")
-    if ceiling_probes:
-        raise click.ClickException("ceiling probes run only against BigQuery (--target bigquery)")
+        _authz_bigquery(write_results, ceiling_probes, cleanup)
+        return
+    if ceiling_probes or cleanup:
+        raise click.ClickException("--ceiling-probes and --cleanup run only against BigQuery (--target bigquery)")
     from peoplevault.fixtures.world import build_warehouse, load_world
     from peoplevault.shim.queries import run_named
     from peoplevault.warehouse.duck import DuckWarehouse
@@ -173,6 +188,46 @@ def authz_warehouse(target: str, write_results: bool, pdp_report: str | None, ce
         raise SystemExit(1)
 
 
+def _prod_project() -> str:
+    from peoplevault import config
+
+    project = config.prod_env().get("PV_GCP_PROJECT")
+    if not project:
+        raise click.ClickException("PV_GCP_PROJECT missing from .secrets/prod.env (docs/PRODUCTION.md)")
+    return project
+
+
+def _authz_bigquery(write_results: bool, ceiling_probes: bool, cleanup: bool) -> None:
+    """The 48 cases as each purpose's service account and, with --ceiling-probes, the 37 probes (written, not yet executed)."""
+    from peoplevault.authz import bq_ceiling
+    from peoplevault.authz.warehouse_runner import run_all
+
+    project = _prod_project()
+    if cleanup:
+        from google.cloud import bigquery
+
+        from peoplevault.warehouse.bq import executor_credentials
+
+        bq_ceiling.cleanup_probe_dataset(bigquery.Client(project=project, credentials=executor_credentials(project), location="US"), project)
+        click.echo(f"removed {bq_ceiling.PROBE_DATASET} and its pv_core view grants (if present)")
+        return
+    report = run_all(bq_ceiling.purpose_runner(project))
+    click.echo(f"warehouse layer (BigQuery): {report.passed}/{len(report.results)} passed {report.by_category()}")
+    for r in report.results:
+        if not r.passed:
+            click.echo(f"FAIL {r.id}: {r.detail}", err=True)
+    probes = bq_ceiling.run_probes(project) if ceiling_probes else None
+    if probes is not None:
+        click.echo(f"ceiling probes: {probes['passed']}/{probes['total']} passed {probes['by_kind']}")
+    if write_results:
+        from peoplevault.authz.results import summarize_bigquery, write_bigquery
+
+        cmd = "pv authz warehouse --target bigquery --write-results" + (" --ceiling-probes" if ceiling_probes else "")
+        click.echo(f"wrote {write_bigquery(summarize_bigquery(report, probes, cmd))}")
+    if report.passed != len(report.results) or (probes is not None and probes["passed"] != probes["total"]):
+        raise SystemExit(1)
+
+
 @main.group(name="eval")
 def eval_group() -> None:
     """Evaluations."""
@@ -184,7 +239,7 @@ def eval_group() -> None:
 def eval_deletion(profile: str, no_seed: bool) -> None:
     """Deletion eval with the independent oracle and fault injection (writes evals/results/deletion-<profile>-<date>.*)."""
     if profile == "prod":
-        raise click.ClickException("the production eval profile lands with the production commit (see PROGRESS.md)")
+        raise click.ClickException("the production eval profile is not built yet (PROGRESS.md, Remaining); production paths are verified with `npm run doctor -- --prod` and `pv authz warehouse --target bigquery --ceiling-probes`")
     from peoplevault.evals.deletion import run
 
     result = run(profile, no_seed=no_seed)
@@ -218,10 +273,16 @@ def lake() -> None:
 @lake.command("init")
 @click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
 def lake_init(target: str) -> None:
+    """Creates hr_history.employee_monthly; for prod, first proves append, delete and overwrite on a scratch table."""
     from peoplevault.lake.catalog import open_catalog
     from peoplevault.load.lake import ensure_table
 
-    tbl = ensure_table(open_catalog(target))
+    cat = open_catalog(target)
+    if target == "prod":
+        from peoplevault.lake.selftest import run_selftest
+
+        click.echo(f"lake self-test: {run_selftest(cat)['selftest']}")
+    tbl = ensure_table(cat)
     click.echo(f"lake: {tbl.name()} ready ({len(tbl.snapshots())} snapshots)")
 
 
@@ -249,14 +310,83 @@ def residuals() -> None:
 @click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
 def residuals_check(target: str) -> None:
     """Token-free checks of pending residuals; posts state changes to the Worker (executor principal)."""
-    if target == "prod":
-        raise click.ClickException("the production residual check lands with the production commit (see PROGRESS.md)")
-    from peoplevault.executor.local import local_api
     from peoplevault.lake.catalog import open_catalog
+
+    if target == "prod":
+        from peoplevault.executor.prod import prod_api
+        from peoplevault.residuals.check_prod import check_prod
+        from peoplevault.warehouse.bq import BqWarehouse
+
+        wh = BqWarehouse(_prod_project())
+        try:
+            click.echo(f"residuals check (prod): {check_prod(prod_api(), wh, open_catalog('prod'))}")
+        finally:
+            wh.close()
+        return
+    from peoplevault.executor.local import local_api
     from peoplevault.residuals.check import check_local
 
     out = check_local(local_api(), open_catalog("local"))
     click.echo(f"residuals check: {out}")
+
+
+@main.group()
+def setup() -> None:
+    """Production setup steps that run in Python."""
+
+
+@setup.command("gcp")
+@click.option("--dry-run", is_flag=True, help="print the steps that would run; change nothing")
+def setup_gcp(dry_run: bool) -> None:
+    """Idempotent Google Cloud setup (APIs, service accounts, IAM, datasets, taxonomy, tags, data policies, gateway key)."""
+    from peoplevault.setup import gcp
+    from peoplevault.setup.doctor_gcp import _user
+    from peoplevault.setup.gcp_client import RealGcpClient
+
+    project = _prod_project()
+    user = _user()
+    if not user:
+        raise click.ClickException("no active gcloud account; run `gcloud auth login`")
+    client = RealGcpClient(project)
+    recorded = gcp.gateway_key_recorded()
+    if dry_run:
+        res = gcp.plan(client, project, user, gateway_key_recorded=recorded)
+        for step in res.steps:
+            click.echo(step.line())
+        click.echo(f"{len(res.steps)} step(s); nothing changed (dry run)")
+        return
+    try:
+        res = gcp.apply(client, project, user, gateway_key_recorded=recorded)
+    except Exception as e:
+        if "disableServiceAccountKeyCreation" in str(e):
+            raise click.ClickException("organization policy iam.disableServiceAccountKeyCreation blocks the pv-gateway key: use a project outside that "
+                                       "organization or ask for an exception (docs/PRODUCTION.md step 14)") from None
+        raise
+    gcp.record(res.resources)
+    for step in res.steps:
+        click.echo(step.line())
+    click.echo(f"{len(res.steps)} step(s) applied; policy tag names recorded in .secrets/prod-resources.json"
+               + ("; pv-gateway key written to .secrets/worker-secrets.env" if res.resources.get("gateway_key") else ""))
+
+
+@main.group()
+def doctor() -> None:
+    """Checks used by `npm run doctor -- --prod`."""
+
+
+@doctor.command("gcp")
+@click.option("--json", "as_json", is_flag=True, help="print the checks as JSON (merged by scripts/doctor.ts)")
+def doctor_gcp_cmd(as_json: bool) -> None:
+    from peoplevault.setup.doctor_gcp import run_checks, to_json
+
+    checks = run_checks()
+    if as_json:
+        click.echo(to_json(checks))
+    else:
+        for c in checks:
+            click.echo(f"[{c.status}] {c.group} / {c.name}: {c.detail}" + (f"\n      fix: {c.fix}" if c.status != "ok" and c.fix else ""))
+    if any(c.status == "missing" for c in checks):
+        raise SystemExit(1)
 
 
 @main.group()

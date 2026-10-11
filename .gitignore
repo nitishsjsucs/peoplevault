@@ -2,6 +2,7 @@ node_modules/
 .wrangler/
 dist/
 data/generated/
+data/generated-prod/
 pipelines/.data/
 pipelines/.venv/
 .dev.vars

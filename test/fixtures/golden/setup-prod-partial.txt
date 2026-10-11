@@ -1,0 +1,28 @@
+Preflight: ok
+cloudflare: 7 step(s)
+  PUT /client/v4/accounts/acct-0123/workers/subdomain {"subdomain":"nitish-pv"} (asks first)
+  npx wrangler r2 bucket create pv-derived
+  npx wrangler r2 bucket create pv-lake
+  npx wrangler kv namespace create pv-cache (records id)
+  record the D1 and KV ids in .secrets/prod-resources.json
+  npx wrangler queues create pv-retention-dlq
+  npx wrangler basin catalog enable pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE in .secrets/prod.env)
+gcp: 1 step(s)
+  uv run --project pipelines pv setup gcp (idempotent; its own plan: uv run --project pipelines pv setup gcp --dry-run)
+worker: 5 step(s)
+  record PV_BASE_URL=https://peoplevault.nitish-pv.workers.dev in .secrets/prod.env
+  generate PV_PSEUDONYM_MASTER_KEY (32 random bytes) into .secrets/worker-secrets.env, once; copy it to your password manager
+  render infra/cloudflare/wrangler.production.jsonc from the template (D1 id, KV id, ACCESS_TEAM_DOMAIN, ACCESS_AUD = pending-access-application until the Access application exists, GCP_PROJECT_ID)
+  npx wrangler d1 migrations apply pv-control --remote -c infra/cloudflare/wrangler.production.jsonc
+  npm run deploy (npx wrangler deploy -c infra/cloudflare/wrangler.production.jsonc --secrets-file .secrets/worker-secrets.env)
+access: 7 step(s)
+  POST /client/v4/accounts/acct-0123/access/service_tokens/st-1/rotate (secret not recorded; new secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_SECRET_EXECUTOR)
+  POST /client/v4/accounts/acct-0123/access/service_tokens {"name":"pv-persona-hr","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_HR / PV_CF_ACCESS_CLIENT_SECRET_HR)
+  POST /client/v4/accounts/acct-0123/access/service_tokens {"name":"pv-persona-manager","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_MANAGER / PV_CF_ACCESS_CLIENT_SECRET_MANAGER)
+  POST /client/v4/accounts/acct-0123/access/service_tokens {"name":"pv-persona-analyst","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_ANALYST / PV_CF_ACCESS_CLIENT_SECRET_ANALYST)
+  POST /client/v4/accounts/acct-0123/access/service_tokens {"name":"pv-persona-privacy","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_PRIVACY / PV_CF_ACCESS_CLIENT_SECRET_PRIVACY)
+  POST /client/v4/accounts/acct-0123/access/apps (infra/cloudflare/access-app.template.json: worker destination for peoplevault, allow-owner for 4 email(s), service-tokens for 5 tokens)
+  render ACCESS_AUD from the Access application into infra/cloudflare/wrangler.production.jsonc, then npm run deploy
+data: 1 step(s)
+  npm run seed:prod (remote D1 seed and principal mapping, 41 export objects, lake self-test and table, snapshot expiration, pv load --target prod, counts and controls)
+github: P1 (executor.yml secrets), not built yet

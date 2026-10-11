@@ -1,0 +1,79 @@
+enable apis: bigquery.googleapis.com bigquerydatapolicy.googleapis.com datacatalog.googleapis.com iam.googleapis.com iamcredentials.googleapis.com
+create service account: pv-er-reader
+create service account: pv-tm-reader
+create service account: pv-wa-reader
+create service account: pv-pc-reader
+create service account: pv-lh-reader
+create service account: pv-gateway
+create service account: pv-executor
+create custom role: projects/pv-test/roles/pvTimeTravelReader (bigquery.rowAccessPolicies.overrideTimeTravelRestrictions)
+add project iam bindings: roles/bigquery.jobUser -> serviceAccount:pv-er-reader@pv-test.iam.gserviceaccount.com; roles/bigquery.jobUser -> serviceAccount:pv-tm-reader@pv-test.iam.gserviceaccount.com; roles/bigquery.jobUser -> serviceAccount:pv-wa-reader@pv-test.iam.gserviceaccount.com; roles/bigquery.jobUser -> serviceAccount:pv-pc-reader@pv-test.iam.gserviceaccount.com; roles/bigquery.jobUser -> serviceAccount:pv-lh-reader@pv-test.iam.gserviceaccount.com; roles/bigquery.jobUser -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com; roles/bigquery.metadataViewer -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com; roles/bigquery.dataViewer -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com; roles/datacatalog.viewer -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+add service account iam binding: pv-er-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> serviceAccount:pv-gateway@pv-test.iam.gserviceaccount.com
+add service account iam binding: pv-tm-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> serviceAccount:pv-gateway@pv-test.iam.gserviceaccount.com
+add service account iam binding: pv-wa-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> serviceAccount:pv-gateway@pv-test.iam.gserviceaccount.com
+add service account iam binding: pv-pc-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> serviceAccount:pv-gateway@pv-test.iam.gserviceaccount.com
+add service account iam binding: pv-lh-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> serviceAccount:pv-gateway@pv-test.iam.gserviceaccount.com
+add service account iam binding: pv-executor@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> user:owner@example.test
+add service account iam binding: pv-er-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> user:owner@example.test
+add service account iam binding: pv-tm-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> user:owner@example.test
+add service account iam binding: pv-wa-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> user:owner@example.test
+add service account iam binding: pv-pc-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> user:owner@example.test
+add service account iam binding: pv-lh-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> user:owner@example.test
+create dataset: pv-test.pv_raw (US)
+set time travel window: ALTER SCHEMA pv_raw SET OPTIONS (max_time_travel_hours = 48)
+grant dataset access: pv_raw: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+create dataset: pv-test.pv_core (US)
+set time travel window: ALTER SCHEMA pv_core SET OPTIONS (max_time_travel_hours = 48)
+grant dataset access: pv_core: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+create dataset: pv-test.pv_snapshots (US)
+set time travel window: ALTER SCHEMA pv_snapshots SET OPTIONS (max_time_travel_hours = 48)
+grant dataset access: pv_snapshots: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+create dataset: pv-test.pv_restricted (US)
+set time travel window: ALTER SCHEMA pv_restricted SET OPTIONS (max_time_travel_hours = 48)
+grant dataset access: pv_restricted: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+create dataset: pv-test.pv_marts (US)
+set time travel window: ALTER SCHEMA pv_marts SET OPTIONS (max_time_travel_hours = 48)
+grant dataset access: pv_marts: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+create dataset: pv-test.pv_purpose_employee_relations (US)
+grant dataset access: pv_purpose_employee_relations: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant dataset access: pv_purpose_employee_relations: READER -> serviceAccount:pv-er-reader@pv-test.iam.gserviceaccount.com
+create dataset: pv-test.pv_purpose_team_management (US)
+grant dataset access: pv_purpose_team_management: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant dataset access: pv_purpose_team_management: READER -> serviceAccount:pv-tm-reader@pv-test.iam.gserviceaccount.com
+create dataset: pv-test.pv_purpose_workforce_analytics (US)
+grant dataset access: pv_purpose_workforce_analytics: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant dataset access: pv_purpose_workforce_analytics: READER -> serviceAccount:pv-wa-reader@pv-test.iam.gserviceaccount.com
+create dataset: pv-test.pv_purpose_privacy_compliance (US)
+grant dataset access: pv_purpose_privacy_compliance: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant dataset access: pv_purpose_privacy_compliance: READER -> serviceAccount:pv-pc-reader@pv-test.iam.gserviceaccount.com
+create dataset: pv-test.pv_purpose_legal_hold_management (US)
+grant dataset access: pv_purpose_legal_hold_management: OWNER -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant dataset access: pv_purpose_legal_hold_management: READER -> serviceAccount:pv-lh-reader@pv-test.iam.gserviceaccount.com
+grant custom role on dataset: pv_core: projects/pv-test/roles/pvTimeTravelReader -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant custom role on dataset: pv_snapshots: projects/pv-test/roles/pvTimeTravelReader -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant custom role on dataset: pv_marts: projects/pv-test/roles/pvTimeTravelReader -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+create taxonomy: peoplevault in us (fine-grained access control)
+create policy tag: direct_identifier
+create policy tag: date_of_birth
+create policy tag: compensation
+create policy tag: performance
+create policy tag: health_leave
+create policy tag: protected_attribute
+grant fine-grained reader: direct_identifier: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-er-reader@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: direct_identifier: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-tm-reader@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: direct_identifier: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-pc-reader@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: direct_identifier: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-lh-reader@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: direct_identifier: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: date_of_birth: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: compensation: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-er-reader@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: compensation: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: performance: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-er-reader@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: performance: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-tm-reader@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: performance: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: health_leave: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: protected_attribute: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-wa-reader@pv-test.iam.gserviceaccount.com
+grant fine-grained reader: protected_attribute: roles/datacatalog.categoryFineGrainedReader -> serviceAccount:pv-executor@pv-test.iam.gserviceaccount.com
+create data masking policy: pv_date_of_birth_date_year_mask (DATE_YEAR_MASK on date_of_birth; grantees serviceAccount:pv-er-reader@pv-test.iam.gserviceaccount.com, serviceAccount:pv-wa-reader@pv-test.iam.gserviceaccount.com)
+create data masking policy: pv_compensation_always_null (ALWAYS_NULL on compensation; grantees serviceAccount:pv-tm-reader@pv-test.iam.gserviceaccount.com)
+create data masking policy: pv_health_leave_always_null (ALWAYS_NULL on health_leave; grantees serviceAccount:pv-er-reader@pv-test.iam.gserviceaccount.com)
+create service account key: pv-gateway@pv-test.iam.gserviceaccount.com -> .secrets/worker-secrets.env (GCP_GATEWAY_SA_KEY)

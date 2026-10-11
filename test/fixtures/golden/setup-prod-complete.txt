@@ -1,0 +1,9 @@
+Preflight: ok
+cloudflare: nothing to do
+gcp: 1 step(s)
+  uv run --project pipelines pv setup gcp (idempotent; its own plan: uv run --project pipelines pv setup gcp --dry-run)
+worker: 1 step(s)
+  npx wrangler d1 migrations apply pv-control --remote -c infra/cloudflare/wrangler.production.jsonc
+access: nothing to do
+data: nothing to do
+github: P1 (executor.yml secrets), not built yet

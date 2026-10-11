@@ -1,0 +1,44 @@
+Preflight: missing (only you can do these; docs/PRODUCTION.md)
+  [missing] wrangler login
+      fix: npx wrangler login
+  [missing] CLOUDFLARE_ACCOUNT_ID
+      fix: add CLOUDFLARE_ACCOUNT_ID=<id> to .secrets/prod.env
+  [missing] PV_CF_API_TOKEN
+      fix: create the account API token (docs/PRODUCTION.md step 7) and add it to .secrets/prod.env
+  [missing] PV_R2_CATALOG_TOKEN
+      fix: create the R2 API token (docs/PRODUCTION.md step 8) and add it to .secrets/prod.env
+  [missing] PV_GCP_PROJECT
+      fix: add PV_GCP_PROJECT=<PROJECT_ID> to .secrets/prod.env (docs/PRODUCTION.md step 10)
+  [missing] PV_ACCESS_ALLOWED_EMAILS
+      fix: add the persona sign-in emails to .secrets/prod.env (docs/PRODUCTION.md step 15)
+  [missing] PV_ACCESS_PERSONA_EMAILS
+      fix: add email=principalId pairs to .secrets/prod.env (docs/PRODUCTION.md step 15)
+  [missing] Google Cloud: gcloud
+      fix: brew install --cask gcloud-cli
+cloudflare: 8 step(s)
+  npx wrangler r2 bucket create pv-source-exports
+  npx wrangler r2 bucket create pv-derived
+  npx wrangler r2 bucket create pv-lake
+  npx wrangler d1 create pv-control (records database_id)
+  npx wrangler kv namespace create pv-cache (records id)
+  npx wrangler queues create pv-retention-sweep
+  npx wrangler queues create pv-retention-dlq
+  npx wrangler basin catalog enable pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE in .secrets/prod.env)
+gcp: 1 step(s)
+  uv run --project pipelines pv setup gcp (idempotent; its own plan: uv run --project pipelines pv setup gcp --dry-run)
+worker: 4 step(s)
+  generate PV_PSEUDONYM_MASTER_KEY (32 random bytes) into .secrets/worker-secrets.env, once; copy it to your password manager
+  render infra/cloudflare/wrangler.production.jsonc from the template (D1 id, KV id, ACCESS_TEAM_DOMAIN, ACCESS_AUD = pending-access-application until the Access application exists, GCP_PROJECT_ID)
+  npx wrangler d1 migrations apply pv-control --remote -c infra/cloudflare/wrangler.production.jsonc
+  npm run deploy (npx wrangler deploy -c infra/cloudflare/wrangler.production.jsonc --secrets-file .secrets/worker-secrets.env)
+access: 7 step(s)
+  POST /client/v4/accounts/<ACCOUNT_ID>/access/service_tokens {"name":"pv-executor","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_EXECUTOR / PV_CF_ACCESS_CLIENT_SECRET_EXECUTOR)
+  POST /client/v4/accounts/<ACCOUNT_ID>/access/service_tokens {"name":"pv-persona-hr","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_HR / PV_CF_ACCESS_CLIENT_SECRET_HR)
+  POST /client/v4/accounts/<ACCOUNT_ID>/access/service_tokens {"name":"pv-persona-manager","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_MANAGER / PV_CF_ACCESS_CLIENT_SECRET_MANAGER)
+  POST /client/v4/accounts/<ACCOUNT_ID>/access/service_tokens {"name":"pv-persona-analyst","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_ANALYST / PV_CF_ACCESS_CLIENT_SECRET_ANALYST)
+  POST /client/v4/accounts/<ACCOUNT_ID>/access/service_tokens {"name":"pv-persona-privacy","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_PRIVACY / PV_CF_ACCESS_CLIENT_SECRET_PRIVACY)
+  POST /client/v4/accounts/<ACCOUNT_ID>/access/apps (infra/cloudflare/access-app.template.json: worker destination for peoplevault, allow-owner for 0 email(s), service-tokens for 5 tokens)
+  render ACCESS_AUD from the Access application into infra/cloudflare/wrangler.production.jsonc, then npm run deploy
+data: 1 step(s)
+  npm run seed:prod (remote D1 seed and principal mapping, 41 export objects, lake self-test and table, snapshot expiration, pv load --target prod, counts and controls)
+github: P1 (executor.yml secrets), not built yet

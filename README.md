@@ -19,8 +19,14 @@ Under construction (2026-10-10). The design contract is [SPEC.md](SPEC.md); prog
 | Loaders, identity xref, snapshot replay, Iceberg history (pyiceberg SqlCatalog) | built, tested locally |
 | Subject deletion Workflow, conditional R2 rewrites, Python executor, independent probes and scanners | built, tested locally (Miniflare, DuckDB, SqlCatalog) |
 | Legal holds, retention sweep Workflow, cron and queue consumer | built, tested locally |
-| Residual checks, deletion eval with oracle and fault injection, CI | not built yet |
-| Production paths (BigQuery, Cloudflare Access, R2 and Workflows on Cloudflare, Basin Catalog), `setup:prod`, `doctor` | not built yet; once written they are labeled "written, not yet executed" until a committed production result exists |
+| Residual tracking (Iceberg, BigQuery, D1, KV) and the deletion eval with an independent oracle and fault injection | built, run locally; committed results follow from clean-tree runs |
+| CI | not built yet |
+| `npm run doctor` and `npm run doctor -- --prod` | built; tested with fakes and recorded responses; on this Mac the production lines all report missing setup |
+| `npm run setup:prod`, `pv setup gcp`, `npm run deploy`, `npm run seed:prod` | written, not yet executed (dry-run plans golden-tested) |
+| BigQuery path (dbt build, protected-table controls, 48 cases as purpose service accounts, 37 ceiling probes, Worker REST client) | written, not yet executed |
+| Cloudflare Access in front of the deployed Worker, R2, D1, KV and Workflows on Cloudflare | written, not yet executed |
+| Production executor, residual check and Basin Catalog self-test | written, not yet executed |
+| Production deletion eval profile | not built yet |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
 
@@ -101,21 +107,22 @@ flowchart LR
 
 ## Local quickstart
 
-Not runnable yet. The intended flow (SPEC.md section 25) is:
+Needs Node 24 and uv 0.12.17 (Python 3.12 is installed by uv). Seeding builds the whole local world (D1, R2 and KV in `.wrangler/state`, DuckDB and the Iceberg catalog in `pipelines/.data`) and takes several minutes.
 
 ```bash
 npm ci
 uv sync --project pipelines --locked
-npm run dev:keys
-npm run seed:local
-npm run dev
-npm run dev:token -- privacy-01
+npm run dev:keys                      # .dev.vars with local-only keys
+npm run seed:local                    # synthesize, migrate, load, warm caches, verify every count
+npm run dev                           # wrangler dev on 127.0.0.1:8793 and pv serve (shim and executor) on 8893
+npm run dev:token -- privacy-01       # a local Access-style JWT for a persona
+npm run eval:deletion:ci              # the ci deletion eval (seeds again, then oracle and gate)
 npm run stop:local
 ```
 
 ## Production setup
 
-Everything a script can do will be in `npm run setup:prod` (idempotent) and `npm run doctor -- --prod` (prints exactly what is missing). The steps only the owner can do (accounts, Workers Paid, Zero Trust onboarding, tokens, logins, billing) are listed in [docs/PRODUCTION.md](docs/PRODUCTION.md).
+Everything a script can do is in `npm run setup:prod` (idempotent; `-- --dry-run` prints the plan) and `npm run doctor -- --prod` (prints exactly what is missing, with the fix for each line). The steps only the owner can do (accounts, Workers Paid, Zero Trust onboarding, tokens, logins, billing) are listed in [docs/PRODUCTION.md](docs/PRODUCTION.md).
 
 ## Results
 

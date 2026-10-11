@@ -239,26 +239,57 @@ def handle_erase_batch(tasks: list, ctx: ExecContext) -> dict[str, tuple[bool, d
         xref_n = ctx.wh.query(f"select count(*) as n from {_rel(ctx, XREF)} where employee_id = $v", {"v": s.employee_id})[0]["n"]
         assets.append({"asset_id": "id.wh.identity_xref", "applicability": "present" if xref_n else "not_present", "rows_before": int(xref_n), "rows_erased": 0,
                        "references_scrubbed": 0, "action_status": "erased", "verify_status": "clean", "verify_matches": 0})
-        residuals = []
-        mine_files = [f for f in commit.files_with_subjects if _file_has_subject(f, s)]
-        snaps_with = [sid for sid, files in pre_snapshots if files & set(mine_files)]
-        if lake_before["rows"] + lake_before["refs"] > 0:
-            residuals.append({"kind": "iceberg_snapshots", "asset_id": "hist.lake.employee_monthly", "table": EMPLOYEE_MONTHLY,
-                              "state": "pending" if snaps_with else "cleared", "evidence": "observed", "deleted_at": deleted_at.isoformat(),
-                              "expected_clear_at": None, "snapshot_id": None if commit.last_snapshot_id is None else str(commit.last_snapshot_id), "retained_snapshots": len(snaps_with)})
-            residuals.append({"kind": "iceberg_orphan_files", "asset_id": "hist.lake.employee_monthly", "table": EMPLOYEE_MONTHLY,
-                              "state": "pending" if mine_files else "cleared", "evidence": "observed" if ctx.target == "local" else "modeled",
-                              "deleted_at": deleted_at.isoformat(), "expected_clear_at": None, "snapshot_id": None if commit.last_snapshot_id is None else str(commit.last_snapshot_id),
-                              "data_files": [_relative(f) for f in mine_files][:200]})
+        residuals = lake_residuals(ctx, commit, pre_snapshots, lake_before, s, deleted_at)
         for a in assets:
             if a["asset_id"] in ("hist.lake.employee_monthly", "id.wh.identity_xref") or a["applicability"] == "not_present":
                 continue
             for table in (a.get("parts") or {"pv_marts.headcount_monthly": {}}):
-                residuals.extend(_modeled_bq(table, a["asset_id"], deleted_at))
+                residuals.extend(bq_residuals(ctx, table, a["asset_id"], deleted_at, s))
         unregistered = [{"store": f.store, "location": f.location, "asset_id": None, "matches": f.matches} for f in findings if f.asset_id is None]
         registered = [{"store": f.store, "location": f.location, "asset_id": f.asset_id, "matches": f.matches} for f in findings if f.asset_id is not None]
         results[tid] = (bool(rebuilt), {"assets": assets, "findings": unregistered + registered, "residuals": residuals[:50], "counts": {"lake_rows_deleted_batch": commit.rows_deleted}})
     return results
+
+
+def lake_residuals(ctx: ExecContext, commit, pre_snapshots, lake_before: dict, s: Subject, deleted_at: datetime) -> list[dict]:
+    """Iceberg residuals. Local (SqlCatalog): observed retained snapshots and data files that held the subject. Production
+    (Basin Catalog): retained snapshots observed; orphan files modeled, cleared by managed expiration (ADR 0004)."""
+    if lake_before["rows"] + lake_before["refs"] == 0:
+        return []
+    snap_id = None if commit.last_snapshot_id is None else str(commit.last_snapshot_id)
+    if ctx.target == "local":
+        mine_files = [f for f in commit.files_with_subjects if _file_has_subject(f, s)]
+        snaps_with = [sid for sid, files in pre_snapshots if files & set(mine_files)]
+        return [
+            {"kind": "iceberg_snapshots", "asset_id": "hist.lake.employee_monthly", "table": EMPLOYEE_MONTHLY, "state": "pending" if snaps_with else "cleared",
+             "evidence": "observed", "deleted_at": deleted_at.isoformat(), "expected_clear_at": None, "snapshot_id": snap_id, "retained_snapshots": len(snaps_with)},
+            {"kind": "iceberg_orphan_files", "asset_id": "hist.lake.employee_monthly", "table": EMPLOYEE_MONTHLY, "state": "pending" if mine_files else "cleared",
+             "evidence": "observed", "deleted_at": deleted_at.isoformat(), "expected_clear_at": None, "snapshot_id": snap_id, "data_files": [_relative(f) for f in mine_files][:200]},
+        ]
+    clear = (deleted_at + timedelta(days=1)).isoformat()  # snapshot-expiration --older-than-days 1, plus an unknown maintenance interval
+    return [
+        {"kind": "iceberg_snapshots", "asset_id": "hist.lake.employee_monthly", "table": EMPLOYEE_MONTHLY, "state": "pending", "evidence": "observed",
+         "deleted_at": deleted_at.isoformat(), "expected_clear_at": clear, "snapshot_id": snap_id, "retained_snapshots": len(pre_snapshots)},
+        {"kind": "iceberg_orphan_files", "asset_id": "hist.lake.employee_monthly", "table": EMPLOYEE_MONTHLY, "state": "modeled", "evidence": "modeled",
+         "deleted_at": deleted_at.isoformat(), "expected_clear_at": clear, "snapshot_id": snap_id},
+    ]
+
+
+def bq_residuals(ctx: ExecContext, table: str, asset_id: str, deleted_at: datetime, s: Subject) -> list[dict]:
+    """Local: modeled from the BigQuery dataset setting (DuckDB has no time travel). Production: the time travel read
+    right after the erase is observed (pending while the pre-deletion version is readable); fail-safe is modeled."""
+    rows = _modeled_bq(table, asset_id, deleted_at)
+    if ctx.wh.dialect != "bigquery":
+        return rows
+    from peoplevault.residuals.bq import time_travel_count_sql
+
+    ms = int(deleted_at.timestamp() * 1000)
+    try:
+        n = int(ctx.wh.query(time_travel_count_sql(f"{ctx.wh.project}.{table}", ms))[0]["n"])
+        rows[0].update({"state": "pending" if n else "cleared", "evidence": "observed", "rows_at_erase": n})
+    except Exception:  # noqa: BLE001  (an unreadable history is an error, never cleared)
+        rows[0].update({"state": "error", "evidence": "observed"})
+    return rows
 
 
 def _lake_counts(pre_snapshots, tbl, s: Subject) -> dict[str, int]:

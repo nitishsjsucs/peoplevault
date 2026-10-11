@@ -1,0 +1,107 @@
+{
+ "_source": "https://cloud.google.com/bigquery/docs/reference/rest/v2/tables/get (Table resource, schema.fields[].policyTags.names)",
+ "_note": "Constructed from the API reference on 2026-10-10 (no production response captured yet); replace with a captured response after the first production run.",
+ "body": {
+  "kind": "bigquery#table",
+  "id": "pv-test:pv_core.dim_employee",
+  "tableReference": {
+   "projectId": "pv-test",
+   "datasetId": "pv_core",
+   "tableId": "dim_employee"
+  },
+  "schema": {
+   "fields": [
+    {
+     "name": "employee_key",
+     "type": "STRING",
+     "mode": "NULLABLE"
+    },
+    {
+     "name": "employee_ref",
+     "type": "STRING",
+     "mode": "NULLABLE"
+    },
+    {
+     "name": "full_name",
+     "type": "STRING",
+     "mode": "NULLABLE",
+     "policyTags": {
+      "names": [
+       "projects/pv-test/locations/us/taxonomies/1/policyTags/direct_identifier"
+      ]
+     }
+    },
+    {
+     "name": "work_email",
+     "type": "STRING",
+     "mode": "NULLABLE",
+     "policyTags": {
+      "names": [
+       "projects/pv-test/locations/us/taxonomies/1/policyTags/direct_identifier"
+      ]
+     }
+    },
+    {
+     "name": "personal_email",
+     "type": "STRING",
+     "mode": "NULLABLE",
+     "policyTags": {
+      "names": [
+       "projects/pv-test/locations/us/taxonomies/1/policyTags/direct_identifier"
+      ]
+     }
+    },
+    {
+     "name": "phone",
+     "type": "STRING",
+     "mode": "NULLABLE",
+     "policyTags": {
+      "names": [
+       "projects/pv-test/locations/us/taxonomies/1/policyTags/direct_identifier"
+      ]
+     }
+    },
+    {
+     "name": "birth_date",
+     "type": "STRING",
+     "mode": "NULLABLE",
+     "policyTags": {
+      "names": [
+       "projects/pv-test/locations/us/taxonomies/1/policyTags/date_of_birth"
+      ]
+     }
+    },
+    {
+     "name": "gender",
+     "type": "STRING",
+     "mode": "NULLABLE",
+     "policyTags": {
+      "names": [
+       "projects/pv-test/locations/us/taxonomies/1/policyTags/protected_attribute"
+      ]
+     }
+    },
+    {
+     "name": "ethnicity",
+     "type": "STRING",
+     "mode": "NULLABLE",
+     "policyTags": {
+      "names": [
+       "projects/pv-test/locations/us/taxonomies/1/policyTags/protected_attribute"
+      ]
+     }
+    },
+    {
+     "name": "org_unit",
+     "type": "STRING",
+     "mode": "NULLABLE"
+    },
+    {
+     "name": "is_restricted",
+     "type": "STRING",
+     "mode": "NULLABLE"
+    }
+   ]
+  }
+ }
+}

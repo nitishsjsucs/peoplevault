@@ -56,10 +56,13 @@ PV_ACCESS_ALLOWED_EMAILS=...
 PV_ACCESS_PERSONA_EMAILS=...
 PV_WORKERS_SUBDOMAIN=...           # optional; only if setup should register the subdomain
 # written by setup:prod, never edited by hand:
+PV_BASE_URL=https://peoplevault.<subdomain>.workers.dev
 PV_CF_ACCESS_CLIENT_ID_EXECUTOR=... / PV_CF_ACCESS_CLIENT_SECRET_EXECUTOR=...
 PV_CF_ACCESS_CLIENT_ID_HR=... (and MANAGER, ANALYST, PRIVACY)
 PV_CATALOG_URI=... / PV_CATALOG_WAREHOUSE=...
 ```
+
+A service token's client secret is shown once by Cloudflare. If `.secrets/prod.env` loses one, `setup:prod` rotates that token and records the new secret.
 
 Also written by setup and gitignored: `.secrets/worker-secrets.env` (`PV_PSEUDONYM_MASTER_KEY`, `GCP_GATEWAY_SA_KEY`; uploaded by `npm run deploy`), `.secrets/prod-resources.json` (resource ids, stream id in P1, policy tag resource names), `infra/cloudflare/wrangler.production.jsonc`. No `pv-executor` key exists on the laptop.
 
@@ -87,13 +90,30 @@ npm run setup:prod                                             # idempotent; re-
 npm run doctor -- --prod
 # IAM grants take about 30 seconds and policy tag changes up to 30 minutes to propagate (column-level access control docs); wait before the next line
 uv run --project pipelines pv authz warehouse --target bigquery --write-results --ceiling-probes
-uv run --project pipelines pv eval deletion --profile prod
+uv run --directory pipelines pytest -m bigquery                    # the live BigQuery suite (48 cases, 37 ceiling probes, controls, time travel)
 uv run --project pipelines pv executor run --target prod --drain   # P0: the production executor runs from this Mac (P1 executor.yml automates it)
 # 48 hours later (BigQuery time travel window) and again after 1 day for Basin snapshot expiration
 uv run --project pipelines pv residuals check --target prod
 npm run readme:results
 git add evals/results README.md && git commit -m "docs: production results"
 ```
+
+`pv eval deletion --profile prod` (the deletion eval against the deployed Worker, BigQuery and the Basin Catalog) is not built yet; until it is, deletions in production are exercised through the API (`POST /api/v1/privacy/deletion-requests` with the privacy persona's service token) and `pv executor run --target prod --drain`.
+
+If a run leaves the probe dataset behind (for example after an interrupted ceiling-probe run), `uv run --project pipelines pv authz warehouse --target bigquery --cleanup` removes it and its grants.
+
+## What the scripted paths are, and what has run
+
+| Path | Command | State |
+|---|---|---|
+| Prerequisite report | `npm run doctor -- --prod` (Google lines from `pv doctor gcp --json`) | written; runs on this Mac today and reports everything as missing; tested with fakes and recorded responses |
+| Cloudflare resources, Worker render, migrations, deploy | `npm run setup:prod` groups `cloudflare` and `worker`, `npm run deploy` | written, dry-run golden-tested, not yet executed |
+| Google Cloud | `pv setup gcp [--dry-run]` | written, dry-run golden-tested with a fake client, not yet executed |
+| Access application and service tokens | `npm run setup:prod -- --only access` | written, not yet executed. The `worker` destination takes the Worker's id from `GET /accounts/{id}/workers/workers`; the reference describes that field only as "the ID of the Cloudflare Worker", so the first run confirms it, and the doctor's edge check proves the result |
+| Seeding | `npm run seed:prod` | written, not yet executed; refuses to run once any deletion request exists (re-uploading exports would resurrect erased data) |
+| Warehouse authorization | `pv authz warehouse --target bigquery --ceiling-probes` | written, not yet executed |
+| Executor, residual check, lake self-test | `pv executor run --target prod`, `pv residuals check --target prod`, `pv lake init --target prod` | written, not yet executed |
+| Production deletion eval | `pv eval deletion --profile prod` | not built |
 
 ## What the scripts cannot do
 

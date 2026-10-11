@@ -1,0 +1,2 @@
+{ "_note": "Constructed from the Cloudflare API reference on 2026-10-10 (no production response captured yet); replace with a captured response after the first production run.", "_source": "https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/list/",
+  "status": 200, "body": { "success": true, "errors": [], "messages": [], "result": [ { "id": "app-1", "name": "PeopleVault", "aud": "aud-tag-123", "type": "self_hosted", "destinations": [ { "type": "worker", "worker_id": "worker-1" } ] } ] } }

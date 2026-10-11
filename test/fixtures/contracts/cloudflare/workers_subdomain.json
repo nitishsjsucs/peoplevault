@@ -1,0 +1,2 @@
+{ "_note": "Constructed from the Cloudflare API reference on 2026-10-10 (no production response captured yet); replace with a captured response after the first production run.", "_source": "https://developers.cloudflare.com/api/resources/workers/subresources/subdomains/methods/get/",
+  "status": 200, "body": { "success": true, "errors": [], "messages": [], "result": { "subdomain": "nitish-pv" } } }

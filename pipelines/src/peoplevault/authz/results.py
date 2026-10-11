@@ -49,3 +49,24 @@ def summarize(pdp: dict[str, bool], warehouse: Report, command: str) -> dict:
 
 def write(summary: dict) -> Path:
     return write_result(f"authz-local-{date.today().isoformat()}.json", summary)
+
+
+BIGQUERY_ENVIRONMENT = "production (BigQuery)"
+
+
+def summarize_bigquery(warehouse: Report, probes: dict | None, command: str) -> dict:
+    """`pv authz warehouse --target bigquery --write-results [--ceiling-probes]`: the 48 cases as each purpose's service
+    account, and the ceiling probes reported separately (never added to the cases)."""
+    return {
+        **header(command, environment=BIGQUERY_ENVIRONMENT),
+        "kind": "authz",
+        "layers": {"warehouse": {"passed": warehouse.passed, "total": len(warehouse.results), "backend": "bigquery",
+                                 "runner": "pv authz warehouse --target bigquery (each purpose's service account, query cache off)"}},
+        "by_category": warehouse.by_category(),
+        "ceiling_probes": probes,
+        "failures": {"warehouse": sorted(r.id for r in warehouse.results if not r.passed)},
+    }
+
+
+def write_bigquery(summary: dict) -> Path:
+    return write_result(f"authz-bigquery-{date.today().isoformat()}.json", summary)

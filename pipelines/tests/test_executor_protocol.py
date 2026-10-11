@@ -38,3 +38,60 @@ def test_a_failing_batch_reports_ok_false_with_the_error_type_only(monkeypatch):
     (tid, ok, result), = api.completed
     assert ok is False and result["error"] == "RuntimeError"
     assert_identifier_free(result)
+
+
+def test_bigquery_concurrent_update_aborts_are_retried():
+    from peoplevault.warehouse.bq import BqWarehouse
+
+    class Job:
+        def __init__(self, fail):
+            self.fail = fail
+            self.job_id = "j1"
+
+        def result(self):
+            if self.fail:
+                raise RuntimeError("Transaction is aborted due to concurrent update against table pv_core.dim_employee")
+            return []
+
+    class Child:
+        def __init__(self, n, i):
+            self.num_dml_affected_rows = n
+            self.statement_type = "DELETE"
+            self.created = i
+
+    class Client:
+        def __init__(self):
+            self.calls = 0
+
+        def query(self, sql, job_config=None):
+            self.calls += 1
+            self.sql = sql
+            return Job(fail=self.calls < 3)
+
+        def list_jobs(self, parent_job=None):
+            return [Child(4, 2), Child(1, 1)]
+
+    client = Client()
+    sleeps = []
+    wh = BqWarehouse("pv-test", client=client, sleep=sleeps.append)
+    counts = wh.execute_script([("delete from `pv_core.dim_employee` where employee_key = @v", {"v": "wk_x"}), ("delete from `pv_raw.hris_employees` where employee_id = $v", {"v": "x"})])
+    assert counts == [1, 4] and client.calls == 3 and len(sleeps) == 2
+    assert client.sql.startswith("BEGIN TRANSACTION;") and client.sql.rstrip().endswith("COMMIT TRANSACTION;")
+    assert "@s0_v" in client.sql and "@s1_v" in client.sql
+
+
+def test_bigquery_other_errors_are_not_retried():
+    import pytest
+
+    from peoplevault.warehouse.bq import BqWarehouse
+
+    class Client:
+        calls = 0
+
+        def query(self, sql, job_config=None):
+            Client.calls += 1
+            raise RuntimeError("Access Denied: Table pv_core.dim_employee")
+
+    with pytest.raises(RuntimeError, match="Access Denied"):
+        BqWarehouse("pv-test", client=Client(), sleep=lambda s: None).execute_script([("select 1", {})])
+    assert Client.calls == 1
