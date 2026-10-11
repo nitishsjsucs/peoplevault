@@ -22,6 +22,12 @@ export async function startLocalStack(opts: { executor?: boolean } = {}): Promis
 }
 
 async function main(): Promise<void> {
+  if (process.argv.includes("--detach")) {
+    // used by the eval and seed:local: start, wait for health, leave the process groups running, exit
+    await startLocalStack({ executor: !process.argv.includes("--no-executor") });
+    console.log("[dev] local stack running (detached); stop it with `npm run stop:local`");
+    return;
+  }
   await startLocalStack();
   console.log(`[dev] Worker http://127.0.0.1:${LOCAL_PORTS.worker} (local dev login: /dev/login?principal=privacy-01), shim and executor on ${LOCAL_PORTS.shim}. Ctrl+C stops both.`);
   const stop = async () => {

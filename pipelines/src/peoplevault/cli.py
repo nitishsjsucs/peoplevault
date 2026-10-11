@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 import click
@@ -169,6 +170,43 @@ def authz_warehouse(target: str, write_results: bool, pdp_report: str | None, ce
         path = write(summarize(pdp, report, "npm run eval:authz"))
         click.echo(f"wrote {path}")
     if report.passed != len(report.results):
+        raise SystemExit(1)
+
+
+@main.group(name="eval")
+def eval_group() -> None:
+    """Evaluations."""
+
+
+@eval_group.command("deletion")
+@click.option("--profile", type=click.Choice(["full", "ci", "prod"]), default="ci", show_default=True)
+@click.option("--no-seed", is_flag=True, help="reuse the current local state (skips seed:local --fresh)")
+def eval_deletion(profile: str, no_seed: bool) -> None:
+    """Deletion eval with the independent oracle and fault injection (writes evals/results/deletion-<profile>-<date>.*)."""
+    if profile == "prod":
+        raise click.ClickException("the production eval profile lands with the production commit (see PROGRESS.md)")
+    from peoplevault.evals.deletion import run
+
+    result = run(profile, no_seed=no_seed)
+    click.echo(json.dumps({"coverage": result["coverage"]["display"], "false_clean": result["oracle"]["false_clean"],
+                           "faults": f"{result['faults']['detected']}/{result['faults']['scenarios']}", "gate": result["gate"]}, indent=1))
+    if profile == "ci" and not result["gate"]["passed"]:
+        raise SystemExit(1)
+
+
+@main.command()
+@click.option("--with-extracts", is_flag=True, help="also create the 6 analytics extracts as analyst-01")
+def warmup(with_extracts: bool) -> None:
+    """Warms the 420 KV entries of kv_warmup.json through the running local Worker (and creates the extracts)."""
+    from peoplevault.evals.client import LocalClient
+    from peoplevault.evals.warmup import create_extracts, load_truth, warm_kv
+
+    client = LocalClient(load_truth("principals.json"))
+    out = warm_kv(client)
+    if with_extracts:
+        out.update(create_extracts(client))
+    click.echo(f"warmup: {out}")
+    if out["failed"]:
         raise SystemExit(1)
 
 

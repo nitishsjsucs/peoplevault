@@ -157,13 +157,21 @@ def subject_truth(pop: Population, exports: list[ExportObject], lake_rows: dict[
             for col in ("leave_id", "review_id"):
                 if col in row:
                     record_ids[s].append(row[col])
+    from peoplevault.retention_rules import minus_months
+
+    lake_cutoff = minus_months(C.AS_OF, 84).isoformat()
     lake_count = {e: 0 for e in pop.ids()}
     lake_ref = {e: 0 for e in pop.ids()}
+    lake_after = {e: 0 for e in pop.ids()}
+    lake_ref_after = {e: 0 for e in pop.ids()}
     for rows in lake_rows.values():
         for row in rows:
             lake_count[row["employee_id"]] += 1
+            after = row["month"] > lake_cutoff
+            lake_after[row["employee_id"]] += int(after)
             if row["manager_employee_id"]:
                 lake_ref[row["manager_employee_id"]] += 1
+                lake_ref_after[row["manager_employee_id"]] += int(after)
     out = []
     for e_id in pop.ids():
         e = pop.employees[e_id]
@@ -177,5 +185,6 @@ def subject_truth(pop: Population, exports: list[ExportObject], lake_rows: dict[
             "role": e.role, "is_restricted": f.is_restricted, "hold_matter": e.hold_matter, "principal_id": pid_of.get(e_id),
             "export_rows": rows_in[e_id], "export_refs": refs_in[e_id], "record_ids": record_ids[e_id],
             "lake_rows": lake_count[e_id], "lake_ref_rows": lake_ref[e_id],
+            "lake_rows_after_retention_cutoff": lake_after[e_id], "lake_ref_rows_after_retention_cutoff": lake_ref_after[e_id],
         })
     return out
