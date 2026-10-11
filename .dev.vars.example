@@ -1,0 +1,6 @@
+# Written by `npm run dev:keys` into .dev.vars (gitignored). Exactly the names in wrangler.jsonc secrets.required.
+DEV_ACCESS_JWKS=
+DEV_ACCESS_PRIVATE_JWK=
+PV_PSEUDONYM_MASTER_KEY=
+WAREHOUSE_SHIM_TOKEN=
+GCP_GATEWAY_SA_KEY=

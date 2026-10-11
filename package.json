@@ -1,0 +1,47 @@
+{
+  "name": "peoplevault",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Workforce privacy and data lifecycle governance for synthetic workforce data",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.ts",
+    "dev:worker": "wrangler dev --port 8793 --inspector-port 9243 --ip 127.0.0.1",
+    "stop:local": "node scripts/stop-local.ts",
+    "dev:keys": "node scripts/dev-keys.ts",
+    "dev:token": "node scripts/dev-token.ts",
+    "types": "wrangler types --strict-vars false",
+    "types:check": "wrangler types --strict-vars false --check",
+    "typecheck": "tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json",
+    "test": "vitest run",
+    "test:py": "uv run --directory pipelines pytest",
+    "policy:compile": "uv run --project pipelines pv policy compile",
+    "seed:local": "node scripts/seed-local.ts",
+    "eval:deletion": "uv run --project pipelines pv eval deletion --profile full",
+    "eval:deletion:ci": "uv run --project pipelines pv eval deletion --profile ci",
+    "eval:authz": "vitest run --project worker test/worker/authz.cases.test.ts && uv run --project pipelines pv authz warehouse --target local --write-results",
+    "readme:results": "node scripts/update-readme.ts",
+    "doctor": "node scripts/doctor.ts",
+    "setup:prod": "node scripts/setup-prod.ts",
+    "seed:prod": "node scripts/seed-prod.ts",
+    "deploy:check": "wrangler deploy --dry-run -c infra/cloudflare/wrangler.production.template.jsonc",
+    "deploy": "node scripts/deploy-prod.ts"
+  },
+  "dependencies": {
+    "hono": "4.13.13",
+    "jose": "6.2.12",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.0",
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11",
+    "wrangler": "4.149.0",
+    "yaml": "2.9.1"
+  }
+}

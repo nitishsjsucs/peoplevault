@@ -1,0 +1,56 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Local development configuration. The Worker name is peoplevault-local so a mistaken
+  // `wrangler deploy` without -c can never overwrite the production Worker `peoplevault`.
+  // Production uses infra/cloudflare/wrangler.production.template.jsonc, rendered by setup:prod.
+  "name": "peoplevault-local",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  "secrets": {
+    "required": ["DEV_ACCESS_JWKS", "DEV_ACCESS_PRIVATE_JWK", "PV_PSEUDONYM_MASTER_KEY", "WAREHOUSE_SHIM_TOKEN", "GCP_GATEWAY_SA_KEY"]
+  },
+  "workflows": [
+    { "name": "pv-subject-deletion", "binding": "DELETION", "class_name": "SubjectDeletionWorkflow" },
+    { "name": "pv-retention-sweep", "binding": "RETENTION", "class_name": "RetentionSweepWorkflow" }
+  ],
+  "queues": {
+    "producers": [{ "binding": "SWEEP_QUEUE", "queue": "pv-retention-sweep" }],
+    "consumers": [
+      { "queue": "pv-retention-sweep", "max_batch_size": 25, "max_batch_timeout": 2, "max_retries": 3, "dead_letter_queue": "pv-retention-dlq" }
+    ]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "pv-control", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+  ],
+  "r2_buckets": [
+    { "binding": "EXPORTS", "bucket_name": "pv-source-exports" },
+    { "binding": "DERIVED", "bucket_name": "pv-derived" }
+  ],
+  "kv_namespaces": [{ "binding": "CACHE", "id": "00000000000000000000000000000000" }],
+  "triggers": { "crons": ["0 3 * * *"] },
+  "vars": {
+    "PV_ENV": "local",
+    "AUTH_MODE": "local-jwks",
+    "WAREHOUSE_MODE": "local-shim",
+    "AUDIT_STREAM_MODE": "disabled",
+    "KV_PROPAGATION_WAIT": "1 second",
+    "EXECUTOR_WAIT_TIMEOUT": "1 hour",
+    "RETENTION_AS_OF": "2026-09-30",
+    "DEV_ACCESS_ISSUER": "https://dev.peoplevault.test",
+    "DEV_ACCESS_AUD": "peoplevault-local",
+    "WAREHOUSE_SHIM_URL": "http://127.0.0.1:8893",
+    // production-only vars, declared empty so env.ts typechecks under strict mode; "" means unset
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    "GCP_PROJECT_ID": "",
+    "BQ_LOCATION": "",
+    "BQ_GATEWAY_SA_EMAIL": "",
+    "BQ_PURPOSE_SA_EMPLOYEE_RELATIONS": "",
+    "BQ_PURPOSE_SA_TEAM_MANAGEMENT": "",
+    "BQ_PURPOSE_SA_WORKFORCE_ANALYTICS": "",
+    "BQ_PURPOSE_SA_PRIVACY_COMPLIANCE": "",
+    "BQ_PURPOSE_SA_LEGAL_HOLD_MANAGEMENT": ""
+  }
+}
