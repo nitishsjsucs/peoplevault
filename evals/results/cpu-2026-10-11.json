@@ -2,12 +2,12 @@
   "kind": "cpu",
   "command": "npm run bench:cpu",
   "date": "2026-10-11",
-  "git_sha": "ae239b38abc72ea9fc1edcfc4e81542e46ad6e86",
+  "git_sha": "bcca6c2c32b11750088abf6e22e4a253cf203e7d",
   "git_dirty": false,
   "environment": "local (Node v25.9.0 on darwin arm64, Apple M5)",
   "machine": {
     "cpus": 10,
-    "load_average_1m": 7.19,
+    "load_average_1m": 2.99,
     "total_memory_gib": 24
   },
   "population": {
@@ -22,49 +22,49 @@
   },
   "measurements_ms": {
     "erase_step_at_cap": {
-      "warm_median_ms": 1.273,
-      "warm_min_ms": 1.2,
-      "cold_ms": 1.472,
+      "warm_median_ms": 0.877,
+      "warm_min_ms": 0.835,
+      "cold_ms": 0.942,
       "objects": 6,
       "mib": 3.62
     },
     "erase_all_exports_prefiltered": {
-      "warm_median_ms": 4.893,
-      "warm_min_ms": 3.687,
-      "cold_ms": 5.612,
-      "per_mib": 0.529
+      "warm_median_ms": 2.925,
+      "warm_min_ms": 2.752,
+      "cold_ms": 3.025,
+      "per_mib": 0.316
     },
     "revision2_hris_erase_every_line_parsed": {
-      "warm_median_ms": 19.478,
-      "warm_min_ms": 16.056,
-      "cold_ms": 16.624,
+      "warm_median_ms": 12.219,
+      "warm_min_ms": 11.986,
+      "cold_ms": 11.895,
       "objects": 13
     },
     "probe_step_at_cap_clean": {
-      "warm_median_ms": 1.717,
-      "warm_min_ms": 1.665,
-      "cold_ms": 2.445,
+      "warm_median_ms": 1.374,
+      "warm_min_ms": 1.305,
+      "cold_ms": 1.667,
       "mib": 1.81
     },
     "probe_step_at_cap_every_line": {
-      "warm_median_ms": 1.759,
-      "warm_min_ms": 1.672,
-      "cold_ms": 2.381
+      "warm_median_ms": 1.383,
+      "warm_min_ms": 1.364,
+      "cold_ms": 1.575
     },
     "audit_verify_window_50": {
-      "warm_median_ms": 1.789,
-      "warm_min_ms": 0.967,
-      "cold_ms": 2.873
+      "warm_median_ms": 0.586,
+      "warm_min_ms": 0.418,
+      "cold_ms": 1.333
     },
     "audit_export_page_500": {
-      "warm_median_ms": 0.628,
-      "warm_min_ms": 0.575,
-      "cold_ms": 0.924
+      "warm_median_ms": 0.497,
+      "warm_min_ms": 0.488,
+      "cold_ms": 0.716
     },
     "kv_probe_420_values": {
-      "warm_median_ms": 0.18,
-      "warm_min_ms": 0.151,
-      "cold_ms": 0.299
+      "warm_median_ms": 0.133,
+      "warm_min_ms": 0.123,
+      "cold_ms": 0.239
     }
   },
   "design": {
@@ -73,9 +73,9 @@
     "free_cpu_limit_ms": 10
   },
   "verdict_basis": "largest warm median (SPEC.md section 30.2)",
-  "largest_step_median_ms": 1.789,
-  "largest_step_fastest_run_ms": 1.672,
-  "at_edge_factor_ms": 5.37,
+  "largest_step_median_ms": 1.383,
+  "largest_step_fastest_run_ms": 1.364,
+  "at_edge_factor_ms": 4.15,
   "within_target": true,
   "within_free_limit_at_edge_factor": true
 }
