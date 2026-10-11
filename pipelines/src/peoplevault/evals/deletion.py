@@ -297,8 +297,10 @@ def score(d: RunData) -> dict:
             return any(s == store and _matches_location(store, location, loc, tokens[subject]) for s, location, _a, _n in found.by_subject.get(subject, []))
         return any(a == asset_id for _s, _l, a, _n in found.by_subject.get(subject, []))
 
-    # coverage over R and D requests that were not held
-    scored_requests = [r for r in requests if r["status"] != "held" and req_subject.get(r["id"]) in (set(cohorts["R"]) | set(cohorts["D"]))]
+    # coverage over R and D requests that were not held (a held subject's request that ran anyway fails the gate below
+    # and is never scored as coverage)
+    scored_requests = [r for r in requests if r["status"] != "held" and req_subject.get(r["id"]) in (set(cohorts["R"]) | set(cohorts["D"]))
+                       and not truth[req_subject[r["id"]]]["hold_matter"]]
     pairs = []
     for r in scored_requests:
         for row in _pairs(rows_by_req[r["id"]]):
@@ -396,8 +398,9 @@ def score(d: RunData) -> dict:
         "oracle": {"oracle_coverage": _coverage(oracle_clean, len(pairs)), "agreement": (agreement / len(pairs)) if pairs else None, "false_clean": false_clean_pairs + missed,
                    "false_clean_pairs": false_clean_pairs, "missed_locations": missed, "false_residue": false_residue, "scanned": dict(found.scanned)},
         "applicability_agreement": {"value": (agree / total_app) if total_app else None, "pairs": total_app, "agree": agree, "disagreements": disagreements},
-        "holds": {"held_requests": len(held_requests), "held_subjects": len(held_subjects), "held_data_intact": intact},
-        "faults": {"scenarios": len(designed), "detected": len(detected), "by_store": by_store, "undetected_by_design": sum(1 for f in fault_rows if f["variant"] and not f["finding_at_location"]),
+        "holds": {"held_requests": len(held_requests), "held_subjects": len(held_subjects), "held_data_intact": intact,
+                  "expected_held_subjects": len(cohorts["H"]) + len(cohorts.get("R_held", []))},
+        "faults": {"scenarios": len(designed), "planned": len(cohorts["F"]), "detected": len(detected), "by_store": by_store, "undetected_by_design": sum(1 for f in fault_rows if f["variant"] and not f["finding_at_location"]),
                    "variants": [{"variant": f["scenario"], "finding_at_location": f["finding_at_location"]} for f in fault_rows if f["variant"]],
                    "note": "planted residues of designed types; detection shows the probes reach every store and location type, not that they would find any possible copy"},
         "retention": retention_out,
@@ -460,10 +463,15 @@ def _matches_location(store: str, oracle_location: str, system_location: str, t:
 
 
 def gate(r: dict) -> dict:
+    h, f = r["holds"], r["faults"]
     checks = {
         "false_clean_zero": r["oracle"]["false_clean"] == 0,
-        "all_faults_detected": r["faults"]["detected"] == r["faults"]["scenarios"],
-        "held_data_intact": r["holds"]["held_data_intact"] == r["holds"]["held_requests"],
+        # every planned fault was planted and detected (0 == 0 passes only when the profile plans none)
+        "all_faults_detected": f["detected"] == f["scenarios"] == f["planned"],
+        # every held subject's request stayed held and none of their data was erased; counted against the cohorts,
+        # because a bypassed hold lowers both the held requests and the intact subjects
+        "holds_respected": h["held_requests"] == h["held_subjects"] == h["expected_held_subjects"],
+        "held_data_intact": h["held_data_intact"] == h["held_subjects"],
         "coverage_100": r["coverage"]["value"] == 1.0,
         "every_category_applicable": all(c["applicable_pairs"] > 0 for c in r["coverage"]["by_category"].values()),
     }
@@ -487,7 +495,7 @@ def render_md(r: dict) -> str:
         f"- Faults: {r['faults']['detected']} of {r['faults']['scenarios']} planted residues of designed types detected; {r['faults']['undetected_by_design']} out-of-design variants undetected by design",
         f"- Applicability agreement with ground truth: {r['applicability_agreement']['agree']} of {r['applicability_agreement']['pairs']} pairs"
         + "".join(f"; {d['asset_id']} system {d['system']}, truth {d['truth']}" for d in r["applicability_agreement"].get("disagreements", [])),
-        f"- Holds: {r['holds']['held_requests']} held requests, held data intact for {r['holds']['held_data_intact']}",
+        f"- Holds: {r['holds']['held_requests']} held requests for {r['holds']['held_subjects']} held subjects ({r['holds'].get('expected_held_subjects')} in the cohorts), held data intact for {r['holds']['held_data_intact']}",
         f"- Gate: {'passed' if r['gate']['passed'] else 'FAILED'} {r['gate']['checks']}",
     ]
     return "\n".join(lines) + "\n"

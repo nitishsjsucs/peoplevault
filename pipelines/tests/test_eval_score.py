@@ -47,6 +47,43 @@ def test_score_counts_pairs_faults_and_agreement_without_retention():
     assert r["gate"]["checks"]["every_category_applicable"] is False and r["gate"]["passed"] is False
 
 
+def _run(cohorts, truth, tokens, found, requests, planted=()):
+    return RunData(
+        profile="prod", run_header={"command": "x"}, t_start=time.time(), truth=truth, cohorts=cohorts, tokens=tokens,
+        expected={"retention_expected": {"expired_export_keys": [], "minimized_export_keys": []}}, warmup=[], principal_of={},
+        planted=list(planted), submitted={r["id"]: e for r, e in requests}, requests=[r for r, _ in requests], results=[], residual_rows=[], found=found,
+        retention_run=None, report_before={}, report={}, audit_ok={"ok": True, "length": 3}, warmup_counts={}, expire_out="", check_out="",
+    )
+
+
+def _request(rid, t, status):
+    return {"id": rid, "kind": "dsr", "subject_ref": t.subject_ref, "status": status, "created_at": "2026-10-10T00:00:00Z", "completed_at": None}
+
+
+def test_a_bypassed_legal_hold_fails_the_gate():
+    """H1's request stays held and its data is intact; H2's request ran and erased its data. Both the held request
+    count and the intact count drop by one, so comparing them with each other alone would pass."""
+    tokens = {"H1": tok("H1", "d"), "H2": tok("H2", "e")}
+    truth = {e: {**subject(e), "hold_matter": "matter-1"} for e in tokens}
+    found = OracleFindings()
+    for store in ("r2", "warehouse", "d1"):
+        found.add("H1", store, f"{store}:somewhere", "x")
+    r = score(_run({"R": [], "R_held": [], "D": [], "H": ["H1", "H2"], "F": []}, truth, tokens, found,
+                   [(_request("q1", tokens["H1"], "held"), "H1"), (_request("q2", tokens["H2"], "completed_with_residuals"), "H2")]))
+    assert r["holds"] == {"held_requests": 1, "held_subjects": 2, "held_data_intact": 1, "expected_held_subjects": 2}
+    assert r["coverage"]["applicable_pairs"] == 0  # the bypassed request is never scored as coverage
+    assert r["gate"]["checks"]["holds_respected"] is False and r["gate"]["checks"]["held_data_intact"] is False
+    assert r["gate"]["passed"] is False
+
+
+def test_planned_faults_that_were_not_planted_fail_the_gate():
+    tokens = {"E2": tok("E2", "c")}
+    r = score(_run({"R": [], "R_held": [], "D": [], "H": [], "F": [{"subject": "E2", "store": "kv", "scenario": "kv.tmp_employee_ref"}]},
+                   {"E2": subject("E2")}, tokens, OracleFindings(), [(_request("r2", tokens["E2"], "completed_with_residuals"), "E2")]))
+    assert (r["faults"]["planned"], r["faults"]["scenarios"], r["faults"]["detected"]) == (1, 0, 0)
+    assert r["gate"]["checks"]["all_faults_detected"] is False
+
+
 def test_audit_chain_verification_follows_windows():
     """The eval verifies the chain window by window (100 events per request on Workers Free, SPEC.md 30.3.2)."""
     from peoplevault.evals.deletion import verify_audit_chain
