@@ -47,8 +47,9 @@ def load_local(
         xref = identity.upsert_xref(conn, hris_ids, ps, sup)
         report = raw.load_objects(conn, objects, ps, sup)
         hris_dates = [o.basis_date for o in objects if o.family == "hris"]
+        through = snapshots.replayed_through_duckdb(conn)
         conn.execute("checkpoint")
-        snapshots.replay(hris_dates)
+        replays = snapshots.replay(hris_dates, replayed_through=through)
         build = dbt(["build", "--target", "local"])
         if not build.success:
             raise RuntimeError(f"dbt build failed ({build.exception})")
@@ -57,4 +58,4 @@ def load_local(
         lake_report = lake.load_employee_monthly(cat, ps, sup, hist, lake_years)
     finally:
         conn.close()
-    return {"suppression_synced": synced, "identity_xref": xref, "raw": asdict(report), "snapshot_replays": len(hris_dates), "lake": lake_report}
+    return {"suppression_synced": synced, "identity_xref": xref, "raw": asdict(report), "snapshot_replays": len(replays), "lake": lake_report}

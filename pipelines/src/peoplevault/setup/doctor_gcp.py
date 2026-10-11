@@ -167,9 +167,14 @@ def bigquery_checks(probes: Probes, project: str, expected: dict[str, int], purp
     try:
         got = probes.counts(sorted(expected))
         empty = [t for t in sorted(expected) if got.get(t, 0) == 0]
-        differ = [t for t in sorted(expected) if got.get(t, 0) not in (0, expected[t])]
+        # deletions and retention only ever lower a count, so a count above the seed means a load added rows twice
+        above = [t for t in sorted(expected) if got.get(t, 0) > expected[t]]
+        differ = [t for t in sorted(expected) if 0 < got.get(t, 0) < expected[t]]
         if empty:
             out.append(missing(B, "data loaded", f"zero rows in: {', '.join(empty)}", "npm run seed:prod"))
+        elif above:
+            out.append(missing(B, "data loaded", f"{len(above)} table(s) above the seed counts (deletions only lower them): {', '.join(above)}",
+                               "a load added rows twice to a merge-only table: inspect it before any further load (no full refresh, ADR 0006)"))
         elif differ:
             out.append(warn(B, "data loaded", f"{len(differ)} table(s) differ from the seed counts (expected after deletions): {', '.join(differ)}", "npm run seed:prod on a fresh project"))
         else:

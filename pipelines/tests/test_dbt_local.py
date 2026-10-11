@@ -58,3 +58,26 @@ def test_second_build_after_dml_erase_does_not_bring_the_subject_back(small_load
     conn = duckdb.connect(str(small_load["duckdb"]))
     for t in ("peoplevault_core.dim_employee", "peoplevault_core.fct_compensation", "peoplevault_marts.team_roster", "peoplevault_marts.attrition_features", "peoplevault_snapshots.dim_employee_history"):
         assert conn.execute(f"select count(*) from {t} where subject_ref = $s", {"s": sref}).fetchone()[0] == 0, t
+
+
+def test_a_second_load_does_not_replay_old_exports_into_the_history(small_load):
+    """`pv load` is a normal recovery path (setup:prod re-runs seed:prod), so the snapshot replay must be idempotent:
+    replaying an older export against the current rows would add backward-in-time SCD2 versions, and in production
+    the merge-only snapshot could not be repaired."""
+    from peoplevault.load.run import load_local
+    from peoplevault.pseudo import TEST_MASTER_KEY
+
+    q = "select count(*), max(n) from (select employee_key, count(*) as n from peoplevault_snapshots.dim_employee_history group by 1)"
+    conn = duckdb.connect(str(small_load["duckdb"]))
+    before = conn.execute(q).fetchone()
+    before_total = conn.execute("select count(*) from peoplevault_snapshots.dim_employee_history").fetchone()[0]
+    conn.close()
+    from conftest import SMALL_KEYS
+
+    again = load_local(suppressed=set(), master_key=TEST_MASTER_KEY, duckdb_path=small_load["duckdb"], lake_root=small_load["lake"],
+                       generated=small_load["gen"], only_keys=SMALL_KEYS, lake_years={2025, 2026})
+    conn = duckdb.connect(str(small_load["duckdb"]))
+    before_rows, after_rows = before_total, conn.execute("select count(*) from peoplevault_snapshots.dim_employee_history").fetchone()[0]
+    after = conn.execute(q).fetchone()
+    assert (after_rows, after) == (before_rows, before)
+    assert again["snapshot_replays"] == 0

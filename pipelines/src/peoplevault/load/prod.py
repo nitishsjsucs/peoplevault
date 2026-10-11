@@ -1,7 +1,7 @@
 """`pv load --target prod` (SPEC.md section 22.2 step 6). Status: written, not yet executed against BigQuery.
 
 As peoplevault-executor: create the raw and restricted tables, sync the suppression list from the deployed Worker, upsert the
-identity xref, land each export object (replacing rows of its export_date), replay the 13 weekly snapshots, run
+identity xref, land each export object (replacing rows of its export_date), replay the weekly snapshots not yet in the history, run
 `dbt build --target bigquery` (merge-only protected tables), verify every tag and row access policy, and append the
 Iceberg history to the Basin Catalog after the self-test. Any zero count or missing control fails.
 """
@@ -47,7 +47,7 @@ def load_prod(*, from_r2: bool = False) -> dict:
     from peoplevault.dbtrun import run as dbt_run
     from peoplevault.executor.prod import prod_api
     from peoplevault.lake.catalog import open_catalog
-    from peoplevault.load import lake, raw
+    from peoplevault.load import lake, raw, snapshots
     from peoplevault.load.raw import LoadReport
     from peoplevault.setup.bq_controls import live_verify
     from peoplevault.sources import local_files, wrangler_r2
@@ -89,16 +89,16 @@ def load_prod(*, from_r2: bool = False) -> dict:
         client.load_table_from_json(_json_rows(arrow), f"{project}.{table}", job_config=load_config, **load_kwargs()).result()
         report.objects_loaded += 1
         report.rows_loaded[table] = report.rows_loaded.get(table, 0) + arrow.num_rows
-    for d in sorted(o.basis_date for o in objects if o.family == "hris"):
-        if not dbt_run(["snapshot", "--target", "bigquery", "--vars", json.dumps({"pv_snapshot_export_date": d})]).success:
-            raise RuntimeError(f"dbt snapshot failed for export {d}")
+    # only the exports after the newest one already in the merge-only history (a re-run must not add old versions)
+    replays = snapshots.replay([o.basis_date for o in objects if o.family == "hris"], "bigquery",
+                               replayed_through=snapshots.replayed_through_bigquery(client, project))
     if not dbt_run(["build", "--target", "bigquery"]).success:
         raise RuntimeError("dbt build --target bigquery failed")
     problems = live_verify(project)
     if problems:
         raise RuntimeError(f"protected table controls missing after the build: {len(problems)} problem(s)")
     lake_report = lake.load_employee_monthly(open_catalog("prod"), ps, sup, history_dir=PROD_GENERATED / "history" / "employee_monthly")
-    return {"identity_xref": len(xref), "raw": report.__dict__, "snapshot_replays": sum(1 for o in objects if o.family == "hris"), "lake": lake_report}
+    return {"identity_xref": len(xref), "raw": report.__dict__, "snapshot_replays": len(replays), "lake": lake_report}
 
 
 def _worker_secret(name: str) -> str:

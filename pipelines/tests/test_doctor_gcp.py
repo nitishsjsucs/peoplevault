@@ -135,6 +135,8 @@ def test_bigquery_lines():
     assert "zero rows in: peoplevault_marts.team_roster" in checks[4].detail
     after_deletions = bigquery_checks(FakeProbes(counts={"peoplevault_core.dim_employee": 1190, "peoplevault_marts.team_roster": 1199}), PROJECT, expected, sas)
     assert after_deletions[-1].status == "warn"
+    loaded_twice = bigquery_checks(FakeProbes(counts={"peoplevault_core.dim_employee": 1200, "peoplevault_marts.team_roster": 1260}), PROJECT, expected, sas)
+    assert loaded_twice[-1].status == "missing" and "above the seed counts" in loaded_twice[-1].detail
 
 
 def test_catalog_check():
