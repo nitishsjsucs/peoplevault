@@ -149,3 +149,16 @@ def test_result_shape_is_readme_ready(pop):
     assert s["kind"] == "authz" and s["layers"]["api"] == {**s["layers"]["api"], "runnable": 1, "passed": 1, "skipped": 1, "target": "prod", "allow_writes": True}
     assert json.loads(json.dumps(s)) == s
     assert SimpleNamespace(**s["by_category"]["A"]).skipped == 1
+
+
+def test_the_result_names_its_real_runner_and_the_command_that_reproduces_it():
+    """A local rehearsal is never described as the deployed API, and the command field is the invocation that ran."""
+    from peoplevault.authz.api_runner import RUNNER, invocation
+
+    header = {"command": "x", "date": "2026-10-10", "git_sha": "s", "git_dirty": False, "environment": "e"}
+    local = ar.summarize([], {"passed": [], "failed": [], "skipped": []}, header, target="local", allow_writes=True)
+    assert local["layers"]["api"]["runner"] == RUNNER["local"] and "deployed" not in RUNNER["local"]
+    assert "deployed Worker behind Cloudflare Access" in RUNNER["prod"]
+    assert invocation("local", allow_writes=True, start=True, write_results=True) == "npm run authz:api:local"
+    assert invocation("local", allow_writes=False, start=False, write_results=True) == "uv run --project pipelines pv authz api --target local --write-results"
+    assert invocation("prod", allow_writes=False, start=False, write_results=True) == "npm run authz:prod"

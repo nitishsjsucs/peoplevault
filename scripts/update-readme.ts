@@ -45,19 +45,29 @@ const label = (s: string) => s.replace(/_/g, " ");
 function deletion(f: ResultFile): string[] {
   const d = f.data;
   const lines = [`**Deletion eval, ${d.profile} profile** (\`${d.command}\`, ${d.date}; ${d.environment})`, ""];
-  const byStatus = Object.entries(d.requests.by_status as Record<string, number>).map(([k, v]) => `${label(k)} ${v}`).join(", ");
+  const cohorts = (d.requests.cohorts ?? {}) as Record<string, number>;
+  const planted = (d.faults.planned ?? cohorts.F ?? d.faults.scenarios) as number;
+  const byStatus = Object.entries(d.requests.by_status as Record<string, number>)
+    .map(([k, v]) => `${label(k)} ${v}` + (k === "failed" && v === planted ? " (the planted-fault requests, by design)" : ""))
+    .join(", ");
   lines.push(`- Requests: ${d.requests.total} (${byStatus})`);
-  lines.push(`- Coverage (system verdicts, retention and DSR requests that were not held): ${pct(d.coverage)}`);
+  const scored = (d.coverage.requests ?? (cohorts.R ?? 0) - (cohorts.R_held ?? 0) + (cohorts.D ?? 0)) as number;
+  lines.push(
+    `- Coverage (system verdicts over the ${scored} retention and data subject requests of cohorts R and D that were not held; the ${planted} planted-fault requests fail by design and are scored under fault detection): ${pct(d.coverage)}`,
+  );
   for (const [cat, c] of Object.entries(d.coverage.by_category as Record<string, { display: string; applicable_pairs: number }>)) lines.push(`  - ${label(cat)}: ${pct(c)}`);
+  const rep = d.report?.coverage as { display: string; applicablePairs: number } | undefined;
+  if (rep && rep.applicablePairs) lines.push(`- Deletion report (the product's own coverage, over every request): ${rep.display} of ${rep.applicablePairs} applicable pairs, lower because it includes the planted-fault requests`);
   const o = d.oracle;
   lines.push(`- Independent oracle: coverage ${o.oracle_coverage.display}, agreement ${(Number(o.agreement) * 100).toFixed(1)}%, false clean ${o.false_clean}, false residue ${o.false_residue}`);
   const stores = Object.entries(d.faults.by_store as Record<string, { detected: number; scenarios: number }>).map(([k, v]) => `${k} ${v.detected}/${v.scenarios}`).join(", ");
   lines.push(`- Fault detection: ${d.faults.detected} of ${d.faults.scenarios} planted residues of designed types detected (${stores})` + (d.faults.variants?.length ? `; ${d.faults.undetected_by_design} out-of-design variants undetected by design` : ""));
-  lines.push(`- Legal holds: ${d.holds.held_requests} held requests, held data intact for ${d.holds.held_data_intact}`);
+  const heldIn = cohorts.H !== undefined ? ` (${cohorts.H} DSR and ${cohorts.R_held ?? 0} retention subjects under hold in the cohorts)` : "";
+  lines.push(`- Legal holds: ${d.holds.held_requests} held requests for ${d.holds.held_subjects ?? d.holds.held_requests} held subjects${heldIn}, held data intact for ${d.holds.held_data_intact}`);
   if (d.retention.run === false) lines.push("- Retention sweep: not part of this profile");
   else {
     const m = d.retention.matches_expected as Record<string, boolean>;
-    lines.push(`- Retention sweep: ${d.retention.retention_requests} retention requests (${d.retention.retention_held} held), ${d.retention.export_objects_deleted} export objects deleted and ${d.retention.export_objects_minimized_for_hold} minimized for holds, ${d.retention.extracts_expired} extracts expired; ${Object.values(m).every(Boolean) ? "every count equal to the golden counts" : `differs from the golden counts: ${Object.keys(m).filter((k) => !m[k]).join(", ")}`}`);
+    lines.push(`- Retention sweep: ${d.retention.retention_requests} retention requests not held plus ${d.retention.retention_held} held (${d.retention.retention_requests + d.retention.retention_held} in all), ${d.retention.export_objects_deleted} export objects deleted and ${d.retention.export_objects_minimized_for_hold} minimized for holds, ${d.retention.extracts_expired} extracts expired; ${Object.values(m).every(Boolean) ? "every count equal to the golden counts" : `differs from the golden counts: ${Object.keys(m).filter((k) => !m[k]).join(", ")}`}`);
   }
   const aa = d.applicability_agreement;
   lines.push(`- Applicability agreement with ground truth: ${aa.agree} of ${aa.pairs} pairs` + (aa.disagreements?.length ? ` (${aa.disagreements.map((x: Json) => `${x.asset_id}: system ${x.system}, truth ${x.truth}`).join("; ")})` : ""));

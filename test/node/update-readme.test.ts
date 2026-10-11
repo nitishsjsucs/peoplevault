@@ -14,11 +14,12 @@ function deletionFile(over: Record<string, unknown> = {}): ResultFile {
       ...header,
       kind: "deletion",
       profile: "ci",
-      requests: { total: 25, by_status: { completed_with_residuals: 16, failed: 5, held: 4 } },
-      coverage: { ...cov(157, 157), by_category: { source_exports: cov(18, 18), application_caches: cov(0, 0) } },
+      requests: { total: 25, by_status: { completed_with_residuals: 16, failed: 5, held: 4 }, cohorts: { R: 12, R_held: 2, D: 6, H: 2, F: 5, variants: 0 } },
+      coverage: { ...cov(157, 157), requests: 16, by_category: { source_exports: cov(18, 18), application_caches: cov(0, 0) } },
+      report: { coverage: { value: 0.932, display: "93.2%", applicablePairs: 222, cleanPairs: 207 } },
       oracle: { oracle_coverage: cov(157, 157), agreement: 1, false_clean: 0, false_residue: 0 },
-      faults: { scenarios: 5, detected: 5, by_store: { r2: { detected: 1, scenarios: 1 } }, undetected_by_design: 0, variants: [] },
-      holds: { held_requests: 4, held_data_intact: 4 },
+      faults: { scenarios: 5, planned: 5, detected: 5, by_store: { r2: { detected: 1, scenarios: 1 } }, undetected_by_design: 0, variants: [] },
+      holds: { held_requests: 4, held_subjects: 4, held_data_intact: 4, expected_held_subjects: 4 },
       retention: { retention_requests: 10, retention_held: 2, export_objects_deleted: 3, export_objects_minimized_for_hold: 5, extracts_expired: 3, matches_expected: { a: true } },
       applicability_agreement: { agree: 192, pairs: 192, disagreements: [] },
       audit_chain: { ok: true, length: 956 },
@@ -41,6 +42,13 @@ describe("readme:results", () => {
     const text = renderResults([deletionFile()]);
     expect(text).toContain("`npm run eval:deletion:ci`, 2026-10-10; local (Miniflare, DuckDB, pyiceberg SqlCatalog)");
     expect(text).toContain("100.0% of 157 applicable pairs");
+    // the coverage scope names exactly what was scored, and the planted failures are labeled as such
+    expect(text).toContain("- Coverage (system verdicts over the 16 retention and data subject requests of cohorts R and D that were not held; the 5 planted-fault requests fail by design and are scored under fault detection): 100.0% of 157 applicable pairs");
+    expect(text).toContain("- Requests: 25 (completed with residuals 16, failed 5 (the planted-fault requests, by design), held 4)");
+    expect(text).toContain("- Deletion report (the product's own coverage, over every request): 93.2% of 222 applicable pairs, lower because it includes the planted-fault requests");
+    expect(text).toContain("- Legal holds: 4 held requests for 4 held subjects (2 DSR and 2 retention subjects under hold in the cohorts), held data intact for 4");
+    expect(text).toContain("- Retention sweep: 10 retention requests not held plus 2 held (12 in all)");
+    expect(text).not.toContain("retention and DSR requests that were not held)");
     expect(text).toContain("application caches: n/a (0 applicable pairs)");
     expect(text).toContain("5 of 5 planted residues of designed types detected");
     expect(text).toContain("nothing here ran on Cloudflare or Google Cloud");

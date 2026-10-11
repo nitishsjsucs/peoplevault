@@ -394,7 +394,8 @@ def score(d: RunData) -> dict:
         "requests": {"total": len(requests), "by_status": _count(r["status"] for r in requests), "by_kind": _count(r["kind"] for r in requests),
                      "cohorts": {k: len(v) for k, v in cohorts.items() if isinstance(v, list)}},
         "assets_registered": 13,
-        "coverage": {**_coverage(clean, len(pairs)), "by_category": by_cat, "scope": "R and D requests that were not held; system verdicts"},
+        "coverage": {**_coverage(clean, len(pairs)), "by_category": by_cat, "requests": len(scored_requests),
+                     "scope": "retention requests and DSRs of cohorts R and D that were not held; the planted-fault requests (cohort F) are scored under fault detection; system verdicts"},
         "oracle": {"oracle_coverage": _coverage(oracle_clean, len(pairs)), "agreement": (agreement / len(pairs)) if pairs else None, "false_clean": false_clean_pairs + missed,
                    "false_clean_pairs": false_clean_pairs, "missed_locations": missed, "false_residue": false_residue, "scanned": dict(found.scanned)},
         "applicability_agreement": {"value": (agree / total_app) if total_app else None, "pairs": total_app, "agree": agree, "disagreements": disagreements},
@@ -485,10 +486,14 @@ def render_md(r: dict) -> str:
         f"Command: `{r['command']}`. Date: {r['date']}.",
         "",
         f"- Requests: {r['requests']['total']} ({', '.join(f'{k} {v}' for k, v in r['requests']['by_status'].items())})",
-        f"- Coverage (system, R and D not held): {r['coverage']['display']} of {r['coverage']['applicable_pairs']} applicable pairs",
+        f"- Coverage (system verdicts, the {r['coverage'].get('requests')} requests of cohorts R and D that were not held; planted-fault requests are scored under faults): "
+        f"{r['coverage']['display']} of {r['coverage']['applicable_pairs']} applicable pairs",
     ]
     for cat, c in r["coverage"]["by_category"].items():
         lines.append(f"  - {cat}: {c['display']} of {c['applicable_pairs']}")
+    rep = (r.get("report") or {}).get("coverage") or {}
+    if rep.get("applicablePairs"):
+        lines.append(f"- Deletion report (the product's own, every request, planted faults included): {rep['display']} of {rep['applicablePairs']} applicable pairs")
     o = r["oracle"]
     lines += [
         f"- Oracle coverage: {o['oracle_coverage']['display']}; agreement {o['agreement']}; false_clean {o['false_clean']}; false_residue {o['false_residue']}",

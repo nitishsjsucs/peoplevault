@@ -542,7 +542,7 @@ def summarize(cases: list[Case], out: dict, header: dict, *, target: str, allow_
         "cases_total": len(cases),
         "layers": {"api": {"target": target, "runnable": runnable, "passed": len(out["passed"]), "failed": len(out["failed"]), "skipped": len(out["skipped"]),
                            "allow_writes": allow_writes,
-                           "runner": "pv authz api (the case file through the deployed API, full synthetic population, one token per persona principal and the executor)"}},
+                           "runner": RUNNER[target]}},
         "by_category": by_cat,
         "failures": out["failed"],
         "skipped": out["skipped"],
@@ -593,6 +593,22 @@ def _local_up() -> bool:
         return False
 
 
+RUNNER = {
+    "local": "pv authz api (the case file through the local Worker on wrangler dev, full synthetic population, one token per persona principal and the executor)",
+    "prod": "pv authz api (the case file through the deployed Worker behind Cloudflare Access, full synthetic population, one token per persona principal and the executor)",
+}
+
+
+def invocation(target: str, *, allow_writes: bool, start: bool, write_results: bool) -> str:
+    """The command that reproduces the run: the package.json script when the flags are exactly its own, else pv's argv."""
+    if target == "local" and start and allow_writes and write_results:
+        return "npm run authz:api:local"
+    if target == "prod" and write_results and not start:
+        return "npm run authz:prod" + (" -- --allow-writes" if allow_writes else "")
+    flags = [f for f, on in (("--start", start), ("--allow-writes", allow_writes), ("--write-results", write_results)) if on]
+    return " ".join(["uv run --project pipelines pv authz api --target", target, *flags])
+
+
 def run_api(target: str, *, allow_writes: bool = False, start: bool = False, write_results: bool = False) -> dict:
     """Runs every case it can through the API of `target` and returns (and optionally writes) the result."""
     from peoplevault.evals.report import LOCAL_ENVIRONMENT, header, write_result
@@ -614,7 +630,7 @@ def run_api(target: str, *, allow_writes: bool = False, start: bool = False, wri
             started = True
         client = LocalClient(json.loads((gen_dir / "truth" / "principals.json").read_text()))
         env = Env(client.request, _local_extract_reader, set(TOKEN_PRINCIPALS), "pv-executor-local", column_class, purpose_ref)
-        command = "pv authz api --target local" + (" --allow-writes" if allow_writes else "")
+        command = invocation("local", allow_writes=allow_writes, start=start, write_results=write_results)
         environment = LOCAL_ENVIRONMENT
         name = "authz-api-local"
     else:
@@ -629,7 +645,7 @@ def run_api(target: str, *, allow_writes: bool = False, start: bool = False, wri
         client = ProdClient(penv)
         cf = CloudflareRest(penv.get("CLOUDFLARE_ACCOUNT_ID", ""), oauth_token())
         env = Env(client.request, lambda key: cf.r2_get("pv-derived", key).decode(), set(TOKEN_PRINCIPALS) & client.principals(), PROD_EXECUTOR, column_class, purpose_ref)
-        command = "npm run authz:prod" + (" -- --allow-writes" if allow_writes else "")
+        command = invocation("prod", allow_writes=allow_writes, start=start, write_results=write_results)
         environment = PROD_ENVIRONMENT
         name = "authz-prod"
     try:
