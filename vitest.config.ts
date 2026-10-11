@@ -29,6 +29,8 @@ export default defineConfig(async () => {
           test: {
             name: "worker",
             include: ["test/worker/**/*.test.ts"],
+            // workflow tests run whole deletions (10 at once in one test); CI machines are slower than a laptop
+            testTimeout: 120_000,
             setupFiles: ["test/worker/setup.ts"],
           },
         },

@@ -7,6 +7,7 @@ import { audit, errorJson } from "../context.ts";
 import { activeHolds, placeHold, releaseHold, type HoldRow } from "../holds/holds.ts";
 import { identityByRef } from "../identity/refs.ts";
 import { decide, type Action } from "../policy/pdp.ts";
+import { deletionReport } from "../reports/deletion-report.ts";
 import { ActiveRequestExists, getRequest, insertRequest, nextInstanceId, publicRequest, startDeletionInstance, type DeletionRequestRow } from "../requests.ts";
 
 export const privacy = new Hono<AppEnv>();
@@ -177,6 +178,16 @@ privacy.get(KEYS_ROUTE, async (c) => {
   const page = await bucket.list({ prefix: c.req.query("prefix") ?? "", limit: 1000, ...(cursor ? { cursor } : {}) });
   await audit(c, { purpose: "privacy_compliance", action: "read_assets", route: KEYS_ROUTE, decision: "allow", reason: "ok", rowCount: page.objects.length });
   return c.json({ keys: page.objects.map((o) => ({ key: o.key, size: o.size, uploaded: o.uploaded.toISOString() })), cursor: page.truncated ? page.cursor : null });
+});
+
+// ---- coverage report ------------------------------------------------------------------------------------------------
+const REPORT = "/api/v1/privacy/reports/deletion";
+privacy.get(REPORT, async (c) => {
+  const denied = await authorize(c, "privacy_compliance", "read_report", REPORT);
+  if (denied) return denied;
+  const report = await deletionReport(c.env.DB, c.req.query("from") ?? null, c.req.query("to") ?? null);
+  await audit(c, { purpose: "privacy_compliance", action: "read_report", route: REPORT, decision: "allow", reason: "ok", rowCount: report.requests.total });
+  return c.json(report);
 });
 
 // ---- audit ----------------------------------------------------------------------------------------------------------

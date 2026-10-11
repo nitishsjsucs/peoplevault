@@ -4,7 +4,7 @@ Tracks the build against the commit plan in SPEC.md section 26. Updated in every
 
 ## Position
 
-Commit 16 done (spec item 15): `test(authz): warehouse-layer cases on DuckDB`. Commits are numbered in the order made.
+Commit 18 done (spec item 16): `feat(deletion): subject deletion workflow, conditional R2 rewrites and executor task protocol`. Commits are numbered in the order made (17 recorded the authz results).
 
 ## Done
 
@@ -26,14 +26,16 @@ Commit 16 done (spec item 15): `test(authz): warehouse-layer cases on DuckDB`. C
 | 14 | `feat(api): purpose data routes with suppression-aware KV cache and hash-chained audit` | list (100-row pages, unknown query parameters rejected), profile (ref kind check, D1 identity and suppression check, KV cache with row-scope re-check on hits, never caches a suppressed subject), team roster (`team:{manager_ref}`, suppressed manager neither served nor cached), analyst datasets and R2 extracts (custom metadata, extract columns only), POST-only identity lookup; every allow and deny audited; hash-chained audit log with head-guarded inserts (concurrent appends retry, never fork) and verification; fixture-backed FakeWarehouse and D1 seed helpers; route, suppression and audit chain tests |
 | 15 | `feat(api): privacy, legal hold and executor routes with the 100-case authorization harness` | DSR create (202, workflow instance named after the request, 409 `active_request_exists`), list, detail, receipt, retry (`<id>-r<n>`); legal holds place, release (resubmits held requests when no other hold remains) and list; asset inventory with live counts and R2 key listing; audit list and verify; executor claim (exclusive leases, expired leases reclaimed), complete (lease owner only, zod result schema that rejects identifier-like strings, `sendEvent` to the instance), suppression list and residual routes; `test/worker/authz.cases.test.ts` runs all 100 cases through `buildApp` (100 passing); holds routes moved earlier than spec item 19 because cases F05 to F09 need them |
 | 16 | `test(authz): warehouse-layer cases on DuckDB` | `pv authz warehouse --target local [--write-results --pdp-report]`: the 48 warehouse-layer cases (C 30, D 15, E 3) against the purpose views and table macros of a DuckDB built from world.yaml through the shim query function; a non-vacuity test (a leaky view fails); `npm run eval:authz` writes `evals/results/authz-local-<date>.json` with per-layer and per-category counts (vitest JSON report for the pdp layer) |
+| 17 | `test(authz): record local authorization results` | `evals/results/authz-local-2026-10-10.json` from `npm run eval:authz` on a clean tree: pdp 100/100, warehouse 48/48 |
+| 18 | `feat(deletion): subject deletion workflow, conditional R2 rewrites and executor task protocol` | `SubjectDeletionWorkflow` with the 18 steps of section 14.1 (hold check and held path, suppression, discovery, per-family etag compare-and-swap R2 rewrites with reference scrubbing that never touches held rows, extracts, KV bulk-read erasure, executor erase task and `waitForEvent`, KV propagation sleep, independent R2/KV/D1 probes over whole stores with boundary-aware matching and redacted locations, verdicts with unregistered residue pairs, identity erasure and re-probe, executor identity task, residual recording, request redaction with a final full D1 probe, receipt hashed into the audit chain, error path to `failed`); operation counting per step; coverage report route; tests: happy path, held, unregistered residue, hold-reference conflict, executor failure and forced timeout, identifier-free step outputs, 10 concurrent R2 rewrites and 10 concurrent deletions, operation budget at the full population's 420 KV entries and 47 R2 objects, identifier-free audit, probes, console logging, verify isolation (node project), event delivery through the executor API |
 
 ## Next
 
-17. `feat(deletion): subject deletion workflow, conditional R2 rewrites and executor task protocol`
+19. `feat(executor): Python executor for warehouse DML, the aggregate rebuild and Iceberg` (with the Python verifiers, spec item 18)
 
 ## Check status
 
-At commit 16: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 210 passed, 0 failed (incl. the 100 authorization cases; the placeholder deletion workflow logs an expected uncaught error when F01 starts an instance, until the workflow commit); `npm run test:py` 132 passed, 0 failed; `pv fixtures check` clean; `npm run eval:authz` pdp 100/100, warehouse 48/48; `ruff check pipelines` clean; `pv policy check` clean.
+At commit 18: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 232 passed, 0 failed (incl. the 100 authorization cases; the forced-timeout test logs an expected WorkflowTimeoutError); `npm run test:py` 132 passed, 0 failed; `pv fixtures check` clean; `npm run eval:authz` pdp 100/100, warehouse 48/48; `ruff check pipelines` clean; `pv policy check` clean.
 
 ## Deviations from SPEC.md
 
@@ -41,6 +43,9 @@ At commit 16: `npm run typecheck` passes; `npm run types:check` passes (with and
 - The SCD2 snapshot uses `strategy: check` over the attribute columns (org unit, level, title, manager key, status, location) instead of `timestamp` on `export_date`: with every employee in every weekly export, a timestamp on the export date would version every employee every week. The history input is an ephemeral, pseudonymous model, so the snapshot holds no direct identifiers.
 - Policy tags in schema YAML use `{{ var('pv_policy_tags')['<class>'] }}` directly: dbt does not expose project macros when rendering schema YAML (checked: "'pv_policy_tag' is undefined"), so the `pv_policy_tag()` macro was dropped.
 - dbt staging models are ephemeral (no staging relations exist), so `var('pv_snapshot_export_date')` applies when each `dbt snapshot` of the replay compiles.
+- Executor task ids are `<instanceId>:erase` and `<instanceId>:identity` (equal to `<requestId>:...` for the first attempt), so a retry instance gets fresh tasks; `loadSubject` falls back to the request's latest erase payload.
+- Probe findings redact token occurrences inside locations (for example an R2 key named after an employee id becomes `[redacted]`), so findings stored in D1 never carry a value.
+- The local `kv_propagation` residual is recorded as `cleared` with evidence `modeled` (there is no edge network locally).
 - Purpose table functions read only their own purpose dataset's views (which are authorized on the source datasets), so no routine authorization on `pv_core` is needed; the generated BigQuery SQL has no dataset `AccessEntry` of type `ROUTINE`.
 
 - Policy action `read_legal_holds` added for `GET /api/v1/privacy/legal-holds` (the spec's Action list had no read action for holds; it is granted to `privacy_officer` under `legal_hold_management` only).

@@ -72,3 +72,30 @@ describe("executor task protocol", () => {
     expect(((await sup.json()) as { subjectRefs: string[] }).subjectRefs).toHaveLength(3);
   });
 });
+
+describe("completion delivers the event to the waiting instance", () => {
+  it("claim and complete through the API resume the deletion workflow to completion", async () => {
+    const { introspectWorkflowInstance } = await import("cloudflare:test");
+    const { executorEraseResult, executorIdentityResult, identityOf, seedObjects, subject } = await import("../fixtures/seed.ts");
+    await seedObjects();
+    const { app } = worldApp();
+    const target = await identityOf(subject("hrbp-02", "in_unit", 4).employee_ref);
+    const res = await call(app, "privacy-01", "POST", "/api/v1/privacy/deletion-requests", { employee_ref: target.employee_ref, reason: "data subject request" });
+    const { requestId } = (await res.json()) as { requestId: string };
+    await using instance = await introspectWorkflowInstance(env.DELETION, requestId);
+    await instance.modify(async (m) => m.disableSleeps());
+    for (const [phase, payload] of [["erase", executorEraseResult()], ["identity", executorIdentityResult()]] as const) {
+      let tasks: { id: string }[] = [];
+      for (let i = 0; i < 100 && tasks.length === 0; i++) {
+        tasks = ((await (await call(app, "pv-executor-local", "POST", "/api/v1/executor/tasks/claim", { phases: [phase] })).json()) as { tasks: { id: string }[] }).tasks;
+        if (tasks.length === 0) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(tasks.map((t) => t.id)).toEqual([`${requestId}:${phase}`]);
+      const done = await call(app, "pv-executor-local", "POST", `/api/v1/executor/tasks/${tasks[0]!.id}/complete`, { ok: payload.ok, result: payload.result });
+      expect(done.status).toBe(200);
+    }
+    await instance.waitForStatus("complete");
+    const r = await env.DB.prepare("SELECT status FROM deletion_requests WHERE id = ?").bind(requestId).first<{ status: string }>();
+    expect(r!.status).toBe("completed_with_residuals");
+  });
+});
