@@ -1,0 +1,1544 @@
+{
+  "version": 1,
+  "policyHash": "3383ed2147711cc9e7550f043bb33e7f3c53f1fed22e9c877a2af24ecb4ac760",
+  "personas": {
+    "hr_partner": {
+      "label": "HR Business Partner",
+      "purposes": [
+        "employee_relations"
+      ],
+      "grants": {
+        "employee_relations": [
+          "list_employees",
+          "read_profile"
+        ]
+      }
+    },
+    "manager": {
+      "label": "People Manager",
+      "purposes": [
+        "team_management"
+      ],
+      "grants": {
+        "team_management": [
+          "list_employees",
+          "read_profile"
+        ]
+      }
+    },
+    "people_analyst": {
+      "label": "People Analyst",
+      "purposes": [
+        "workforce_analytics"
+      ],
+      "grants": {
+        "workforce_analytics": [
+          "list_employees",
+          "read_profile",
+          "read_dataset",
+          "create_extract"
+        ]
+      }
+    },
+    "privacy_officer": {
+      "label": "Privacy Officer",
+      "purposes": [
+        "privacy_compliance",
+        "legal_hold_management"
+      ],
+      "grants": {
+        "privacy_compliance": [
+          "identity_lookup",
+          "create_deletion_request",
+          "read_deletion_request",
+          "read_assets",
+          "read_report",
+          "read_audit",
+          "run_retention"
+        ],
+        "legal_hold_management": [
+          "identity_lookup",
+          "place_legal_hold",
+          "release_legal_hold",
+          "read_legal_holds"
+        ]
+      }
+    }
+  },
+  "systemRoles": {
+    "executor": {
+      "actions": [
+        "executor_claim",
+        "executor_complete",
+        "executor_suppression"
+      ]
+    }
+  },
+  "purposes": {
+    "employee_relations": {
+      "rowScope": "org_units",
+      "restrictedPopulation": "include",
+      "terminated": "include",
+      "ref": "employee_ref",
+      "refPrefix": "er_",
+      "bqIdentity": "pv-er-reader",
+      "dataset": "pv_purpose_employee_relations"
+    },
+    "team_management": {
+      "rowScope": "direct_reports",
+      "restrictedPopulation": "exclude",
+      "terminated": "exclude",
+      "ref": "employee_ref",
+      "refPrefix": "er_",
+      "bqIdentity": "pv-tm-reader",
+      "dataset": "pv_purpose_team_management"
+    },
+    "workforce_analytics": {
+      "rowScope": "all",
+      "restrictedPopulation": "exclude",
+      "terminated": "include",
+      "ref": "analytics_id",
+      "refPrefix": "an_",
+      "bqIdentity": "pv-wa-reader",
+      "dataset": "pv_purpose_workforce_analytics"
+    },
+    "privacy_compliance": {
+      "rowScope": "identity_lookup",
+      "restrictedPopulation": "include",
+      "terminated": "include",
+      "ref": "employee_ref",
+      "refPrefix": "er_",
+      "bqIdentity": "pv-pc-reader",
+      "dataset": "pv_purpose_privacy_compliance"
+    },
+    "legal_hold_management": {
+      "rowScope": "identity_lookup",
+      "restrictedPopulation": "include",
+      "terminated": "include",
+      "ref": "employee_ref",
+      "refPrefix": "er_",
+      "bqIdentity": "pv-lh-reader",
+      "dataset": "pv_purpose_legal_hold_management"
+    }
+  },
+  "dataClasses": {
+    "tagged": [
+      "direct_identifier",
+      "date_of_birth",
+      "compensation",
+      "performance",
+      "health_leave",
+      "protected_attribute"
+    ],
+    "untagged": [
+      "job",
+      "coarsened",
+      "pseudonym"
+    ]
+  },
+  "columnClass": {
+    "_loaded_at": "job",
+    "accommodation_note": "health_leave",
+    "age_band": "coarsened",
+    "analytics_id": "pseudonym",
+    "base_salary": "compensation",
+    "birth_date": "date_of_birth",
+    "bonus_target_pct": "compensation",
+    "currency": "job",
+    "cycle": "job",
+    "dbt_scd_id": "job",
+    "dbt_updated_at": "job",
+    "dbt_valid_from": "job",
+    "dbt_valid_to": "job",
+    "employee_id": "direct_identifier",
+    "employee_key": "pseudonym",
+    "employee_ref": "pseudonym",
+    "employment_status": "job",
+    "end_date": "job",
+    "ethnicity": "protected_attribute",
+    "export_date": "job",
+    "full_name": "direct_identifier",
+    "gender": "protected_attribute",
+    "headcount": "coarsened",
+    "hire_date": "job",
+    "hire_year": "coarsened",
+    "is_restricted": "job",
+    "job_level": "job",
+    "job_title": "job",
+    "leave_category": "job",
+    "leave_id": "job",
+    "leave_reason": "health_leave",
+    "leave_type": "health_leave",
+    "location": "job",
+    "manager_employee_id": "direct_identifier",
+    "manager_key": "pseudonym",
+    "manager_ref": "pseudonym",
+    "month": "job",
+    "org_unit": "job",
+    "pay_period_end": "job",
+    "personal_email": "direct_identifier",
+    "phone": "direct_identifier",
+    "rating": "performance",
+    "rating_band": "coarsened",
+    "review_id": "job",
+    "review_text": "performance",
+    "reviewer_employee_id": "direct_identifier",
+    "reviewer_key": "pseudonym",
+    "salary_band": "coarsened",
+    "snapshot_year": "job",
+    "start_date": "job",
+    "status": "job",
+    "subject_ref": "pseudonym",
+    "tenure_years": "coarsened",
+    "terminated_in_month": "job",
+    "termination_date": "job",
+    "work_email": "direct_identifier"
+  },
+  "visibility": {
+    "employee_relations": {
+      "direct_identifier": "allow",
+      "date_of_birth": "mask_date_year",
+      "compensation": "allow",
+      "performance": "allow",
+      "health_leave": "mask_nullify",
+      "protected_attribute": "deny"
+    },
+    "team_management": {
+      "direct_identifier": "allow",
+      "date_of_birth": "deny",
+      "compensation": "mask_nullify",
+      "performance": "allow",
+      "health_leave": "deny",
+      "protected_attribute": "deny"
+    },
+    "workforce_analytics": {
+      "direct_identifier": "deny",
+      "date_of_birth": "mask_date_year",
+      "compensation": "deny",
+      "performance": "deny",
+      "health_leave": "deny",
+      "protected_attribute": "allow"
+    },
+    "privacy_compliance": {
+      "direct_identifier": "allow",
+      "date_of_birth": "deny",
+      "compensation": "deny",
+      "performance": "deny",
+      "health_leave": "deny",
+      "protected_attribute": "deny"
+    },
+    "legal_hold_management": {
+      "direct_identifier": "allow",
+      "date_of_birth": "deny",
+      "compensation": "deny",
+      "performance": "deny",
+      "health_leave": "deny",
+      "protected_attribute": "deny"
+    }
+  },
+  "untaggedVisibility": {
+    "job": "allow",
+    "coarsened": "allow",
+    "pseudonym": "allow"
+  },
+  "queries": {
+    "employee_relations.list": {
+      "id": "employee_relations.list",
+      "purpose": "employee_relations",
+      "name": "list",
+      "kind": "function",
+      "object": "employees_in_org_units",
+      "view": "employees",
+      "viewSource": "profile_base",
+      "params": {
+        "org_units": "string_array",
+        "cursor": "string",
+        "limit": "int"
+      },
+      "filters": [
+        {
+          "op": "in_array",
+          "param": "org_units",
+          "column": "org_unit"
+        }
+      ],
+      "pagedBy": "employee_ref",
+      "limit": null,
+      "orderBy": [
+        "employee_ref"
+      ],
+      "columns": [
+        {
+          "name": "employee_ref",
+          "class": "pseudonym",
+          "visibility": "allow"
+        },
+        {
+          "name": "full_name",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "work_email",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_title",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_level",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "location",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "employment_status",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "hire_date",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "termination_date",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "is_restricted",
+          "class": "job",
+          "visibility": "allow"
+        }
+      ]
+    },
+    "employee_relations.profile": {
+      "id": "employee_relations.profile",
+      "purpose": "employee_relations",
+      "name": "profile",
+      "kind": "function",
+      "object": "profile",
+      "view": "employees",
+      "viewSource": "profile_base",
+      "params": {
+        "org_units": "string_array",
+        "employee_ref": "string"
+      },
+      "filters": [
+        {
+          "op": "in_array",
+          "param": "org_units",
+          "column": "org_unit"
+        },
+        {
+          "op": "eq",
+          "param": "employee_ref",
+          "column": "employee_ref"
+        }
+      ],
+      "pagedBy": null,
+      "limit": null,
+      "orderBy": null,
+      "columns": [
+        {
+          "name": "employee_ref",
+          "class": "pseudonym",
+          "visibility": "allow"
+        },
+        {
+          "name": "full_name",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "work_email",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "personal_email",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "phone",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "birth_date",
+          "class": "date_of_birth",
+          "visibility": "mask_date_year"
+        },
+        {
+          "name": "hire_date",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "termination_date",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "employment_status",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_title",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_level",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "location",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "is_restricted",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "base_salary",
+          "class": "compensation",
+          "visibility": "allow"
+        },
+        {
+          "name": "bonus_target_pct",
+          "class": "compensation",
+          "visibility": "allow"
+        },
+        {
+          "name": "currency",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "rating",
+          "class": "performance",
+          "visibility": "allow"
+        },
+        {
+          "name": "review_text",
+          "class": "performance",
+          "visibility": "allow"
+        },
+        {
+          "name": "cycle",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "leave_type",
+          "class": "health_leave",
+          "visibility": "mask_nullify"
+        },
+        {
+          "name": "leave_category",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "leave_reason",
+          "class": "health_leave",
+          "visibility": "mask_nullify"
+        },
+        {
+          "name": "accommodation_note",
+          "class": "health_leave",
+          "visibility": "mask_nullify"
+        }
+      ]
+    },
+    "team_management.list": {
+      "id": "team_management.list",
+      "purpose": "team_management",
+      "name": "list",
+      "kind": "function",
+      "object": "direct_reports",
+      "view": "employees",
+      "viewSource": "profile_base",
+      "params": {
+        "manager_key": "string",
+        "cursor": "string",
+        "limit": "int"
+      },
+      "filters": [
+        {
+          "op": "eq",
+          "param": "manager_key",
+          "column": "manager_key"
+        }
+      ],
+      "pagedBy": "employee_ref",
+      "limit": null,
+      "orderBy": [
+        "employee_ref"
+      ],
+      "columns": [
+        {
+          "name": "employee_ref",
+          "class": "pseudonym",
+          "visibility": "allow"
+        },
+        {
+          "name": "full_name",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "work_email",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_title",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_level",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "employment_status",
+          "class": "job",
+          "visibility": "allow"
+        }
+      ]
+    },
+    "team_management.profile": {
+      "id": "team_management.profile",
+      "purpose": "team_management",
+      "name": "profile",
+      "kind": "function",
+      "object": "report_profile",
+      "view": "employees",
+      "viewSource": "profile_base",
+      "params": {
+        "manager_key": "string",
+        "employee_ref": "string"
+      },
+      "filters": [
+        {
+          "op": "eq",
+          "param": "manager_key",
+          "column": "manager_key"
+        },
+        {
+          "op": "eq",
+          "param": "employee_ref",
+          "column": "employee_ref"
+        }
+      ],
+      "pagedBy": null,
+      "limit": null,
+      "orderBy": null,
+      "columns": [
+        {
+          "name": "employee_ref",
+          "class": "pseudonym",
+          "visibility": "allow"
+        },
+        {
+          "name": "full_name",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "work_email",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "hire_date",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "employment_status",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_title",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_level",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "location",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "base_salary",
+          "class": "compensation",
+          "visibility": "mask_nullify"
+        },
+        {
+          "name": "bonus_target_pct",
+          "class": "compensation",
+          "visibility": "mask_nullify"
+        },
+        {
+          "name": "currency",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "rating",
+          "class": "performance",
+          "visibility": "allow"
+        },
+        {
+          "name": "review_text",
+          "class": "performance",
+          "visibility": "allow"
+        },
+        {
+          "name": "cycle",
+          "class": "job",
+          "visibility": "allow"
+        }
+      ]
+    },
+    "workforce_analytics.list": {
+      "id": "workforce_analytics.list",
+      "purpose": "workforce_analytics",
+      "name": "list",
+      "kind": "view",
+      "object": "employees",
+      "view": "employees",
+      "viewSource": "profile_base",
+      "params": {
+        "cursor": "string",
+        "limit": "int"
+      },
+      "filters": [],
+      "pagedBy": "analytics_id",
+      "limit": null,
+      "orderBy": [
+        "analytics_id"
+      ],
+      "columns": [
+        {
+          "name": "analytics_id",
+          "class": "pseudonym",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_level",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_title",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "location",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "employment_status",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "hire_year",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "tenure_years",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "age_band",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "salary_band",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "rating_band",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "birth_date",
+          "class": "date_of_birth",
+          "visibility": "mask_date_year"
+        },
+        {
+          "name": "gender",
+          "class": "protected_attribute",
+          "visibility": "allow"
+        },
+        {
+          "name": "ethnicity",
+          "class": "protected_attribute",
+          "visibility": "allow"
+        }
+      ]
+    },
+    "workforce_analytics.profile": {
+      "id": "workforce_analytics.profile",
+      "purpose": "workforce_analytics",
+      "name": "profile",
+      "kind": "view",
+      "object": "employees",
+      "view": "employees",
+      "viewSource": "profile_base",
+      "params": {
+        "analytics_id": "string"
+      },
+      "filters": [
+        {
+          "op": "eq",
+          "param": "analytics_id",
+          "column": "analytics_id"
+        }
+      ],
+      "pagedBy": null,
+      "limit": null,
+      "orderBy": null,
+      "columns": [
+        {
+          "name": "analytics_id",
+          "class": "pseudonym",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_level",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_title",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "location",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "employment_status",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "hire_year",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "tenure_years",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "age_band",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "salary_band",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "rating_band",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "birth_date",
+          "class": "date_of_birth",
+          "visibility": "mask_date_year"
+        },
+        {
+          "name": "gender",
+          "class": "protected_attribute",
+          "visibility": "allow"
+        },
+        {
+          "name": "ethnicity",
+          "class": "protected_attribute",
+          "visibility": "allow"
+        }
+      ]
+    },
+    "workforce_analytics.attrition_features": {
+      "id": "workforce_analytics.attrition_features",
+      "purpose": "workforce_analytics",
+      "name": "attrition_features",
+      "kind": "view",
+      "object": "attrition_features",
+      "view": "attrition_features",
+      "viewSource": "attrition_features",
+      "params": {
+        "month": "date",
+        "cursor": "string",
+        "limit": "int"
+      },
+      "filters": [
+        {
+          "op": "eq",
+          "param": "month",
+          "column": "month"
+        }
+      ],
+      "pagedBy": "analytics_id",
+      "limit": null,
+      "orderBy": [
+        "analytics_id"
+      ],
+      "columns": [
+        {
+          "name": "analytics_id",
+          "class": "pseudonym",
+          "visibility": "allow"
+        },
+        {
+          "name": "month",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_level",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "salary_band",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "rating_band",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "tenure_years",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "age_band",
+          "class": "coarsened",
+          "visibility": "allow"
+        },
+        {
+          "name": "gender",
+          "class": "protected_attribute",
+          "visibility": "allow"
+        },
+        {
+          "name": "terminated_in_month",
+          "class": "job",
+          "visibility": "allow"
+        }
+      ]
+    },
+    "workforce_analytics.headcount_monthly": {
+      "id": "workforce_analytics.headcount_monthly",
+      "purpose": "workforce_analytics",
+      "name": "headcount_monthly",
+      "kind": "view",
+      "object": "headcount_monthly",
+      "view": "headcount_monthly",
+      "viewSource": "headcount_monthly",
+      "params": {},
+      "filters": [],
+      "pagedBy": null,
+      "limit": null,
+      "orderBy": [
+        "month",
+        "org_unit",
+        "job_level"
+      ],
+      "columns": [
+        {
+          "name": "month",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "job_level",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "headcount",
+          "class": "coarsened",
+          "visibility": "allow"
+        }
+      ]
+    },
+    "privacy_compliance.identity_lookup": {
+      "id": "privacy_compliance.identity_lookup",
+      "purpose": "privacy_compliance",
+      "name": "identity_lookup",
+      "kind": "function",
+      "object": "identity_lookup",
+      "view": "directory",
+      "viewSource": "profile_base",
+      "params": {
+        "q": "string"
+      },
+      "filters": [
+        {
+          "op": "prefix_any_ci",
+          "param": "q",
+          "columns": [
+            "full_name",
+            "work_email"
+          ]
+        }
+      ],
+      "pagedBy": null,
+      "limit": 20,
+      "orderBy": [
+        "full_name"
+      ],
+      "columns": [
+        {
+          "name": "employee_ref",
+          "class": "pseudonym",
+          "visibility": "allow"
+        },
+        {
+          "name": "full_name",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "work_email",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "employment_status",
+          "class": "job",
+          "visibility": "allow"
+        }
+      ]
+    },
+    "legal_hold_management.identity_lookup": {
+      "id": "legal_hold_management.identity_lookup",
+      "purpose": "legal_hold_management",
+      "name": "identity_lookup",
+      "kind": "function",
+      "object": "identity_lookup",
+      "view": "directory",
+      "viewSource": "profile_base",
+      "params": {
+        "q": "string"
+      },
+      "filters": [
+        {
+          "op": "prefix_any_ci",
+          "param": "q",
+          "columns": [
+            "full_name",
+            "work_email"
+          ]
+        }
+      ],
+      "pagedBy": null,
+      "limit": 20,
+      "orderBy": [
+        "full_name"
+      ],
+      "columns": [
+        {
+          "name": "employee_ref",
+          "class": "pseudonym",
+          "visibility": "allow"
+        },
+        {
+          "name": "full_name",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "work_email",
+          "class": "direct_identifier",
+          "visibility": "allow"
+        },
+        {
+          "name": "org_unit",
+          "class": "job",
+          "visibility": "allow"
+        },
+        {
+          "name": "employment_status",
+          "class": "job",
+          "visibility": "allow"
+        }
+      ]
+    }
+  },
+  "categories": [
+    "source_exports",
+    "warehouse_tables",
+    "historical_snapshots",
+    "identity_mappings",
+    "derived_datasets",
+    "application_caches"
+  ],
+  "assets": [
+    {
+      "id": "src.r2.exports",
+      "category": "source_exports",
+      "store": "r2",
+      "location": "pv-source-exports/exports/",
+      "executor": "worker",
+      "rowLevel": true,
+      "erase": "rewrite_objects",
+      "subjectColumn": "employee_id",
+      "referenceColumns": [
+        "manager_employee_id",
+        "reviewer_employee_id"
+      ],
+      "parts": [
+        {
+          "name": "hris",
+          "location": "exports/hris/employees/",
+          "format": "jsonl",
+          "referenceColumns": [
+            "manager_employee_id"
+          ],
+          "retention": {
+            "days": 56,
+            "basis": "object_date"
+          }
+        },
+        {
+          "name": "payroll",
+          "location": "exports/payroll/compensation/",
+          "format": "csv",
+          "referenceColumns": [],
+          "retention": {
+            "days": 300,
+            "basis": "period_end"
+          }
+        },
+        {
+          "name": "leave",
+          "location": "exports/leave/requests/",
+          "format": "jsonl",
+          "referenceColumns": [],
+          "retention": {
+            "days": 365,
+            "basis": "month_end"
+          }
+        },
+        {
+          "name": "performance",
+          "location": "exports/performance/reviews/",
+          "format": "jsonl",
+          "referenceColumns": [
+            "reviewer_employee_id"
+          ],
+          "retention": {
+            "days": 540,
+            "basis": "cycle_end"
+          }
+        }
+      ]
+    },
+    {
+      "id": "wh.raw",
+      "category": "warehouse_tables",
+      "store": "warehouse",
+      "location": "pv_raw",
+      "executor": "python",
+      "rowLevel": true,
+      "erase": "dml_delete",
+      "subjectColumn": "employee_id",
+      "referenceColumns": [
+        "manager_employee_id",
+        "reviewer_employee_id"
+      ],
+      "parts": [
+        {
+          "name": "pv_raw.hris_employees",
+          "location": null,
+          "format": null,
+          "referenceColumns": [
+            "manager_employee_id"
+          ],
+          "retention": {
+            "days": 56,
+            "basis": "export_date"
+          }
+        },
+        {
+          "name": "pv_raw.payroll_compensation",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": {
+            "days": 300,
+            "basis": "export_date"
+          }
+        },
+        {
+          "name": "pv_raw.leave_requests",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": {
+            "days": 365,
+            "basis": "export_date"
+          }
+        },
+        {
+          "name": "pv_raw.performance_reviews",
+          "location": null,
+          "format": null,
+          "referenceColumns": [
+            "reviewer_employee_id"
+          ],
+          "retention": {
+            "days": 540,
+            "basis": "export_date"
+          }
+        }
+      ]
+    },
+    {
+      "id": "wh.core",
+      "category": "warehouse_tables",
+      "store": "warehouse",
+      "location": "pv_core",
+      "executor": "python",
+      "rowLevel": true,
+      "erase": "dml_delete",
+      "subjectColumn": "employee_key",
+      "referenceColumns": [
+        "manager_key",
+        "reviewer_key"
+      ],
+      "parts": [
+        {
+          "name": "pv_core.dim_employee",
+          "location": null,
+          "format": null,
+          "referenceColumns": [
+            "manager_key"
+          ],
+          "retention": null
+        },
+        {
+          "name": "pv_core.fct_compensation",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": null
+        },
+        {
+          "name": "pv_core.fct_leave",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": null
+        },
+        {
+          "name": "pv_core.fct_performance",
+          "location": null,
+          "format": null,
+          "referenceColumns": [
+            "reviewer_key"
+          ],
+          "retention": null
+        }
+      ]
+    },
+    {
+      "id": "hist.dbt.dim_employee_history",
+      "category": "historical_snapshots",
+      "store": "warehouse",
+      "location": "pv_snapshots.dim_employee_history",
+      "executor": "python",
+      "rowLevel": true,
+      "erase": "dml_delete",
+      "subjectColumn": "employee_key",
+      "referenceColumns": [
+        "manager_key"
+      ],
+      "parts": [
+        {
+          "name": "pv_snapshots.dim_employee_history",
+          "location": null,
+          "format": null,
+          "referenceColumns": [
+            "manager_key"
+          ],
+          "retention": null
+        }
+      ]
+    },
+    {
+      "id": "hist.lake.employee_monthly",
+      "category": "historical_snapshots",
+      "store": "iceberg",
+      "location": "hr_history.employee_monthly",
+      "executor": "python",
+      "rowLevel": true,
+      "erase": "iceberg_delete",
+      "subjectColumn": "employee_key",
+      "referenceColumns": [
+        "manager_key"
+      ],
+      "parts": [
+        {
+          "name": "hr_history.employee_monthly",
+          "location": null,
+          "format": null,
+          "referenceColumns": [
+            "manager_key"
+          ],
+          "retention": {
+            "months": 84,
+            "basis": "month"
+          }
+        }
+      ]
+    },
+    {
+      "id": "id.d1.identity_records",
+      "category": "identity_mappings",
+      "store": "d1",
+      "location": "identity_map, principals",
+      "executor": "worker",
+      "rowLevel": true,
+      "erase": "delete_rows",
+      "subjectColumn": "employee_id",
+      "referenceColumns": [
+        "manager_employee_id"
+      ],
+      "parts": [
+        {
+          "name": "identity_map",
+          "location": null,
+          "format": null,
+          "referenceColumns": [
+            "manager_employee_id"
+          ],
+          "retention": null
+        },
+        {
+          "name": "principals",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": null
+        }
+      ]
+    },
+    {
+      "id": "id.wh.identity_xref",
+      "category": "identity_mappings",
+      "store": "warehouse",
+      "location": "pv_restricted.identity_xref",
+      "executor": "python",
+      "rowLevel": true,
+      "erase": "dml_delete",
+      "subjectColumn": "employee_id",
+      "referenceColumns": [],
+      "parts": [
+        {
+          "name": "pv_restricted.identity_xref",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": null
+        }
+      ]
+    },
+    {
+      "id": "drv.marts.attrition_features",
+      "category": "derived_datasets",
+      "store": "warehouse",
+      "location": "pv_marts.attrition_features",
+      "executor": "python",
+      "rowLevel": true,
+      "erase": "dml_delete",
+      "subjectColumn": "analytics_id",
+      "referenceColumns": [],
+      "parts": [
+        {
+          "name": "pv_marts.attrition_features",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": null
+        }
+      ]
+    },
+    {
+      "id": "drv.marts.team_roster",
+      "category": "derived_datasets",
+      "store": "warehouse",
+      "location": "pv_marts.team_roster",
+      "executor": "python",
+      "rowLevel": true,
+      "erase": "dml_delete",
+      "subjectColumn": "employee_key",
+      "referenceColumns": [
+        "manager_key"
+      ],
+      "parts": [
+        {
+          "name": "pv_marts.team_roster",
+          "location": null,
+          "format": null,
+          "referenceColumns": [
+            "manager_key"
+          ],
+          "retention": null
+        }
+      ]
+    },
+    {
+      "id": "drv.marts.headcount_monthly",
+      "category": "derived_datasets",
+      "store": "warehouse",
+      "location": "pv_marts.headcount_monthly",
+      "executor": "python",
+      "rowLevel": false,
+      "erase": "dbt_rebuild",
+      "subjectColumn": null,
+      "referenceColumns": [],
+      "parts": [
+        {
+          "name": "pv_marts.headcount_monthly",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": null
+        }
+      ]
+    },
+    {
+      "id": "drv.r2.analytics_extracts",
+      "category": "derived_datasets",
+      "store": "r2",
+      "location": "pv-derived/extracts/workforce_analytics/",
+      "executor": "worker",
+      "rowLevel": true,
+      "erase": "rewrite_objects",
+      "subjectColumn": "analytics_id",
+      "referenceColumns": [],
+      "parts": [
+        {
+          "name": "attrition",
+          "location": "extracts/workforce_analytics/attrition/",
+          "format": "jsonl",
+          "referenceColumns": [],
+          "retention": {
+            "days": 90,
+            "basis": "month_metadata"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cache.kv.profile_cards",
+      "category": "application_caches",
+      "store": "kv",
+      "location": "profile:{purpose}:{ref}",
+      "executor": "worker",
+      "rowLevel": true,
+      "erase": "delete_keys",
+      "subjectColumn": null,
+      "referenceColumns": [],
+      "parts": [
+        {
+          "name": "profile:",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": {
+            "ttl_seconds": 3600,
+            "basis": "native"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cache.kv.team_rosters",
+      "category": "application_caches",
+      "store": "kv",
+      "location": "team:{manager_ref}",
+      "executor": "worker",
+      "rowLevel": true,
+      "erase": "delete_keys",
+      "subjectColumn": null,
+      "referenceColumns": [],
+      "parts": [
+        {
+          "name": "team:",
+          "location": null,
+          "format": null,
+          "referenceColumns": [],
+          "retention": {
+            "ttl_seconds": 3600,
+            "basis": "native"
+          }
+        }
+      ]
+    }
+  ],
+  "retention": {
+    "terminated_subject_years": 3,
+    "kv_ttl_seconds": 3600
+  },
+  "verification": {
+    "matchFullName": true,
+    "tokens": [
+      "employee_id",
+      "work_email",
+      "full_name",
+      "employee_ref",
+      "warehouse_key",
+      "analytics_id"
+    ],
+    "exactColumns": [
+      "employee_id",
+      "manager_employee_id",
+      "reviewer_employee_id",
+      "employee_key",
+      "manager_key",
+      "reviewer_key",
+      "employee_ref",
+      "analytics_id",
+      "work_email"
+    ],
+    "d1InternalPrefixes": [
+      "_cf_",
+      "sqlite_"
+    ],
+    "d1InternalTables": [
+      "d1_migrations"
+    ],
+    "d1StageExclusions": {
+      "before_identity_erasure": [
+        "identity_map",
+        "principals",
+        "deletion_requests",
+        "executor_tasks"
+      ],
+      "before_redaction": [
+        "deletion_requests",
+        "executor_tasks"
+      ]
+    }
+  },
+  "pseudonyms": {
+    "salt": "peoplevault/v1",
+    "infoPrefix": "pv-pseudonym:",
+    "messagePrefix": "v1|",
+    "length": 26,
+    "kinds": {
+      "warehouse_key": "wk_",
+      "employee_ref": "er_",
+      "analytics_id": "an_",
+      "subject_ref": "sr_"
+    }
+  },
+  "datasets": {
+    "data": [
+      "pv_raw",
+      "pv_core",
+      "pv_snapshots",
+      "pv_restricted",
+      "pv_marts"
+    ],
+    "maxTimeTravelHours": 48,
+    "failSafeDays": 7,
+    "authorizedSources": [
+      "pv_core",
+      "pv_snapshots",
+      "pv_marts"
+    ]
+  }
+}

@@ -1,0 +1,388 @@
+# PeopleVault policy: the single source of truth for personas, purposes, data classes, column
+# visibility, purpose queries, the asset registry and retention (SPEC.md section 8).
+#
+# `pv policy compile` turns this file into policy/compiled/policy.json (read by the Worker), the
+# generated dbt purpose models and routines (DuckDB and BigQuery variants) and infra/bigquery/*.json.
+# CI runs `pv policy check` and fails if any generated file drifts from this file.
+version: 1
+
+personas:
+  hr_partner:
+    label: HR Business Partner
+    grants:
+      employee_relations: [list_employees, read_profile]
+  manager:
+    label: People Manager
+    grants:
+      team_management: [list_employees, read_profile]
+  people_analyst:
+    label: People Analyst
+    grants:
+      workforce_analytics: [list_employees, read_profile, read_dataset, create_extract]
+  privacy_officer:
+    label: Privacy Officer
+    grants:
+      privacy_compliance:
+        [identity_lookup, create_deletion_request, read_deletion_request, read_assets, read_report, read_audit, run_retention]
+      legal_hold_management: [identity_lookup, place_legal_hold, release_legal_hold, read_legal_holds]
+
+# System principals are not personas. They may call only these actions, and humans may never call them.
+system_roles:
+  executor:
+    actions: [executor_claim, executor_complete, executor_suppression]
+
+purposes:
+  employee_relations:
+    row_scope: org_units
+    restricted_population: include
+    terminated: include
+    ref: employee_ref
+    bq_identity: pv-er-reader
+  team_management:
+    row_scope: direct_reports
+    restricted_population: exclude
+    terminated: exclude
+    ref: employee_ref
+    bq_identity: pv-tm-reader
+  workforce_analytics:
+    row_scope: all
+    restricted_population: exclude
+    terminated: include
+    ref: analytics_id
+    bq_identity: pv-wa-reader
+  privacy_compliance:
+    row_scope: identity_lookup
+    restricted_population: include
+    terminated: include
+    ref: employee_ref
+    bq_identity: pv-pc-reader
+  legal_hold_management:
+    row_scope: identity_lookup
+    restricted_population: include
+    terminated: include
+    ref: employee_ref
+    bq_identity: pv-lh-reader
+
+# Six sensitive classes, each a BigQuery policy tag in taxonomy `peoplevault`; three untagged classes.
+data_classes:
+  tagged: [direct_identifier, date_of_birth, compensation, performance, health_leave, protected_attribute]
+  untagged: [job, coarsened, pseudonym]
+
+# Every column that appears in a source export, a warehouse model or a purpose output. An unknown column in a
+# source export is a load error (the file is quarantined, fail closed).
+columns:
+  direct_identifier: [employee_id, full_name, work_email, personal_email, phone, manager_employee_id, reviewer_employee_id]
+  date_of_birth: [birth_date]
+  compensation: [base_salary, bonus_target_pct]
+  performance: [rating, review_text]
+  health_leave: [leave_type, leave_reason, accommodation_note]
+  protected_attribute: [gender, ethnicity]
+  job:
+    [hire_date, termination_date, employment_status, job_title, job_level, org_unit, location, is_restricted,
+     leave_category, start_date, end_date, cycle, pay_period_end, currency, export_date,
+     # record and bookkeeping columns (never embed an identifier token)
+     leave_id, review_id, status, month, snapshot_year, terminated_in_month, _loaded_at,
+     dbt_scd_id, dbt_updated_at, dbt_valid_from, dbt_valid_to]
+  coarsened: [salary_band, rating_band, age_band, hire_year, tenure_years, headcount]
+  pseudonym: [employee_key, employee_ref, analytics_id, subject_ref, manager_key, manager_ref, reviewer_key]
+
+# Ceiling per purpose and tagged class (section 8.3). `deny`: never selected by the purpose views, and the
+# purpose's BigQuery identity holds neither Fine-Grained Reader nor a masking grant on the tag.
+visibility:
+  employee_relations:
+    { direct_identifier: allow, date_of_birth: mask_date_year, compensation: allow, performance: allow, health_leave: mask_nullify, protected_attribute: deny }
+  team_management:
+    { direct_identifier: allow, date_of_birth: deny, compensation: mask_nullify, performance: allow, health_leave: deny, protected_attribute: deny }
+  workforce_analytics:
+    { direct_identifier: deny, date_of_birth: mask_date_year, compensation: deny, performance: deny, health_leave: deny, protected_attribute: allow }
+  privacy_compliance:
+    { direct_identifier: allow, date_of_birth: deny, compensation: deny, performance: deny, health_leave: deny, protected_attribute: deny }
+  legal_hold_management:
+    { direct_identifier: allow, date_of_birth: deny, compensation: deny, performance: deny, health_leave: deny, protected_attribute: deny }
+
+# Purpose datasets (`pv_purpose_<purpose>`): one ceiling view per source plus table functions for row scope.
+# `source` names a relation the compiler knows: `profile_base` (current records with the latest compensation,
+# review and leave per employee), `attrition_features`, `headcount_monthly`.
+purpose_views:
+  employee_relations:
+    employees:
+      source: profile_base
+      columns:
+        [employee_ref, full_name, work_email, personal_email, phone, birth_date, hire_date, termination_date,
+         employment_status, job_title, job_level, org_unit, location, is_restricted, base_salary, bonus_target_pct,
+         currency, rating, review_text, cycle, leave_type, leave_category, leave_reason, accommodation_note]
+  team_management:
+    employees:
+      source: profile_base
+      columns:
+        [employee_ref, manager_key, full_name, work_email, hire_date, employment_status, job_title, job_level,
+         org_unit, location, base_salary, bonus_target_pct, currency, rating, review_text, cycle]
+  workforce_analytics:
+    employees:
+      source: profile_base
+      columns:
+        [analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years,
+         age_band, salary_band, rating_band, birth_date, gender, ethnicity]
+    attrition_features:
+      source: attrition_features
+      columns: [analytics_id, month, org_unit, job_level, salary_band, rating_band, tenure_years, age_band, gender, terminated_in_month]
+    headcount_monthly:
+      source: headcount_monthly
+      columns: [month, org_unit, job_level, headcount]
+  privacy_compliance:
+    directory:
+      source: profile_base
+      columns: [employee_ref, full_name, work_email, org_unit, employment_status]
+  legal_hold_management:
+    directory:
+      source: profile_base
+      columns: [employee_ref, full_name, work_email, org_unit, employment_status]
+
+# Named queries: the only SQL the Worker can run (query id `<purpose>.<name>`). A `function` query becomes a table
+# function in the purpose dataset (BigQuery TABLE FUNCTION, DuckDB table macro) whose body applies `filters`;
+# a plain `view` query selects from the purpose view with `filters` as bound parameters. `paged_by` queries also
+# take `cursor` (exclusive lower bound on that column, "" for the first page) and `limit`.
+# Filter ops: eq (column = param), in_array (column in array param), prefix_any_ci (case-insensitive prefix match
+# of the param on any listed column).
+queries:
+  employee_relations:
+    list:
+      function: { name: employees_in_org_units, view: employees, params: { org_units: string_array } }
+      filters: [{ op: in_array, column: org_unit, param: org_units }]
+      paged_by: employee_ref
+      columns: [employee_ref, full_name, work_email, job_title, job_level, org_unit, location, employment_status, hire_date, termination_date, is_restricted]
+    profile:
+      function: { name: profile, view: employees, params: { org_units: string_array, employee_ref: string } }
+      filters: [{ op: in_array, column: org_unit, param: org_units }, { op: eq, column: employee_ref, param: employee_ref }]
+      columns:
+        [employee_ref, full_name, work_email, personal_email, phone, birth_date, hire_date, termination_date,
+         employment_status, job_title, job_level, org_unit, location, is_restricted, base_salary, bonus_target_pct,
+         currency, rating, review_text, cycle, leave_type, leave_category, leave_reason, accommodation_note]
+  team_management:
+    list:
+      function: { name: direct_reports, view: employees, params: { manager_key: string } }
+      filters: [{ op: eq, column: manager_key, param: manager_key }]
+      paged_by: employee_ref
+      columns: [employee_ref, full_name, work_email, job_title, job_level, org_unit, employment_status]
+    profile:
+      function: { name: report_profile, view: employees, params: { manager_key: string, employee_ref: string } }
+      filters: [{ op: eq, column: manager_key, param: manager_key }, { op: eq, column: employee_ref, param: employee_ref }]
+      columns:
+        [employee_ref, full_name, work_email, hire_date, employment_status, job_title, job_level, org_unit, location,
+         base_salary, bonus_target_pct, currency, rating, review_text, cycle]
+  workforce_analytics:
+    list:
+      view: employees
+      paged_by: analytics_id
+      columns: [analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity]
+    profile:
+      view: employees
+      params: { analytics_id: string }
+      filters: [{ op: eq, column: analytics_id, param: analytics_id }]
+      columns: [analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity]
+    attrition_features:
+      view: attrition_features
+      paged_by: analytics_id
+      params: { month: date }
+      filters: [{ op: eq, column: month, param: month }]
+      columns: [analytics_id, month, org_unit, job_level, salary_band, rating_band, tenure_years, age_band, gender, terminated_in_month]
+    headcount_monthly:
+      view: headcount_monthly
+      columns: [month, org_unit, job_level, headcount]
+      order_by: [month, org_unit, job_level]
+  privacy_compliance:
+    identity_lookup:
+      function: { name: identity_lookup, view: directory, params: { q: string } }
+      filters: [{ op: prefix_any_ci, columns: [full_name, work_email], param: q }]
+      limit: 20
+      order_by: [full_name]
+      columns: [employee_ref, full_name, work_email, org_unit, employment_status]
+  legal_hold_management:
+    identity_lookup:
+      function: { name: identity_lookup, view: directory, params: { q: string } }
+      filters: [{ op: prefix_any_ci, columns: [full_name, work_email], param: q }]
+      limit: 20
+      order_by: [full_name]
+      columns: [employee_ref, full_name, work_email, org_unit, employment_status]
+
+# Warehouse datasets (BigQuery datasets, DuckDB schemas of the same names).
+datasets:
+  data: [pv_raw, pv_core, pv_snapshots, pv_restricted, pv_marts]
+  max_time_travel_hours: 48
+  fail_safe_days: 7
+  authorized_sources: [pv_core, pv_snapshots, pv_marts]
+
+# Exactly 13 assets in 6 categories (section 8.5). `subject_column` holds the subject's own key; references to the
+# subject in other rows live in `reference_columns` and are scrubbed to REDACTED.
+assets:
+  - id: src.r2.exports
+    category: source_exports
+    store: r2
+    location: pv-source-exports/exports/
+    executor: worker
+    row_level: true
+    erase: rewrite_objects
+    subject_column: employee_id
+    parts:
+      - { name: hris, location: exports/hris/employees/, format: jsonl, reference_columns: [manager_employee_id], retention: { days: 56, basis: object_date } }
+      - { name: payroll, location: exports/payroll/compensation/, format: csv, reference_columns: [], retention: { days: 300, basis: period_end } }
+      - { name: leave, location: exports/leave/requests/, format: jsonl, reference_columns: [], retention: { days: 365, basis: month_end } }
+      - { name: performance, location: exports/performance/reviews/, format: jsonl, reference_columns: [reviewer_employee_id], retention: { days: 540, basis: cycle_end } }
+  - id: wh.raw
+    category: warehouse_tables
+    store: warehouse
+    location: pv_raw
+    executor: python
+    row_level: true
+    erase: dml_delete
+    subject_column: employee_id
+    parts:
+      - { name: pv_raw.hris_employees, reference_columns: [manager_employee_id], retention: { days: 56, basis: export_date } }
+      - { name: pv_raw.payroll_compensation, reference_columns: [], retention: { days: 300, basis: export_date } }
+      - { name: pv_raw.leave_requests, reference_columns: [], retention: { days: 365, basis: export_date } }
+      - { name: pv_raw.performance_reviews, reference_columns: [reviewer_employee_id], retention: { days: 540, basis: export_date } }
+  - id: wh.core
+    category: warehouse_tables
+    store: warehouse
+    location: pv_core
+    executor: python
+    row_level: true
+    erase: dml_delete
+    subject_column: employee_key
+    parts:
+      - { name: pv_core.dim_employee, reference_columns: [manager_key] }
+      - { name: pv_core.fct_compensation, reference_columns: [] }
+      - { name: pv_core.fct_leave, reference_columns: [] }
+      - { name: pv_core.fct_performance, reference_columns: [reviewer_key] }
+  - id: hist.dbt.dim_employee_history
+    category: historical_snapshots
+    store: warehouse
+    location: pv_snapshots.dim_employee_history
+    executor: python
+    row_level: true
+    erase: dml_delete
+    subject_column: employee_key
+    parts:
+      - { name: pv_snapshots.dim_employee_history, reference_columns: [manager_key] }
+  - id: hist.lake.employee_monthly
+    category: historical_snapshots
+    store: iceberg
+    location: hr_history.employee_monthly
+    executor: python
+    row_level: true
+    erase: iceberg_delete
+    subject_column: employee_key
+    parts:
+      - { name: hr_history.employee_monthly, reference_columns: [manager_key], retention: { months: 84, basis: month } }
+  - id: id.d1.identity_records
+    category: identity_mappings
+    store: d1
+    location: identity_map, principals
+    executor: worker
+    row_level: true
+    erase: delete_rows
+    subject_column: employee_id
+    parts:
+      - { name: identity_map, reference_columns: [manager_employee_id] }
+      - { name: principals, reference_columns: [] }
+  - id: id.wh.identity_xref
+    category: identity_mappings
+    store: warehouse
+    location: pv_restricted.identity_xref
+    executor: python
+    row_level: true
+    erase: dml_delete
+    subject_column: employee_id
+    parts:
+      - { name: pv_restricted.identity_xref, reference_columns: [] }
+  - id: drv.marts.attrition_features
+    category: derived_datasets
+    store: warehouse
+    location: pv_marts.attrition_features
+    executor: python
+    row_level: true
+    erase: dml_delete
+    subject_column: analytics_id
+    parts:
+      - { name: pv_marts.attrition_features, reference_columns: [] }
+  - id: drv.marts.team_roster
+    category: derived_datasets
+    store: warehouse
+    location: pv_marts.team_roster
+    executor: python
+    row_level: true
+    erase: dml_delete
+    subject_column: employee_key
+    parts:
+      - { name: pv_marts.team_roster, reference_columns: [manager_key] }
+  - id: drv.marts.headcount_monthly
+    category: derived_datasets
+    store: warehouse
+    location: pv_marts.headcount_monthly
+    executor: python
+    row_level: false
+    erase: dbt_rebuild
+    subject_column: null
+    parts:
+      - { name: pv_marts.headcount_monthly, reference_columns: [] }
+  - id: drv.r2.analytics_extracts
+    category: derived_datasets
+    store: r2
+    location: pv-derived/extracts/workforce_analytics/
+    executor: worker
+    row_level: true
+    erase: rewrite_objects
+    subject_column: analytics_id
+    parts:
+      - { name: attrition, location: extracts/workforce_analytics/attrition/, format: jsonl, reference_columns: [], retention: { days: 90, basis: month_metadata } }
+  - id: cache.kv.profile_cards
+    category: application_caches
+    store: kv
+    location: "profile:{purpose}:{ref}"
+    executor: worker
+    row_level: true
+    erase: delete_keys
+    subject_column: null
+    parts:
+      - { name: "profile:", reference_columns: [], retention: { ttl_seconds: 3600, basis: native } }
+  - id: cache.kv.team_rosters
+    category: application_caches
+    store: kv
+    location: "team:{manager_ref}"
+    executor: worker
+    row_level: true
+    erase: delete_keys
+    subject_column: null
+    parts:
+      - { name: "team:", reference_columns: [], retention: { ttl_seconds: 3600, basis: native } }
+
+retention:
+  # Terminated employees whose termination_date is on or before as_of minus this many years become subject
+  # deletion requests (kind retention). Cutoff rule everywhere: cutoff = as_of - period; an item is past
+  # retention if and only if its basis date is on or before the cutoff (inclusive).
+  terminated_subject_years: 3
+  kv_ttl_seconds: 3600
+
+verification:
+  match_full_name: true
+  tokens: [employee_id, work_email, full_name, employee_ref, warehouse_key, analytics_id]
+  # Compared with exact equality; every other string is searched with boundary-aware RE2 patterns.
+  exact_columns:
+    [employee_id, manager_employee_id, reviewer_employee_id, employee_key, manager_key, reviewer_key, employee_ref, analytics_id, work_email]
+  # D1 tables never scanned by the probe (internal), and tables excluded until the named stage.
+  d1_internal_prefixes: [_cf_, sqlite_]
+  d1_internal_tables: [d1_migrations]
+  d1_stage_exclusions:
+    before_identity_erasure: [identity_map, principals, deletion_requests, executor_tasks]
+    before_redaction: [deletion_requests, executor_tasks]
+
+pseudonyms:
+  salt: peoplevault/v1
+  info_prefix: "pv-pseudonym:"
+  message_prefix: "v1|"
+  length: 26
+  kinds:
+    warehouse_key: wk_
+    employee_ref: er_
+    analytics_id: an_
+    subject_ref: sr_

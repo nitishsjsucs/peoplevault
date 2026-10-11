@@ -18,6 +18,33 @@ def main(log_level: str) -> None:
     install_redaction(getattr(logging, log_level.upper()))
 
 
+@main.group()
+def policy() -> None:
+    """Compile policy/policy.yaml or check generated files for drift."""
+
+
+@policy.command("compile")
+def policy_compile() -> None:
+    from peoplevault.policy.compile import write_all
+
+    written = write_all()
+    click.echo(f"policy compiled: {len(written)} file(s) changed")
+    for rel in written:
+        click.echo(f"  {rel}")
+
+
+@policy.command("check")
+def policy_check() -> None:
+    from peoplevault.policy.compile import check
+
+    problems = check()
+    if problems:
+        for p in problems:
+            click.echo(p, err=True)
+        raise click.ClickException("generated files drift from policy/policy.yaml; run `npm run policy:compile`")
+    click.echo("policy check: generated files match policy/policy.yaml")
+
+
 @main.command(name="dbt", context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 @click.argument("dbt_args", nargs=-1, type=click.UNPROCESSED)
 def dbt_cmd(dbt_args: tuple[str, ...]) -> None:
