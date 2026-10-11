@@ -1,0 +1,80 @@
+{
+  "kind": "cpu",
+  "command": "npm run bench:cpu",
+  "date": "2026-10-11",
+  "git_sha": "78250e1ea63caa73752948593b288cff15dd8a57",
+  "git_dirty": false,
+  "environment": "local (Node v25.9.0 on darwin arm64, Apple M5)",
+  "machine": {
+    "cpus": 10,
+    "load_average_1m": 6.53,
+    "total_memory_gib": 24
+  },
+  "population": {
+    "export_objects": 41,
+    "export_mib": 9.25,
+    "seed": 20261010
+  },
+  "prefilter_identical": {
+    "objects": 41,
+    "subjects": 3,
+    "comparisons": 123
+  },
+  "measurements_ms": {
+    "erase_step_at_cap": {
+      "warm_median_ms": 2.084,
+      "warm_min_ms": 1.734,
+      "cold_ms": 2.242,
+      "objects": 6,
+      "mib": 3.62
+    },
+    "erase_all_exports_prefiltered": {
+      "warm_median_ms": 4.928,
+      "warm_min_ms": 4.684,
+      "cold_ms": 5.982,
+      "per_mib": 0.533
+    },
+    "revision2_hris_erase_every_line_parsed": {
+      "warm_median_ms": 22.688,
+      "warm_min_ms": 19.539,
+      "cold_ms": 24.027,
+      "objects": 13
+    },
+    "probe_step_at_cap_clean": {
+      "warm_median_ms": 2.263,
+      "warm_min_ms": 2.196,
+      "cold_ms": 2.727,
+      "mib": 1.81
+    },
+    "probe_step_at_cap_every_line": {
+      "warm_median_ms": 2.094,
+      "warm_min_ms": 1.957,
+      "cold_ms": 2.441
+    },
+    "audit_verify_window_100": {
+      "warm_median_ms": 2.626,
+      "warm_min_ms": 1.794,
+      "cold_ms": 3.078
+    },
+    "audit_export_page_500": {
+      "warm_median_ms": 0.79,
+      "warm_min_ms": 0.556,
+      "cold_ms": 1.279
+    },
+    "kv_probe_420_values": {
+      "warm_median_ms": 0.217,
+      "warm_min_ms": 0.188,
+      "cold_ms": 0.43
+    }
+  },
+  "design": {
+    "target_ms_here": 2.5,
+    "edge_factor": 3,
+    "free_cpu_limit_ms": 10
+  },
+  "largest_step_median_ms": 2.626,
+  "largest_step_ms": 2.196,
+  "at_edge_factor_ms": 6.59,
+  "within_target": true,
+  "within_free_limit_at_edge_factor": true
+}
