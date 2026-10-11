@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "policyHash": "991e640702e5a4921b5c1632f03c771004ebab1c2b694d4d9c4d3bafc3e8078e",
+  "policyHash": "69d831a729cb10670343527e3a764c2513c0316840c06472f1137c983ff17609",
   "personas": {
     "hr_partner": {
       "label": "HR Business Partner",
@@ -82,8 +82,8 @@
       "terminated": "include",
       "ref": "employee_ref",
       "refPrefix": "er_",
-      "bqIdentity": "pv-er-reader",
-      "dataset": "pv_purpose_employee_relations"
+      "bqIdentity": "peoplevault-er-reader",
+      "dataset": "peoplevault_purpose_employee_relations"
     },
     "team_management": {
       "rowScope": "direct_reports",
@@ -91,8 +91,8 @@
       "terminated": "exclude",
       "ref": "employee_ref",
       "refPrefix": "er_",
-      "bqIdentity": "pv-tm-reader",
-      "dataset": "pv_purpose_team_management"
+      "bqIdentity": "peoplevault-tm-reader",
+      "dataset": "peoplevault_purpose_team_management"
     },
     "workforce_analytics": {
       "rowScope": "all",
@@ -100,8 +100,8 @@
       "terminated": "include",
       "ref": "analytics_id",
       "refPrefix": "an_",
-      "bqIdentity": "pv-wa-reader",
-      "dataset": "pv_purpose_workforce_analytics"
+      "bqIdentity": "peoplevault-wa-reader",
+      "dataset": "peoplevault_purpose_workforce_analytics"
     },
     "privacy_compliance": {
       "rowScope": "identity_lookup",
@@ -109,8 +109,8 @@
       "terminated": "include",
       "ref": "employee_ref",
       "refPrefix": "er_",
-      "bqIdentity": "pv-pc-reader",
-      "dataset": "pv_purpose_privacy_compliance"
+      "bqIdentity": "peoplevault-pc-reader",
+      "dataset": "peoplevault_purpose_privacy_compliance"
     },
     "legal_hold_management": {
       "rowScope": "identity_lookup",
@@ -118,8 +118,8 @@
       "terminated": "include",
       "ref": "employee_ref",
       "refPrefix": "er_",
-      "bqIdentity": "pv-lh-reader",
-      "dataset": "pv_purpose_legal_hold_management"
+      "bqIdentity": "peoplevault-lh-reader",
+      "dataset": "peoplevault_purpose_legal_hold_management"
     }
   },
   "dataClasses": {
@@ -328,8 +328,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, location, employment_status, hire_date, termination_date, is_restricted from pv_purpose_employee_relations.employees_in_org_units($org_units) where ($cursor = '' or employee_ref > $cursor) order by employee_ref limit $limit",
-        "bigquery": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, location, employment_status, hire_date, termination_date, is_restricted from `{project}.pv_purpose_employee_relations.employees_in_org_units`(@org_units) where (@cursor = '' or employee_ref > @cursor) order by employee_ref limit @limit"
+        "duckdb": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, location, employment_status, hire_date, termination_date, is_restricted from peoplevault_purpose_employee_relations.employees_in_org_units($org_units) where ($cursor = '' or employee_ref > $cursor) order by employee_ref limit $limit",
+        "bigquery": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, location, employment_status, hire_date, termination_date, is_restricted from `{project}.peoplevault_purpose_employee_relations.employees_in_org_units`(@org_units) where (@cursor = '' or employee_ref > @cursor) order by employee_ref limit @limit"
       }
     },
     "employee_relations.profile": {
@@ -482,8 +482,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select employee_ref, full_name, work_email, personal_email, phone, birth_date, hire_date, termination_date, employment_status, job_title, job_level, org_unit, location, is_restricted, base_salary, bonus_target_pct, currency, rating, review_text, cycle, leave_type, leave_category, leave_reason, accommodation_note from pv_purpose_employee_relations.profile($org_units, $employee_ref)",
-        "bigquery": "select employee_ref, full_name, work_email, personal_email, phone, birth_date, hire_date, termination_date, employment_status, job_title, job_level, org_unit, location, is_restricted, base_salary, bonus_target_pct, currency, rating, review_text, cycle, leave_type, leave_category, leave_reason, accommodation_note from `{project}.pv_purpose_employee_relations.profile`(@org_units, @employee_ref)"
+        "duckdb": "select employee_ref, full_name, work_email, personal_email, phone, birth_date, hire_date, termination_date, employment_status, job_title, job_level, org_unit, location, is_restricted, base_salary, bonus_target_pct, currency, rating, review_text, cycle, leave_type, leave_category, leave_reason, accommodation_note from peoplevault_purpose_employee_relations.profile($org_units, $employee_ref)",
+        "bigquery": "select employee_ref, full_name, work_email, personal_email, phone, birth_date, hire_date, termination_date, employment_status, job_title, job_level, org_unit, location, is_restricted, base_salary, bonus_target_pct, currency, rating, review_text, cycle, leave_type, leave_category, leave_reason, accommodation_note from `{project}.peoplevault_purpose_employee_relations.profile`(@org_units, @employee_ref)"
       }
     },
     "team_management.list": {
@@ -549,8 +549,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, employment_status from pv_purpose_team_management.direct_reports($manager_key) where ($cursor = '' or employee_ref > $cursor) order by employee_ref limit $limit",
-        "bigquery": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, employment_status from `{project}.pv_purpose_team_management.direct_reports`(@manager_key) where (@cursor = '' or employee_ref > @cursor) order by employee_ref limit @limit"
+        "duckdb": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, employment_status from peoplevault_purpose_team_management.direct_reports($manager_key) where ($cursor = '' or employee_ref > $cursor) order by employee_ref limit $limit",
+        "bigquery": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, employment_status from `{project}.peoplevault_purpose_team_management.direct_reports`(@manager_key) where (@cursor = '' or employee_ref > @cursor) order by employee_ref limit @limit"
       }
     },
     "team_management.profile": {
@@ -658,8 +658,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select employee_ref, full_name, work_email, hire_date, employment_status, job_title, job_level, org_unit, location, base_salary, bonus_target_pct, currency, rating, review_text, cycle from pv_purpose_team_management.report_profile($manager_key, $employee_ref)",
-        "bigquery": "select employee_ref, full_name, work_email, hire_date, employment_status, job_title, job_level, org_unit, location, base_salary, bonus_target_pct, currency, rating, review_text, cycle from `{project}.pv_purpose_team_management.report_profile`(@manager_key, @employee_ref)"
+        "duckdb": "select employee_ref, full_name, work_email, hire_date, employment_status, job_title, job_level, org_unit, location, base_salary, bonus_target_pct, currency, rating, review_text, cycle from peoplevault_purpose_team_management.report_profile($manager_key, $employee_ref)",
+        "bigquery": "select employee_ref, full_name, work_email, hire_date, employment_status, job_title, job_level, org_unit, location, base_salary, bonus_target_pct, currency, rating, review_text, cycle from `{project}.peoplevault_purpose_team_management.report_profile`(@manager_key, @employee_ref)"
       }
     },
     "workforce_analytics.list": {
@@ -753,8 +753,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from pv_purpose_workforce_analytics.employees where ($cursor = '' or analytics_id > $cursor) order by analytics_id limit $limit",
-        "bigquery": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from `{project}.pv_purpose_workforce_analytics.employees` where (@cursor = '' or analytics_id > @cursor) order by analytics_id limit @limit"
+        "duckdb": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from peoplevault_purpose_workforce_analytics.employees where ($cursor = '' or analytics_id > $cursor) order by analytics_id limit $limit",
+        "bigquery": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from `{project}.peoplevault_purpose_workforce_analytics.employees` where (@cursor = '' or analytics_id > @cursor) order by analytics_id limit @limit"
       }
     },
     "workforce_analytics.profile": {
@@ -851,8 +851,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from pv_purpose_workforce_analytics.employees where analytics_id = $analytics_id",
-        "bigquery": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from `{project}.pv_purpose_workforce_analytics.employees` where analytics_id = @analytics_id"
+        "duckdb": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from peoplevault_purpose_workforce_analytics.employees where analytics_id = $analytics_id",
+        "bigquery": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from `{project}.peoplevault_purpose_workforce_analytics.employees` where analytics_id = @analytics_id"
       }
     },
     "workforce_analytics.attrition_features": {
@@ -933,8 +933,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select analytics_id, month, org_unit, job_level, salary_band, rating_band, tenure_years, age_band, gender, terminated_in_month from pv_purpose_workforce_analytics.attrition_features where month = $month and ($cursor = '' or analytics_id > $cursor) order by analytics_id limit $limit",
-        "bigquery": "select analytics_id, month, org_unit, job_level, salary_band, rating_band, tenure_years, age_band, gender, terminated_in_month from `{project}.pv_purpose_workforce_analytics.attrition_features` where month = @month and (@cursor = '' or analytics_id > @cursor) order by analytics_id limit @limit"
+        "duckdb": "select analytics_id, month, org_unit, job_level, salary_band, rating_band, tenure_years, age_band, gender, terminated_in_month from peoplevault_purpose_workforce_analytics.attrition_features where month = $month and ($cursor = '' or analytics_id > $cursor) order by analytics_id limit $limit",
+        "bigquery": "select analytics_id, month, org_unit, job_level, salary_band, rating_band, tenure_years, age_band, gender, terminated_in_month from `{project}.peoplevault_purpose_workforce_analytics.attrition_features` where month = @month and (@cursor = '' or analytics_id > @cursor) order by analytics_id limit @limit"
       }
     },
     "workforce_analytics.headcount_monthly": {
@@ -977,8 +977,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select month, org_unit, job_level, headcount from pv_purpose_workforce_analytics.headcount_monthly order by month, org_unit, job_level",
-        "bigquery": "select month, org_unit, job_level, headcount from `{project}.pv_purpose_workforce_analytics.headcount_monthly` order by month, org_unit, job_level"
+        "duckdb": "select month, org_unit, job_level, headcount from peoplevault_purpose_workforce_analytics.headcount_monthly order by month, org_unit, job_level",
+        "bigquery": "select month, org_unit, job_level, headcount from `{project}.peoplevault_purpose_workforce_analytics.headcount_monthly` order by month, org_unit, job_level"
       }
     },
     "privacy_compliance.identity_lookup": {
@@ -1035,8 +1035,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select employee_ref, full_name, work_email, org_unit, employment_status from pv_purpose_privacy_compliance.identity_lookup($q) order by full_name",
-        "bigquery": "select employee_ref, full_name, work_email, org_unit, employment_status from `{project}.pv_purpose_privacy_compliance.identity_lookup`(@q) order by full_name"
+        "duckdb": "select employee_ref, full_name, work_email, org_unit, employment_status from peoplevault_purpose_privacy_compliance.identity_lookup($q) order by full_name",
+        "bigquery": "select employee_ref, full_name, work_email, org_unit, employment_status from `{project}.peoplevault_purpose_privacy_compliance.identity_lookup`(@q) order by full_name"
       }
     },
     "legal_hold_management.identity_lookup": {
@@ -1093,8 +1093,8 @@
         }
       ],
       "sql": {
-        "duckdb": "select employee_ref, full_name, work_email, org_unit, employment_status from pv_purpose_legal_hold_management.identity_lookup($q) order by full_name",
-        "bigquery": "select employee_ref, full_name, work_email, org_unit, employment_status from `{project}.pv_purpose_legal_hold_management.identity_lookup`(@q) order by full_name"
+        "duckdb": "select employee_ref, full_name, work_email, org_unit, employment_status from peoplevault_purpose_legal_hold_management.identity_lookup($q) order by full_name",
+        "bigquery": "select employee_ref, full_name, work_email, org_unit, employment_status from `{project}.peoplevault_purpose_legal_hold_management.identity_lookup`(@q) order by full_name"
       }
     }
   },
@@ -1171,7 +1171,7 @@
       "id": "wh.raw",
       "category": "warehouse_tables",
       "store": "warehouse",
-      "location": "pv_raw",
+      "location": "peoplevault_raw",
       "executor": "python",
       "rowLevel": true,
       "erase": "dml_delete",
@@ -1184,7 +1184,7 @@
       ],
       "parts": [
         {
-          "name": "pv_raw.hris_employees",
+          "name": "peoplevault_raw.hris_employees",
           "location": null,
           "format": null,
           "referenceColumns": [
@@ -1197,7 +1197,7 @@
           }
         },
         {
-          "name": "pv_raw.payroll_compensation",
+          "name": "peoplevault_raw.payroll_compensation",
           "location": null,
           "format": null,
           "referenceColumns": [],
@@ -1207,7 +1207,7 @@
           }
         },
         {
-          "name": "pv_raw.leave_requests",
+          "name": "peoplevault_raw.leave_requests",
           "location": null,
           "format": null,
           "referenceColumns": [],
@@ -1217,7 +1217,7 @@
           }
         },
         {
-          "name": "pv_raw.performance_reviews",
+          "name": "peoplevault_raw.performance_reviews",
           "location": null,
           "format": null,
           "referenceColumns": [
@@ -1235,7 +1235,7 @@
       "id": "wh.core",
       "category": "warehouse_tables",
       "store": "warehouse",
-      "location": "pv_core",
+      "location": "peoplevault_core",
       "executor": "python",
       "rowLevel": true,
       "erase": "dml_delete",
@@ -1246,7 +1246,7 @@
       ],
       "parts": [
         {
-          "name": "pv_core.dim_employee",
+          "name": "peoplevault_core.dim_employee",
           "location": null,
           "format": null,
           "referenceColumns": [
@@ -1255,21 +1255,21 @@
           "retention": null
         },
         {
-          "name": "pv_core.fct_compensation",
+          "name": "peoplevault_core.fct_compensation",
           "location": null,
           "format": null,
           "referenceColumns": [],
           "retention": null
         },
         {
-          "name": "pv_core.fct_leave",
+          "name": "peoplevault_core.fct_leave",
           "location": null,
           "format": null,
           "referenceColumns": [],
           "retention": null
         },
         {
-          "name": "pv_core.fct_performance",
+          "name": "peoplevault_core.fct_performance",
           "location": null,
           "format": null,
           "referenceColumns": [
@@ -1283,7 +1283,7 @@
       "id": "hist.dbt.dim_employee_history",
       "category": "historical_snapshots",
       "store": "warehouse",
-      "location": "pv_snapshots.dim_employee_history",
+      "location": "peoplevault_snapshots.dim_employee_history",
       "executor": "python",
       "rowLevel": true,
       "erase": "dml_delete",
@@ -1293,7 +1293,7 @@
       ],
       "parts": [
         {
-          "name": "pv_snapshots.dim_employee_history",
+          "name": "peoplevault_snapshots.dim_employee_history",
           "location": null,
           "format": null,
           "referenceColumns": [
@@ -1365,7 +1365,7 @@
       "id": "id.wh.identity_xref",
       "category": "identity_mappings",
       "store": "warehouse",
-      "location": "pv_restricted.identity_xref",
+      "location": "peoplevault_restricted.identity_xref",
       "executor": "python",
       "rowLevel": true,
       "erase": "dml_delete",
@@ -1373,7 +1373,7 @@
       "referenceColumns": [],
       "parts": [
         {
-          "name": "pv_restricted.identity_xref",
+          "name": "peoplevault_restricted.identity_xref",
           "location": null,
           "format": null,
           "referenceColumns": [],
@@ -1385,7 +1385,7 @@
       "id": "drv.marts.attrition_features",
       "category": "derived_datasets",
       "store": "warehouse",
-      "location": "pv_marts.attrition_features",
+      "location": "peoplevault_marts.attrition_features",
       "executor": "python",
       "rowLevel": true,
       "erase": "dml_delete",
@@ -1393,7 +1393,7 @@
       "referenceColumns": [],
       "parts": [
         {
-          "name": "pv_marts.attrition_features",
+          "name": "peoplevault_marts.attrition_features",
           "location": null,
           "format": null,
           "referenceColumns": [],
@@ -1405,7 +1405,7 @@
       "id": "drv.marts.team_roster",
       "category": "derived_datasets",
       "store": "warehouse",
-      "location": "pv_marts.team_roster",
+      "location": "peoplevault_marts.team_roster",
       "executor": "python",
       "rowLevel": true,
       "erase": "dml_delete",
@@ -1415,7 +1415,7 @@
       ],
       "parts": [
         {
-          "name": "pv_marts.team_roster",
+          "name": "peoplevault_marts.team_roster",
           "location": null,
           "format": null,
           "referenceColumns": [
@@ -1429,7 +1429,7 @@
       "id": "drv.marts.headcount_monthly",
       "category": "derived_datasets",
       "store": "warehouse",
-      "location": "pv_marts.headcount_monthly",
+      "location": "peoplevault_marts.headcount_monthly",
       "executor": "python",
       "rowLevel": false,
       "erase": "dbt_rebuild",
@@ -1437,7 +1437,7 @@
       "referenceColumns": [],
       "parts": [
         {
-          "name": "pv_marts.headcount_monthly",
+          "name": "peoplevault_marts.headcount_monthly",
           "location": null,
           "format": null,
           "referenceColumns": [],
@@ -1572,20 +1572,23 @@
       "subject_ref": "sr_"
     }
   },
+  "naming": {
+    "prefix": "peoplevault"
+  },
   "datasets": {
     "data": [
-      "pv_raw",
-      "pv_core",
-      "pv_snapshots",
-      "pv_restricted",
-      "pv_marts"
+      "peoplevault_raw",
+      "peoplevault_core",
+      "peoplevault_snapshots",
+      "peoplevault_restricted",
+      "peoplevault_marts"
     ],
     "maxTimeTravelHours": 48,
     "failSafeDays": 7,
     "authorizedSources": [
-      "pv_core",
-      "pv_snapshots",
-      "pv_marts"
+      "peoplevault_core",
+      "peoplevault_snapshots",
+      "peoplevault_marts"
     ]
   }
 }

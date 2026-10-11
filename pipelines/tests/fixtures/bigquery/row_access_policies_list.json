@@ -6,7 +6,7 @@
    {
     "rowAccessPolicyReference": {
      "projectId": "pv-test",
-     "datasetId": "pv_core",
+     "datasetId": "peoplevault_core",
      "tableId": "dim_employee",
      "policyId": "rap_full"
     },
@@ -15,7 +15,7 @@
    {
     "rowAccessPolicyReference": {
      "projectId": "pv-test",
-     "datasetId": "pv_core",
+     "datasetId": "peoplevault_core",
      "tableId": "dim_employee",
      "policyId": "rap_non_restricted"
     },

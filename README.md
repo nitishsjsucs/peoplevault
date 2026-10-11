@@ -31,6 +31,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built; the local rehearsal ran (Results); the production run is written, not yet executed |
 | Workers Free production template (no `limits`, no `pipelines`, Free capacity vars), 3-day Workflow retention, 7-day D1 Time Travel residual, byte-capped BigQuery queries (Worker 100 MiB, Python and dbt 1 GiB) | built, tested; not yet executed |
 | Workflow steps sized for Free's 10 ms of CPU and 50 D1 queries: byte-capped cursor steps for R2 erasure (4 MiB) and probing (2 MiB) with a line prefilter, D1 token matching inside SQLite in steps of at most 16 tables, windowed audit verification (100 events per request), the deletion report in SQL; 30 steps per completed deletion | built, tested locally (Miniflare does not enforce CPU or query limits; the budgets are counted in tests) |
+| Shared Google Cloud project: every dataset, service account, custom role, data policy and the taxonomy named from `naming.prefix: peoplevault`; the executor's only project-level role is `roles/bigquery.jobUser` (no project-wide read), the warehouse verifier scans `peoplevault_*` datasets only; `setup:prod` refuses to adopt a same-named Cloudflare resource it has no record of | built, dry-run golden-tested; not yet executed |
 | Daily admission cap (16 deletion starts per UTC day in production, 8 of them retention; unlimited locally), cron reconcile of deferred and orphaned requests, request-level idempotency, retention cron off in production until the production eval result is committed | built, tested locally |
 | Audit copy into the Iceberg table `governance.audit_events` (`pv audit export`: pulled through the executor API, one commit per run with its cursor in the snapshot summary, exactly once; replaces the Basin Pipelines stream, which needs Workers Paid) | built; runs locally in the ci eval (pyiceberg SqlCatalog); the production export (Basin Catalog, hourly in `executor.yml` when due) is written, not yet executed |
 
@@ -104,11 +105,11 @@ flowchart LR
 | Control plane | D1 in `.wrangler/state` | D1 `pv-control` (Time Travel 7 days on Free, tracked as a residual) |
 | Source exports and extracts | R2 in `.wrangler/state` | R2 `pv-source-exports`, `pv-derived` |
 | Caches | KV in `.wrangler/state` (immediate) | KV `pv-cache` (70 s propagation wait before verification) |
-| Warehouse | DuckDB file, dbt-duckdb, shim on 8893 with emulated ceilings | BigQuery US, dbt-bigquery, purpose service accounts, authorized views and table functions, policy tags, data masking, row access policies |
+| Warehouse | DuckDB file with `peoplevault_*` schemas, dbt-duckdb, shim on 8893 with emulated ceilings | BigQuery US in the shared project `master-magnet-444903-u4` (`peoplevault_*` datasets, dataset- and resource-scoped grants only, every query byte-capped), dbt-bigquery, `peoplevault-*` purpose service accounts, authorized views and table functions, policy tags, data masking, row access policies |
 | Recovery windows | modeled from the 48 h setting (labeled modeled) | observed with time travel queries; fail-safe modeled |
 | Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake`, managed snapshot expiration |
 | Audit copy | `pv audit export --target local` into the SqlCatalog table `governance.audit_events` | the same command into the Basin Catalog table `governance.audit_events` (exactly once), from `executor.yml` or the production eval; no Basin Pipelines (Workers Paid only) |
-| Executor | `pv serve` thread | `pv executor run --target prod` from the owner's machine (impersonating `pv-executor`), or hourly in GitHub Actions (`executor.yml`, with a `pv-executor` key held only as a repository secret) |
+| Executor | `pv serve` thread | `pv executor run --target prod` from the owner's machine (impersonating `peoplevault-executor`), or hourly in GitHub Actions (`executor.yml`, with a `peoplevault-executor` key held only as a repository secret) |
 | Production API calls | recorded-response contract tests and `--dry-run` golden plans only | live, after setup |
 
 ## Local quickstart

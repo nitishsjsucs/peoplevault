@@ -17,11 +17,11 @@ Everything a script can do is in `npm run setup:prod`. This section lists, in or
 | 7 | Cloudflare | Create an account API token named in `.secrets/prod.env` as `PV_CF_API_TOKEN` (Custom token) with exactly: Access: Apps and Policies Edit; Access: Service Tokens Edit; Access: Organizations, Identity Providers, and Groups Read; Workers Scripts Read. No Billing Read: the doctor has no plan check on Workers Free. Do not call it `CLOUDFLARE_API_TOKEN`: wrangler would use that variable instead of the OAuth login, and this token cannot create D1, R2 or Queues | My Profile, API Tokens, Create Token | free | Access app, policies and service tokens; doctor's subdomain check | API token permissions reference (names) |
 | 8 | Cloudflare | Create an R2 API token with Admin Read & Write; save it as `PV_R2_CATALOG_TOKEN` | R2 Object Storage, Manage API tokens, Create API token | free | pyiceberg REST access to the Basin Catalog Iceberg archive and the audit copy `governance.audit_events` | Basin Catalog guide |
 | 9 | Cloudflare | `npx wrangler login` in the repo and approve the OAuth consent screen | terminal, browser | free | every wrangler command; doctor's R2, KV, Queues and Basin listings (wrangler OAuth token) | `wrangler whoami --json` |
-| 10 | Google | Google account; create a project (for example `peoplevault-<suffix>`) dedicated to PeopleVault | https://console.cloud.google.com | free | BigQuery; the executor's project-level read grants assume a dedicated project | |
-| 11 | Google | Create or link a billing account to the project | Billing, Link a billing account, or `gcloud billing projects link` | card required; usage expected under $1/month | DML deletes (the BigQuery sandbox has no DML and expires tables after 60 days) | BigQuery sandbox docs |
-| 12 | Google | Budget alert at $5 | Billing, Budgets and alerts | free | cost guard | |
-| 13 | Google | Install the Google Cloud CLI and log in, including the ADC quota project (commands in 23.2) | terminal, browser consent | free | `pv setup gcp`; impersonating `pv-executor`; Data Catalog and data policy calls with user ADC | `brew info --cask gcloud-cli`; Google auth docs |
-| 14 | Google | Only if `pv setup gcp` reports that organization policy `iam.disableServiceAccountKeyCreation` blocks the `pv-gateway` key: use a project outside that organization, or ask for an exception for this project | IAM, Organization policies | free | the Worker's BigQuery credential | |
+| 10 | Google | Use the shared project `master-magnet-444903-u4` (no new project; four repos share it, so every name of this repo starts with `peoplevault` and every grant is dataset- or resource-scoped: the only project-level role is `roles/bigquery.jobUser`) | `gcloud config set project master-magnet-444903-u4` | free | BigQuery datasets `peoplevault_*`, service accounts `peoplevault-*`, policy tags and data policies | `gcloud config list` (2026-10-10) |
+| 11 | Google | Enable billing on the project. It names billing account `01E865-CB9CA4-66E862` but reports `billingEnabled: false`, so check in the console that the billing account is open, then link it | https://console.cloud.google.com/billing/linkedaccount?project=master-magnet-444903-u4 or `gcloud billing projects link master-magnet-444903-u4 --billing-account=01E865-CB9CA4-66E862` | card required; expected $0 inside the free tier, every query byte-capped | DML deletes (the BigQuery sandbox rejects INSERT, MERGE and DELETE and expires tables after 60 days) | `gcloud billing projects describe` (2026-10-10) |
+| 12 | Google | Budget alert on that billing account, scoped to the project, at $1 with 50%, 90% and 100% thresholds | Billing, Budgets and alerts | free | cost guard (the free tier is shared by four repos) | not checkable read-only |
+| 13 | Google | Install the Google Cloud CLI and log in, including the ADC quota project (commands in 23.2) | terminal, browser consent | free | `pv setup gcp`; impersonating `peoplevault-executor`; Data Catalog and data policy calls with user ADC | `brew info --cask gcloud-cli`; Google auth docs |
+| 14 | Google | Only if `pv setup gcp` reports that organization policy `iam.disableServiceAccountKeyCreation` blocks the `peoplevault-gateway` key: ask for an exception for this project | IAM, Organization policies | free | the Worker's BigQuery credential | |
 | 15 | Choice | Persona sign-in emails, for example Gmail plus-addresses: `PV_ACCESS_ALLOWED_EMAILS=<you>+hr@gmail.com,<you>+mgr@gmail.com,<you>+analyst@gmail.com,<you>+privacy@gmail.com` and `PV_ACCESS_PERSONA_EMAILS=<you>+hr@gmail.com=hrbp-01,<you>+mgr@gmail.com=mgr-001,<you>+analyst@gmail.com=analyst-01,<you>+privacy@gmail.com=privacy-01` | `.secrets/prod.env` | free | signing in as each of the four personas | |
 | 16 | Choice | After the first `setup:prod`, copy `PV_PSEUDONYM_MASTER_KEY` from `.secrets/worker-secrets.env` into a password manager | password manager | free | pseudonym stability; losing it orphans every pseudonym | |
 | 17 | GitHub | Push the repository (`git push origin main`; you publish it), then answer yes when `npm run setup:prod -- --only github` asks to write the executor secrets and `PV_PROD_ENABLED=true`. Optional but recommended: without it, deletions wait for you to run `pv executor run --target prod --drain` and fail after 24 hours | terminal | free (Actions minutes are free for public repositories) | the hourly production executor (`executor.yml`) and the daily residual check | GitHub docs on disabling and enabling workflows |
@@ -38,7 +38,7 @@ Not needed: Workers Paid, Basin Pipelines, and any Workers AI or AI Gateway setu
 | `PV_BASE_URL` | `https://peoplevault.<subdomain>.workers.dev` |
 | `PV_CF_ACCESS_CLIENT_ID`, `PV_CF_ACCESS_CLIENT_SECRET` | the `pv-executor` Access service token |
 | `PV_GCP_PROJECT` | the Google Cloud project id |
-| `PV_GCP_EXECUTOR_KEY` | a `pv-executor` key created by `pv setup actions-key` and piped straight into the secret; it is never written to disk, so no `pv-executor` key exists on your machine (rotate with `uv run --project pipelines pv setup actions-key --repo <owner>/<name> --rotate`) |
+| `PV_GCP_EXECUTOR_KEY` | a `peoplevault-executor` key created by `pv setup actions-key` and piped straight into the secret; it is never written to disk, so no `peoplevault-executor` key exists on your machine (rotate with `uv run --project pipelines pv setup actions-key --repo <owner>/<name> --rotate`) |
 | `PV_R2_CATALOG_TOKEN`, `PV_CATALOG_URI`, `PV_CATALOG_WAREHOUSE` | Basin Catalog access |
 | `PV_POLICY_TAGS_JSON` | the policy tag resource names `pv setup gcp` recorded |
 
@@ -58,7 +58,7 @@ npx wrangler whoami --json                          # must print "loggedIn": tru
 brew install --cask gcloud-cli                      # Google Cloud CLI cask (587.0.0 on 2026-10-10); includes bq
 gcloud init                                         # choose account and project
 gcloud auth login
-gcloud auth application-default login               # user ADC; dbt and the executor impersonate pv-executor on top of it
+gcloud auth application-default login               # user ADC; dbt and the executor impersonate peoplevault-executor on top of it
 gcloud config set project <PROJECT_ID>
 gcloud auth application-default set-quota-project <PROJECT_ID>   # Data Catalog and data policy calls need a quota project
 gcloud billing accounts list
@@ -87,7 +87,7 @@ PV_CATALOG_URI=... / PV_CATALOG_WAREHOUSE=...
 
 A service token's client secret is shown once by Cloudflare. If `.secrets/prod.env` loses one, `setup:prod` rotates that token and records the new secret.
 
-Also written by setup and gitignored: `.secrets/worker-secrets.env` (`PV_PSEUDONYM_MASTER_KEY`, `GCP_GATEWAY_SA_KEY`; uploaded by `npm run deploy`), `.secrets/prod-resources.json` (resource ids, policy tag resource names), `infra/cloudflare/wrangler.production.jsonc`. No `pv-executor` key exists on the laptop.
+Also written by setup and gitignored: `.secrets/worker-secrets.env` (`PV_PSEUDONYM_MASTER_KEY`, `GCP_GATEWAY_SA_KEY`; uploaded by `npm run deploy`), `.secrets/prod-resources.json` (resource ids, policy tag resource names), `infra/cloudflare/wrangler.production.jsonc`. No `peoplevault-executor` key exists on the laptop.
 
 ## Costs
 

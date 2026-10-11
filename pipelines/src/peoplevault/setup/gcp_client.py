@@ -168,6 +168,23 @@ class RealGcpClient:
 
         return self._ptm().create_policy_tag(parent=taxonomy_name, policy_tag=datacatalog_v1.PolicyTag(display_name=display_name, description=description)).name
 
+    def taxonomy_bindings(self, taxonomy_name: str) -> set[tuple[str, str]]:
+        policy = self._ptm().get_iam_policy(request={"resource": taxonomy_name})
+        return {(b.role, m) for b in policy.bindings for m in b.members}
+
+    def add_taxonomy_binding(self, taxonomy_name: str, role: str, member: str) -> None:
+        """Resource-scoped (the taxonomy, never the shared project): read-modify-write of the taxonomy's IAM policy."""
+        ptm = self._ptm()
+        policy = ptm.get_iam_policy(request={"resource": taxonomy_name})
+        for b in policy.bindings:
+            if b.role == role:
+                if member not in b.members:
+                    b.members.append(member)
+                break
+        else:
+            policy.bindings.add(role=role, members=[member])
+        ptm.set_iam_policy(request={"resource": taxonomy_name, "policy": policy})
+
     def tag_readers(self, tag_name: str) -> set[str]:
         policy = self._ptm().get_iam_policy(request={"resource": tag_name})
         return {m for b in policy.bindings if b.role == "roles/datacatalog.categoryFineGrainedReader" for m in b.members}

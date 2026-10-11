@@ -14,17 +14,18 @@ from pathlib import Path
 import duckdb
 
 from peoplevault import config
+from peoplevault.policy.model import policy
 
 PROTECTED_MODELS: dict[str, str] = {
-    "dim_employee": "pv_core.dim_employee",
-    "fct_compensation": "pv_core.fct_compensation",
-    "fct_leave": "pv_core.fct_leave",
-    "fct_performance": "pv_core.fct_performance",
-    "dim_employee_history": "pv_snapshots.dim_employee_history",
-    "attrition_features": "pv_marts.attrition_features",
-    "team_roster": "pv_marts.team_roster",
+    "dim_employee": "peoplevault_core.dim_employee",
+    "fct_compensation": "peoplevault_core.fct_compensation",
+    "fct_leave": "peoplevault_core.fct_leave",
+    "fct_performance": "peoplevault_core.fct_performance",
+    "dim_employee_history": "peoplevault_snapshots.dim_employee_history",
+    "attrition_features": "peoplevault_marts.attrition_features",
+    "team_roster": "peoplevault_marts.team_roster",
 }
-REBUILT_MODELS: dict[str, str] = {"headcount_monthly": "pv_marts.headcount_monthly"}
+REBUILT_MODELS: dict[str, str] = {"headcount_monthly": "peoplevault_marts.headcount_monthly"}
 SCHEMAS_FILE = config.REPO_ROOT / "infra" / "bigquery" / "protected_schemas.json"
 MIGRATIONS_DIR = config.REPO_ROOT / "infra" / "bigquery" / "migrations"
 _ADD = re.compile(r"alter\s+table\s+`?(?:[\w-]+\.)?(\w+\.\w+)`?\s+add\s+column\s+(?:if\s+not\s+exists\s+)?(\w+)", re.I)
@@ -53,7 +54,7 @@ def build_empty_warehouse(path: Path) -> dict[str, list[str]]:
     try:
         rows = conn.execute(
             "select table_schema || '.' || table_name, column_name from information_schema.columns "
-            "where table_schema like 'pv_%' order by table_schema, table_name, ordinal_position"
+            "where starts_with(table_schema, ?) order by table_schema, table_name, ordinal_position", [f"{policy().naming.prefix}_"]
         ).fetchall()
     finally:
         conn.close()

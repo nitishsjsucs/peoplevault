@@ -44,8 +44,8 @@ class FakeProbes:
     def controls(self):
         return self.problems
 
-    def probe_dataset_exists(self):
-        return self.leftover
+    def probe_dataset_leftovers(self):
+        return 3 if self.leftover else 0
 
     def counts(self, tables):
         return self._counts if self._counts is not None else {t: 10 for t in tables}
@@ -97,15 +97,15 @@ def test_no_project_skips_bigquery(tmp_path):
 
 
 def test_bigquery_lines():
-    expected = {"pv_core.dim_employee": 1200, "pv_marts.team_roster": 1199}
-    sas = [f"pv-er-reader@{PROJECT}.iam.gserviceaccount.com"]
-    checks = bigquery_checks(FakeProbes(steps=["create dataset: pv-test.pv_raw (US)"], fail_sa={"pv-er-reader"}, problems=["pv_core.dim_employee: row access policy rap_full missing"],
-                                        leftover=True, counts={"pv_core.dim_employee": 1200, "pv_marts.team_roster": 0}), PROJECT, expected, sas)
+    expected = {"peoplevault_core.dim_employee": 1200, "peoplevault_marts.team_roster": 1199}
+    sas = [f"peoplevault-er-reader@{PROJECT}.iam.gserviceaccount.com"]
+    checks = bigquery_checks(FakeProbes(steps=["create dataset: pv-test.peoplevault_raw (US)"], fail_sa={"peoplevault-er-reader"}, problems=["peoplevault_core.dim_employee: row access policy rap_full missing"],
+                                        leftover=True, counts={"peoplevault_core.dim_employee": 1200, "peoplevault_marts.team_roster": 0}), PROJECT, expected, sas)
     assert [c.status for c in checks] == ["missing"] * 5
     assert checks[2].fix.startswith("uv run --project pipelines pv load --target prod")
-    assert checks[3].fix.endswith("--cleanup")
-    assert "zero rows in: pv_marts.team_roster" in checks[4].detail
-    after_deletions = bigquery_checks(FakeProbes(counts={"pv_core.dim_employee": 1190, "pv_marts.team_roster": 1199}), PROJECT, expected, sas)
+    assert checks[3].fix.endswith("--cleanup") and checks[3].detail == "peoplevault_authz_probe still holds 3 probe view(s)"
+    assert "zero rows in: peoplevault_marts.team_roster" in checks[4].detail
+    after_deletions = bigquery_checks(FakeProbes(counts={"peoplevault_core.dim_employee": 1190, "peoplevault_marts.team_roster": 1199}), PROJECT, expected, sas)
     assert after_deletions[-1].status == "warn"
 
 

@@ -57,11 +57,11 @@
     "ACCESS_AUD": "__ACCESS_AUD__",
     "GCP_PROJECT_ID": "__GCP_PROJECT_ID__",
     "BQ_LOCATION": "US",
-    "BQ_GATEWAY_SA_EMAIL": "pv-gateway@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
-    "BQ_PURPOSE_SA_EMPLOYEE_RELATIONS": "pv-er-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
-    "BQ_PURPOSE_SA_TEAM_MANAGEMENT": "pv-tm-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
-    "BQ_PURPOSE_SA_WORKFORCE_ANALYTICS": "pv-wa-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
-    "BQ_PURPOSE_SA_PRIVACY_COMPLIANCE": "pv-pc-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
-    "BQ_PURPOSE_SA_LEGAL_HOLD_MANAGEMENT": "pv-lh-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com"
+    "BQ_GATEWAY_SA_EMAIL": "peoplevault-gateway@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_EMPLOYEE_RELATIONS": "peoplevault-er-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_TEAM_MANAGEMENT": "peoplevault-tm-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_WORKFORCE_ANALYTICS": "peoplevault-wa-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_PRIVACY_COMPLIANCE": "peoplevault-pc-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com",
+    "BQ_PURPOSE_SA_LEGAL_HOLD_MANAGEMENT": "peoplevault-lh-reader@__GCP_PROJECT_ID__.iam.gserviceaccount.com"
   }
 }

@@ -142,6 +142,10 @@ class Verification(Strict):
     d1_stage_exclusions: dict[str, list[str]]
 
 
+class Naming(Strict):
+    prefix: str = Field(pattern=r"^[a-z][a-z0-9]{2,14}$")
+
+
 class Pseudonyms(Strict):
     salt: str
     info_prefix: str
@@ -152,6 +156,7 @@ class Pseudonyms(Strict):
 
 class Policy(Strict):
     version: int
+    naming: Naming
     personas: dict[Persona, PersonaDef]
     system_roles: dict[str, SystemRoleDef]
     purposes: dict[PurposeName, PurposeDef]
@@ -177,8 +182,32 @@ class Policy(Strict):
             return "allow"
         return self.visibility[purpose][cls]  # type: ignore[index]
 
+    # ---- Google Cloud names (shared project; every name carries naming.prefix, SPEC.md section 30.3.8) --------------
     def purpose_dataset(self, purpose: str) -> str:
-        return f"pv_purpose_{purpose}"
+        return f"{self.naming.prefix}_purpose_{purpose}"
+
+    @property
+    def executor_sa(self) -> str:
+        return f"{self.naming.prefix}-executor"
+
+    @property
+    def gateway_sa(self) -> str:
+        return f"{self.naming.prefix}-gateway"
+
+    @property
+    def time_travel_role(self) -> str:
+        return f"{self.naming.prefix}TimeTravelReader"
+
+    @property
+    def probe_dataset(self) -> str:
+        return f"{self.naming.prefix}_authz_probe"
+
+    @property
+    def scratch_dataset(self) -> str:
+        return f"{self.naming.prefix}_scratch"
+
+    def data_policy_id(self, cls: str, expression: str) -> str:
+        return f"{self.naming.prefix}_{cls}_{expression.lower()}"
 
     @model_validator(mode="after")
     def _validate(self) -> Policy:
@@ -202,6 +231,18 @@ class Policy(Strict):
                 for action in actions:
                     if action not in HUMAN_ACTIONS:
                         errors.append(f"{persona}/{purpose}: unknown action {action}")
+        pfx = self.naming.prefix
+        for d in [*self.datasets.data, *self.datasets.authorized_sources]:
+            if not d.startswith(f"{pfx}_"):
+                errors.append(f"dataset {d} must start with {pfx}_ (shared Google Cloud project)")
+        for name, p in self.purposes.items():
+            if not p.bq_identity.startswith(f"{pfx}-") or not 6 <= len(p.bq_identity) <= 30:
+                errors.append(f"bq_identity of {name} must start with {pfx}- and have 6 to 30 characters")
+        for a in self.assets:
+            if a.store == "warehouse":
+                for part in a.parts:
+                    if not part.name.startswith(f"{pfx}_"):
+                        errors.append(f"warehouse part {part.name} of {a.id} must start with {pfx}_")
         for role in self.system_roles.values():
             for action in role.actions:
                 if action not in SYSTEM_ACTIONS:

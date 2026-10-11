@@ -1,5 +1,5 @@
-"""Independent warehouse scanner (SPEC.md section 14.3): every BASE TABLE in every dataset or schema the executor can
-list, every string column. Exact equality on known identifier columns, boundary-aware RE2 regex elsewhere
+"""Independent warehouse scanner (SPEC.md sections 14.3 and 30.3.8): every BASE TABLE in every dataset or schema of this
+repo (`peoplevault_*`) the executor can list, every string column. Exact equality on known identifier columns, boundary-aware RE2 regex elsewhere
 (DuckDB regexp_matches, BigQuery REGEXP_CONTAINS). Imports nothing from executor, load or lake.ops (ADR 0003).
 """
 
@@ -51,10 +51,18 @@ def _conditions(wh, cols: list[str], tokens: dict[str, str]) -> tuple[str, dict]
     return " or ".join(parts), params
 
 
+def repo_datasets(names: list[str]) -> list[str]:
+    """This repo's datasets (DuckDB schemas): names that start with the policy's prefix. The Google Cloud project is
+    shared with three other repos and the executor holds no project-level read role (SPEC.md section 30.3.8), so the
+    scan covers `peoplevault_*` only; a copy placed in another repo's dataset is outside it (the README says so)."""
+    prefix = f"{policy().naming.prefix}_"
+    return [d for d in names if d.startswith(prefix) and d not in INTERNAL_SCHEMAS]
+
+
 def scan_warehouse(wh, tokens: dict[str, str], *, exclude_tables: set[str] | None = None, datasets: list[str] | None = None) -> list[Finding]:
     """tokens: {token value: token kind}. Returns findings with token-free locations."""
     exclude = exclude_tables or set()
-    ds = [d for d in (datasets or wh.list_datasets()) if d not in INTERNAL_SCHEMAS]
+    ds = repo_datasets(datasets or wh.list_datasets())
     findings = []
     for t in wh.list_base_tables(ds):
         if t.fqn in exclude:

@@ -16,6 +16,7 @@ class FakeGcp:
         self.ds: dict[str, dict] = {}
         self.tax: dict | None = None
         self.readers: dict[str, set] = {}
+        self.taxb: set[tuple[str, str]] = set()
         self.dps: set[str] = set()
         self.calls: list[str] = []
         if complete:
@@ -38,6 +39,7 @@ class FakeGcp:
         self.tax = {"name": f"projects/{self.project}/locations/us/taxonomies/1", "tags": tags}
         for cls, members in iam["fine_grained_reader"].items():
             self.readers[tags[cls]] = set(members)
+        self.taxb = {(b["role"], b["member"]) for b in iam["taxonomy"]}
         self.dps = {d["data_policy_id"] for d in spec("data_policies")}
 
     def enabled_apis(self):
@@ -87,6 +89,11 @@ class FakeGcp:
         self.calls.append(f"tag:{d}")
         self.tax["tags"][d] = name
         return name
+    def taxonomy_bindings(self, t):
+        return set(self.taxb)
+    def add_taxonomy_binding(self, t, r, m):
+        self.calls.append("taxonomy-iam")
+        self.taxb.add((r, m))
     def tag_readers(self, t):
         return set(self.readers.get(t, set()))
     def add_tag_reader(self, t, m):

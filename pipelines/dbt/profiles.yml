@@ -1,9 +1,9 @@
 # Targets:
 #   local         DuckDB file (the local stand-in for BigQuery; never described as BigQuery)
-#   bigquery      production; always runs as pv-executor by impersonation on top of the owner's user ADC.
+#   bigquery      production; always runs as peoplevault-executor by impersonation on top of the owner's user ADC.
 #                 Running as the owner's own user is refused: the owner is in no row access policy and
 #                 would silently read zero rows from protected tables.
-#   bigquery_actions  (P1) the executor.yml GitHub Actions job, pv-executor key from GOOGLE_APPLICATION_CREDENTIALS
+#   bigquery_actions  (P1) the executor.yml GitHub Actions job, peoplevault-executor key from GOOGLE_APPLICATION_CREDENTIALS
 #   bigquery_ci   `dbt parse` only (CI has no credentials; `dbt compile` would fail)
 peoplevault:
   target: local
@@ -17,9 +17,9 @@ peoplevault:
       type: bigquery
       method: oauth
       project: "{{ env_var('PV_GCP_PROJECT') }}"
-      dataset: pv_core
+      dataset: peoplevault_core
       location: US
-      impersonate_service_account: "pv-executor@{{ env_var('PV_GCP_PROJECT') }}.iam.gserviceaccount.com"
+      impersonate_service_account: "peoplevault-executor@{{ env_var('PV_GCP_PROJECT') }}.iam.gserviceaccount.com"
       threads: 4
       job_execution_timeout_seconds: 600
       job_retries: 1
@@ -30,7 +30,7 @@ peoplevault:
       method: service-account
       keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS', '') }}"
       project: "{{ env_var('PV_GCP_PROJECT', 'ci-parse-only') }}"
-      dataset: pv_core
+      dataset: peoplevault_core
       location: US
       threads: 4
       job_execution_timeout_seconds: 600
@@ -39,7 +39,7 @@ peoplevault:
       type: bigquery
       method: oauth
       project: ci-parse-only
-      dataset: pv_core
+      dataset: peoplevault_core
       location: US
       threads: 1
       maximum_bytes_billed: 1073741824

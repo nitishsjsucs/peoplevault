@@ -23,10 +23,10 @@ select
   h.manager_key,
   h.is_restricted,
   cast(h.export_date as date) as export_date
-from {{ source('pv_raw', 'hris_employees') }} h
-join {{ source('pv_restricted', 'identity_xref') }} x on x.employee_key = h.employee_key
+from {{ source('peoplevault_raw', 'hris_employees') }} h
+join {{ source('peoplevault_restricted', 'identity_xref') }} x on x.employee_key = h.employee_key
 where
   {% if as_of %}cast(h.export_date as date) = cast('{{ as_of }}' as date)
-  {% else %}cast(h.export_date as date) = (select max(cast(export_date as date)) from {{ source('pv_raw', 'hris_employees') }})
+  {% else %}cast(h.export_date as date) = (select max(cast(export_date as date)) from {{ source('peoplevault_raw', 'hris_employees') }})
   {% endif %}
-  and h.subject_ref not in (select subject_ref from {{ source('pv_restricted', 'suppression') }})
+  and h.subject_ref not in (select subject_ref from {{ source('peoplevault_restricted', 'suppression') }})

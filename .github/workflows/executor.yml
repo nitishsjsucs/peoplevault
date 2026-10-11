@@ -7,7 +7,7 @@
 #
 # Log hygiene (the repository is public, and so are these logs): PV_PUBLIC_LOGS=true makes `pv` print an uncaught
 # exception as its type and redacted message only, routes warnings through the redacting logger and silences dbt's own
-# console output; the job prints counts, never rows. The pv-executor key exists only in $RUNNER_TEMP for the
+# console output; the job prints counts, never rows. The peoplevault-executor key exists only in $RUNNER_TEMP for the
 # duration of the job and is deleted in an always() step.
 #
 # GitHub disables scheduled workflows in a public repository after 60 days without repository activity;
@@ -53,7 +53,7 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - run: uv sync --project pipelines --locked
-      - name: Write the pv-executor key
+      - name: Write the peoplevault-executor key
         env:
           PV_GCP_EXECUTOR_KEY: ${{ secrets.PV_GCP_EXECUTOR_KEY }}
         run: |
@@ -70,6 +70,6 @@ jobs:
       - name: Residual check (daily at 04 UTC, or on request)
         if: steps.clock.outputs.hour == '04' || inputs.residuals
         run: uv run --project pipelines pv --log-level warning residuals check --target prod
-      - name: Delete the pv-executor key
+      - name: Delete the peoplevault-executor key
         if: always()
         run: rm -f "$RUNNER_TEMP/gcp.json"

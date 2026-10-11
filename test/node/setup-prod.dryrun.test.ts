@@ -37,6 +37,8 @@ function partial(): SetupState {
     ...empty(), accountId: "acct-0123", loggedIn: true, teamDomain: "nitish-pv.cloudflareaccess.com", subdomain: null,
     buckets: ["pv-source-exports"], d1: [{ name: "pv-control", uuid: "11111111-2222-3333-4444-555555555555" }], kv: [], queues: ["pv-retention-sweep"],
     serviceTokens: [{ id: "st-1", name: "pv-executor", client_id: "exec.access" }], gcpMissing: [],
+    // created by an earlier, interrupted setup run of this repo, which recorded them
+    resources: { created_buckets: ["pv-source-exports"], created_queues: ["pv-retention-sweep"], d1_id: "11111111-2222-3333-4444-555555555555" },
     github: { ...NO_GITHUB, authed: true, repo: REPO },
   };
 }
@@ -49,7 +51,10 @@ function complete(): SetupState {
     queues: ["pv-retention-sweep", "pv-retention-dlq"], catalogEnabled: true, workerId: "w-1",
     workerSecrets: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"],
     accessApp: { id: "app-1", aud: "aud-123" }, serviceTokens: tokens,
-    resources: { d1_id: "11111111-2222-3333-4444-555555555555", kv_id: "0123456789abcdef0123456789abcdef", policy_tags: TAGS, audit_copy_table: true, audit_copy_expiration: true },
+    resources: {
+      d1_id: "11111111-2222-3333-4444-555555555555", kv_id: "0123456789abcdef0123456789abcdef", policy_tags: TAGS, audit_copy_table: true, audit_copy_expiration: true,
+      created_buckets: ["pv-source-exports", "pv-derived", "pv-lake"], created_queues: ["pv-retention-sweep", "pv-retention-dlq"], worker_deployed: true,
+    },
     workerSecretsFile: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"], renderedText: null, gcpMissing: [], dataLoaded: true,
     github: { authed: true, repo: REPO, secrets: [...GITHUB_SECRETS], variables: { PV_PROD_ENABLED: "true" }, workflowState: "active", lastSuccess: "2026-10-10T03:07:00Z" },
   };
@@ -139,6 +144,21 @@ describe("setup:prod --dry-run", () => {
     expect(planSetup(complete(), completeEnv(), null).map((x) => x.id)).not.toContain("data:audit-copy");
   });
 
+  it("shared account: a same-named resource with no record stops setup, and the conflict names how to resolve it", () => {
+    const s = complete();
+    s.resources = { ...s.resources, created_buckets: ["pv-source-exports", "pv-derived"], d1_id: "another-database", worker_deployed: false };
+    s.queues = [...s.queues];
+    const items = preflight(s, completeEnv()).map((m) => m.item);
+    expect(items).toEqual([
+      "conflict: R2 bucket pv-lake exists but this repo has no record of creating it",
+      "conflict: D1 database pv-control exists but its id is not the recorded d1_id",
+      "conflict: Worker peoplevault exists but this repo has no record of deploying it",
+    ]);
+    expect(preflight(s, completeEnv())[0]!.fix).toContain("record it in .secrets/prod-resources.json");
+    expect(preflight(complete(), completeEnv())).toEqual([]);
+    expect(planSetup(complete(), completeEnv(), null).map((x) => x.id)).not.toContain("cloudflare:record");
+  });
+
   it("Workers Free: no plan creates Basin Pipelines resources or checks a Workers Paid plan", () => {
     for (const [s, env] of [[empty(), {}], [partial(), { ...ENV_FULL }], [complete(), completeEnv()]] as const) {
       const text = plan(s, env);
@@ -165,7 +185,7 @@ describe("setup:prod --dry-run", () => {
     expect(text).not.toMatch(/__[A-Z0-9_]+__/);
     expect(text).toContain(`"ACCESS_AUD": "${AUD_PENDING}"`);
     expect(text).toContain('"database_id": "11111111-2222-3333-4444-555555555555"');
-    expect(text).toContain("pv-gateway@peoplevault-test.iam.gserviceaccount.com");
+    expect(text).toContain("peoplevault-gateway@peoplevault-test.iam.gserviceaccount.com");
     expect(text).not.toContain('"pipelines"');
     expect(text).not.toContain('"limits"');
     expect(text).toMatch(/"invocation_logs": false/);

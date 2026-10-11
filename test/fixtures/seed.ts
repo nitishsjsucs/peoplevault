@@ -117,7 +117,7 @@ export function executorEraseResult(opts: { ok?: boolean; findings?: { store: "w
       findings: opts.findings ?? [],
       residuals: [
         { kind: "iceberg_snapshots", asset_id: "hist.lake.employee_monthly", table: "hr_history.employee_monthly", state: "pending", evidence: "observed", deleted_at: "2026-10-10T00:00:00Z", expected_clear_at: null, snapshot_id: 12345, retained_snapshots: 8 },
-        { kind: "bq_time_travel", asset_id: "wh.core", table: "pv_core.dim_employee", state: "modeled", evidence: "modeled", deleted_at: "2026-10-10T00:00:00Z", expected_clear_at: "2026-10-12T00:00:00Z" },
+        { kind: "bq_time_travel", asset_id: "wh.core", table: "peoplevault_core.dim_employee", state: "modeled", evidence: "modeled", deleted_at: "2026-10-10T00:00:00Z", expected_clear_at: "2026-10-12T00:00:00Z" },
       ],
       counts: {},
     },

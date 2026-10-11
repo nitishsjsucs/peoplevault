@@ -6,6 +6,13 @@
 # CI runs `pv policy check` and fails if any generated file drifts from this file.
 version: 1
 
+# Every Google Cloud name this repo creates starts with this prefix: datasets `peoplevault_*` (DuckDB schemas use the
+# same names), service accounts `peoplevault-*`, the custom role, data policies and the probe and scratch datasets. The
+# Google Cloud project `master-magnet-444903-u4` is shared with three other repos (SPEC.md section 30.3.8); the policy
+# model refuses any dataset or identity name without the prefix.
+naming:
+  prefix: peoplevault
+
 personas:
   hr_partner:
     label: HR Business Partner
@@ -37,31 +44,31 @@ purposes:
     restricted_population: include
     terminated: include
     ref: employee_ref
-    bq_identity: pv-er-reader
+    bq_identity: peoplevault-er-reader
   team_management:
     row_scope: direct_reports
     restricted_population: exclude
     terminated: exclude
     ref: employee_ref
-    bq_identity: pv-tm-reader
+    bq_identity: peoplevault-tm-reader
   workforce_analytics:
     row_scope: all
     restricted_population: exclude
     terminated: include
     ref: analytics_id
-    bq_identity: pv-wa-reader
+    bq_identity: peoplevault-wa-reader
   privacy_compliance:
     row_scope: identity_lookup
     restricted_population: include
     terminated: include
     ref: employee_ref
-    bq_identity: pv-pc-reader
+    bq_identity: peoplevault-pc-reader
   legal_hold_management:
     row_scope: identity_lookup
     restricted_population: include
     terminated: include
     ref: employee_ref
-    bq_identity: pv-lh-reader
+    bq_identity: peoplevault-lh-reader
 
 # Six sensitive classes, each a BigQuery policy tag in taxonomy `peoplevault`; three untagged classes.
 data_classes:
@@ -100,7 +107,7 @@ visibility:
   legal_hold_management:
     { direct_identifier: allow, date_of_birth: deny, compensation: deny, performance: deny, health_leave: deny, protected_attribute: deny }
 
-# Purpose datasets (`pv_purpose_<purpose>`): one ceiling view per source plus table functions for row scope.
+# Purpose datasets (`peoplevault_purpose_<purpose>`): one ceiling view per source plus table functions for row scope.
 # `source` names a relation the compiler knows: `profile_base` (current records with the latest compensation,
 # review and leave per employee), `attrition_features`, `headcount_monthly`.
 purpose_views:
@@ -207,10 +214,10 @@ queries:
 
 # Warehouse datasets (BigQuery datasets, DuckDB schemas of the same names).
 datasets:
-  data: [pv_raw, pv_core, pv_snapshots, pv_restricted, pv_marts]
+  data: [peoplevault_raw, peoplevault_core, peoplevault_snapshots, peoplevault_restricted, peoplevault_marts]
   max_time_travel_hours: 48
   fail_safe_days: 7
-  authorized_sources: [pv_core, pv_snapshots, pv_marts]
+  authorized_sources: [peoplevault_core, peoplevault_snapshots, peoplevault_marts]
 
 # Exactly 13 assets in 6 categories (section 8.5). `subject_column` holds the subject's own key; references to the
 # subject in other rows live in `reference_columns` and are scrubbed to REDACTED.
@@ -231,39 +238,39 @@ assets:
   - id: wh.raw
     category: warehouse_tables
     store: warehouse
-    location: pv_raw
+    location: peoplevault_raw
     executor: python
     row_level: true
     erase: dml_delete
     subject_column: employee_id
     parts:
-      - { name: pv_raw.hris_employees, reference_columns: [manager_employee_id, manager_key], retention: { days: 56, basis: export_date } }
-      - { name: pv_raw.payroll_compensation, reference_columns: [], retention: { days: 300, basis: export_date } }
-      - { name: pv_raw.leave_requests, reference_columns: [], retention: { days: 365, basis: export_date } }
-      - { name: pv_raw.performance_reviews, reference_columns: [reviewer_employee_id, reviewer_key], retention: { days: 540, basis: export_date } }
+      - { name: peoplevault_raw.hris_employees, reference_columns: [manager_employee_id, manager_key], retention: { days: 56, basis: export_date } }
+      - { name: peoplevault_raw.payroll_compensation, reference_columns: [], retention: { days: 300, basis: export_date } }
+      - { name: peoplevault_raw.leave_requests, reference_columns: [], retention: { days: 365, basis: export_date } }
+      - { name: peoplevault_raw.performance_reviews, reference_columns: [reviewer_employee_id, reviewer_key], retention: { days: 540, basis: export_date } }
   - id: wh.core
     category: warehouse_tables
     store: warehouse
-    location: pv_core
+    location: peoplevault_core
     executor: python
     row_level: true
     erase: dml_delete
     subject_column: employee_key
     parts:
-      - { name: pv_core.dim_employee, reference_columns: [manager_key] }
-      - { name: pv_core.fct_compensation, reference_columns: [] }
-      - { name: pv_core.fct_leave, reference_columns: [] }
-      - { name: pv_core.fct_performance, reference_columns: [reviewer_key] }
+      - { name: peoplevault_core.dim_employee, reference_columns: [manager_key] }
+      - { name: peoplevault_core.fct_compensation, reference_columns: [] }
+      - { name: peoplevault_core.fct_leave, reference_columns: [] }
+      - { name: peoplevault_core.fct_performance, reference_columns: [reviewer_key] }
   - id: hist.dbt.dim_employee_history
     category: historical_snapshots
     store: warehouse
-    location: pv_snapshots.dim_employee_history
+    location: peoplevault_snapshots.dim_employee_history
     executor: python
     row_level: true
     erase: dml_delete
     subject_column: employee_key
     parts:
-      - { name: pv_snapshots.dim_employee_history, reference_columns: [manager_key] }
+      - { name: peoplevault_snapshots.dim_employee_history, reference_columns: [manager_key] }
   - id: hist.lake.employee_monthly
     category: historical_snapshots
     store: iceberg
@@ -288,43 +295,43 @@ assets:
   - id: id.wh.identity_xref
     category: identity_mappings
     store: warehouse
-    location: pv_restricted.identity_xref
+    location: peoplevault_restricted.identity_xref
     executor: python
     row_level: true
     erase: dml_delete
     subject_column: employee_id
     parts:
-      - { name: pv_restricted.identity_xref, reference_columns: [] }
+      - { name: peoplevault_restricted.identity_xref, reference_columns: [] }
   - id: drv.marts.attrition_features
     category: derived_datasets
     store: warehouse
-    location: pv_marts.attrition_features
+    location: peoplevault_marts.attrition_features
     executor: python
     row_level: true
     erase: dml_delete
     subject_column: analytics_id
     parts:
-      - { name: pv_marts.attrition_features, reference_columns: [] }
+      - { name: peoplevault_marts.attrition_features, reference_columns: [] }
   - id: drv.marts.team_roster
     category: derived_datasets
     store: warehouse
-    location: pv_marts.team_roster
+    location: peoplevault_marts.team_roster
     executor: python
     row_level: true
     erase: dml_delete
     subject_column: employee_key
     parts:
-      - { name: pv_marts.team_roster, reference_columns: [manager_key] }
+      - { name: peoplevault_marts.team_roster, reference_columns: [manager_key] }
   - id: drv.marts.headcount_monthly
     category: derived_datasets
     store: warehouse
-    location: pv_marts.headcount_monthly
+    location: peoplevault_marts.headcount_monthly
     executor: python
     row_level: false
     erase: dbt_rebuild
     subject_column: null
     parts:
-      - { name: pv_marts.headcount_monthly, reference_columns: [] }
+      - { name: peoplevault_marts.headcount_monthly, reference_columns: [] }
   - id: drv.r2.analytics_extracts
     category: derived_datasets
     store: r2

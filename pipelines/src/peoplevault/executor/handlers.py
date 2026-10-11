@@ -4,7 +4,7 @@ Erase batch: one warehouse transaction with every DML erase and reference scrub 
 attrition_features and team_roster (and the suppression append); then `dbt build --select headcount_monthly` (the only
 rebuilt table); then one Iceberg transaction; then per-subject verification with the independent scanners; then
 counts-only results. Reference scrubbing never modifies rows of held subjects (conservative, SPEC.md 8.8).
-Identity batch: delete the subjects from pv_restricted.identity_xref and verify the whole warehouse and lake again.
+Identity batch: delete the subjects from peoplevault_restricted.identity_xref and verify the whole warehouse and lake again.
 Results never carry identifiers: they hold asset ids, counts, enums, snapshot ids, timestamps and redacted locations.
 """
 
@@ -26,7 +26,7 @@ log = logging.getLogger("peoplevault.executor")
 REDACTED = "REDACTED"
 TIME_TRAVEL_HOURS = 48
 FAIL_SAFE_DAYS = 7
-XREF = "pv_restricted.identity_xref"
+XREF = "peoplevault_restricted.identity_xref"
 ERASE_PHASE_EXCLUDE = {XREF}  # erased and verified in the identity phase
 
 
@@ -129,12 +129,12 @@ def plan_statements(ctx: ExecContext, s: Subject, request_id: str, held_ids: lis
                 {"v": s.value_for(col), "held": prot or [""]},
             ))
             labels.append((part.asset_id, part.table, "refs"))
-    sup = _rel(ctx, "pv_restricted.suppression")
+    sup = _rel(ctx, "peoplevault_restricted.suppression")
     stmts.append((
         f"insert into {sup} select $s, $r, current_timestamp where not exists (select 1 from {sup} where subject_ref = $s)",
         {"s": s.subject_ref, "r": request_id},
     ))
-    labels.append(("suppression", "pv_restricted.suppression", "append"))
+    labels.append(("suppression", "peoplevault_restricted.suppression", "append"))
     if ctx.wh.dialect == "bigquery":
         stmts = [(sql.replace("$", "@"), p) for sql, p in stmts]
     return stmts, labels
@@ -243,7 +243,7 @@ def handle_erase_batch(tasks: list, ctx: ExecContext) -> dict[str, tuple[bool, d
         for a in assets:
             if a["asset_id"] in ("hist.lake.employee_monthly", "id.wh.identity_xref") or a["applicability"] == "not_present":
                 continue
-            for table in (a.get("parts") or {"pv_marts.headcount_monthly": {}}):
+            for table in (a.get("parts") or {"peoplevault_marts.headcount_monthly": {}}):
                 residuals.extend(bq_residuals(ctx, table, a["asset_id"], deleted_at, s))
         unregistered = [{"store": f.store, "location": f.location, "asset_id": None, "matches": f.matches} for f in findings if f.asset_id is None]
         registered = [{"store": f.store, "location": f.location, "asset_id": f.asset_id, "matches": f.matches} for f in findings if f.asset_id is not None]

@@ -5,8 +5,8 @@ through the same generated named-query SQL the Worker runs.
 
 Ceiling probes (SPEC.md section 15.8): the 48 cases go through views and table functions that already omit denied
 columns and filter the restricted population, so on their own they would pass even with tags or row access policies
-missing. These 37 probes test the ceilings directly through a temporary dataset pv_authz_probe of views over the core
-tables with no filters, authorized on pv_core: 18 denied cells must fail with an access error, 4 masked cells must
+missing. These 37 probes test the ceilings directly through a temporary dataset peoplevault_authz_probe of views over the core
+tables with no filters, authorized on peoplevault_core: 18 denied cells must fail with an access error, 4 masked cells must
 come back masked, 5 restricted-population counts must match each purpose's row access policy, and 10 dataset IAM
 probes must fail. Reported separately from the 100 cases, never added to them.
 """
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from peoplevault.bqjob import CEILING_PROBE_BYTES, run_query
 from peoplevault.policy.model import policy
 
-PROBE_DATASET = "pv_authz_probe"
+PROBE_DATASET = "peoplevault_authz_probe"
 CORE_TABLES = ["dim_employee", "fct_compensation", "fct_performance", "fct_leave"]
 REPRESENTATIVE = {
     "direct_identifier": ("dim_employee", "full_name"), "date_of_birth": ("dim_employee", "birth_date"),
@@ -57,7 +57,7 @@ def probes(project: str) -> list[Probe]:
         other = names[(i + 1) % len(names)]
         view = next(iter(p.purpose_views[other]))
         out.append(Probe("iam", name, f"SELECT 1 FROM `{project}.{p.purpose_dataset(other)}.{view}` LIMIT 1", "access_denied"))
-        out.append(Probe("iam", name, f"SELECT 1 FROM `{project}.pv_core.dim_employee` LIMIT 1", "access_denied"))
+        out.append(Probe("iam", name, f"SELECT 1 FROM `{project}.peoplevault_core.dim_employee` LIMIT 1", "access_denied"))
     return out
 
 
@@ -103,9 +103,9 @@ def setup_probe_dataset(executor_client, project: str, purpose_sas: list[str]) -
     ds = executor_client.create_dataset(ds, exists_ok=True)
     for t in CORE_TABLES:
         view = bigquery.Table(f"{project}.{PROBE_DATASET}.{t}")
-        view.view_query = f"SELECT * FROM `{project}.pv_core.{t}`"
+        view.view_query = f"SELECT * FROM `{project}.peoplevault_core.{t}`"
         executor_client.create_table(view, exists_ok=True)
-    core = executor_client.get_dataset(f"{project}.pv_core")
+    core = executor_client.get_dataset(f"{project}.peoplevault_core")
     entries = list(core.access_entries)
     for t in CORE_TABLES:
         entries.append(bigquery.AccessEntry(None, "view", {"projectId": project, "datasetId": PROBE_DATASET, "tableId": t}))
@@ -116,10 +116,17 @@ def setup_probe_dataset(executor_client, project: str, purpose_sas: list[str]) -
 
 
 def cleanup_probe_dataset(executor_client, project: str) -> None:
-    core = executor_client.get_dataset(f"{project}.pv_core")
+    """Removes the probe views' authorization on the core dataset, the purpose readers' grants on the probe dataset and
+    every probe view. The dataset itself stays: `pv setup gcp` creates it, because the executor holds no project-level
+    role that could create it again in the shared project (SPEC.md section 30.3.8)."""
+    core = executor_client.get_dataset(f"{project}.peoplevault_core")
     core.access_entries = [e for e in core.access_entries if not (e.entity_type == "view" and e.entity_id.get("datasetId") == PROBE_DATASET)]
     executor_client.update_dataset(core, ["access_entries"])
-    executor_client.delete_dataset(f"{project}.{PROBE_DATASET}", delete_contents=True, not_found_ok=True)
+    ds = executor_client.get_dataset(f"{project}.{PROBE_DATASET}")
+    ds.access_entries = [e for e in ds.access_entries if not (e.role == "READER" and e.entity_type == "userByEmail")]
+    executor_client.update_dataset(ds, ["access_entries"])
+    for t in executor_client.list_tables(f"{project}.{PROBE_DATASET}"):
+        executor_client.delete_table(t, not_found_ok=True)
 
 
 def run_probes(project: str) -> dict:

@@ -45,11 +45,11 @@ describe("executor task protocol", () => {
   });
 
   it("the result schema rejects identifier-like strings", () => {
-    const ok = { assets: [{ asset_id: "wh.core", applicability: "present", rows_before: 3, rows_erased: 3, references_scrubbed: 1, action_status: "erased", verify_status: "clean", verify_matches: 0, parts: { "pv_core.dim_employee": { rows_before: 1, rows_erased: 1, refs_scrubbed: 0 } } }], findings: [{ store: "warehouse", location: "pv_core.tmp_backup_1", asset_id: null, matches: 2 }] };
+    const ok = { assets: [{ asset_id: "wh.core", applicability: "present", rows_before: 3, rows_erased: 3, references_scrubbed: 1, action_status: "erased", verify_status: "clean", verify_matches: 0, parts: { "peoplevault_core.dim_employee": { rows_before: 1, rows_erased: 1, refs_scrubbed: 0 } } }], findings: [{ store: "warehouse", location: "peoplevault_core.tmp_backup_1", asset_id: null, matches: 2 }] };
     expect(ExecutorResult.safeParse(ok).success).toBe(true);
     for (const bad of [
       { findings: [{ store: "warehouse", location: "ada.novak@peoplevault.test", asset_id: null, matches: 1 }] },
-      { findings: [{ store: "warehouse", location: "pv_core.E10004", asset_id: null, matches: 1 }] },
+      { findings: [{ store: "warehouse", location: "peoplevault_core.E10004", asset_id: null, matches: 1 }] },
       { findings: [{ store: "warehouse", location: "Ada Novak", asset_id: null, matches: 1 }] },
       { counts: { er_aaaaaaaaaaaaaaaaaaaaaaaaaa: 1 } },
       { assets: [{ asset_id: "wh.core", extra: "x" }] },

@@ -1,4 +1,4 @@
-"""The P1 executor.yml job: configuration from repository secrets, the pv-executor key guard, public-log hygiene and
+"""The P1 executor.yml job: configuration from repository secrets, the peoplevault-executor key guard, public-log hygiene and
 the actions key that goes straight from the IAM API into a GitHub secret (SPEC.md section 20)."""
 
 from __future__ import annotations
@@ -54,10 +54,10 @@ def test_actions_target_runs_only_with_the_executor_key(monkeypatch, tmp_path):
     key.write_text("not json")
     with pytest.raises(RuntimeError, match="not a service account key"):
         config.prod_dbt_target("p")
-    key.write_text(json.dumps({"type": "service_account", "client_email": "pv-gateway@p.iam.gserviceaccount.com"}))
-    with pytest.raises(RuntimeError, match="not pv-executor"):
+    key.write_text(json.dumps({"type": "service_account", "client_email": "peoplevault-gateway@p.iam.gserviceaccount.com"}))
+    with pytest.raises(RuntimeError, match="not peoplevault-executor"):
         config.prod_dbt_target("p")
-    key.write_text(json.dumps({"type": "service_account", "client_email": "pv-executor@p.iam.gserviceaccount.com"}))
+    key.write_text(json.dumps({"type": "service_account", "client_email": "peoplevault-executor@p.iam.gserviceaccount.com"}))
     assert config.prod_dbt_target("p") == "bigquery_actions"
 
 
@@ -133,7 +133,7 @@ def test_actions_key_goes_from_iam_to_the_secret_on_stdin():
     iam, gh = FakeIam(), FakeGh()
     out = github.ensure_actions_key(iam, gh, "owner/peoplevault", "p")
     assert out == {"action": "created", "key_id": "key1"}
-    assert iam.created == ["pv-executor@p.iam.gserviceaccount.com"]
+    assert iam.created == ["peoplevault-executor@p.iam.gserviceaccount.com"]
     args, stdin = gh.calls[-1]
     assert args == ["secret", "set", "PV_GCP_EXECUTOR_KEY", "--app", "actions", "--repo", "owner/peoplevault"]
     assert json.loads(stdin)["private_key_id"] == "key1"
@@ -146,14 +146,14 @@ def test_existing_secret_is_left_alone_and_rotation_deletes_the_previous_key():
     assert iam.created == []
     out = github.ensure_actions_key(iam, gh, "owner/peoplevault", "p", rotate=True, recorded_key_id="old1")
     assert out == {"action": "rotated", "key_id": "key1"}
-    assert iam.deleted == [("pv-executor@p.iam.gserviceaccount.com", "old1")]
+    assert iam.deleted == [("peoplevault-executor@p.iam.gserviceaccount.com", "old1")]
 
 
 def test_a_key_that_could_not_be_uploaded_is_deleted():
     iam, gh = FakeIam(), FakeGh(fail_set=True)
     with pytest.raises(RuntimeError, match="gh secret set"):
         github.ensure_actions_key(iam, gh, "owner/peoplevault", "p")
-    assert iam.deleted == [("pv-executor@p.iam.gserviceaccount.com", "key1")]
+    assert iam.deleted == [("peoplevault-executor@p.iam.gserviceaccount.com", "key1")]
 
 
 def test_repo_must_be_owner_slash_name():

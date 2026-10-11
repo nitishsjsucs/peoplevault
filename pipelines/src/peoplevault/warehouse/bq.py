@@ -1,6 +1,6 @@
 """BigQuery implementation of the Warehouse protocol (production). Status: written, not yet executed against BigQuery.
 
-Always runs as pv-executor by impersonation on top of the owner's user ADC (no key on the laptop); running as the
+Always runs as peoplevault-executor by impersonation on top of the owner's user ADC (no key on the laptop); running as the
 owner's own user is refused, because the owner is in no row access policy and would silently read zero rows.
 Writes run as one multi-statement transaction; a transaction aborted by a concurrent update (two executor runs
 overlapping) is retried up to 5 times with backoff. The query cache is always off.
@@ -24,9 +24,9 @@ def executor_credentials(project: str):
     from google.auth import impersonated_credentials
 
     source, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
-    target = f"pv-executor@{project}.iam.gserviceaccount.com"
+    target = f"peoplevault-executor@{project}.iam.gserviceaccount.com"
     if getattr(source, "service_account_email", None) == target:
-        return source  # the P1 Actions job runs with the pv-executor key itself
+        return source  # the P1 Actions job runs with the peoplevault-executor key itself
     return impersonated_credentials.Credentials(source_credentials=source, target_principal=target, target_scopes=["https://www.googleapis.com/auth/cloud-platform"], lifetime=3600)
 
 

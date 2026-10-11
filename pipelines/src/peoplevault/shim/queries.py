@@ -1,7 +1,7 @@
 """Named-query resolution for the shim (SPEC.md sections 12.2 and 15.7).
 
 Only query ids from the compiled policy run, with typed, bound parameters, and a purpose may only read its own
-pv_purpose_<purpose> schema: the DuckDB emulation of BigQuery dataset IAM (one dataViewer grant per purpose SA).
+peoplevault_purpose_<purpose> schema: the DuckDB emulation of BigQuery dataset IAM (one dataViewer grant per purpose SA).
 """
 
 from __future__ import annotations

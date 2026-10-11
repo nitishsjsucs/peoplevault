@@ -6,5 +6,5 @@ select
   cast(r.rating as {{ dbt.type_int() }}) as rating,
   r.review_text,
   r.reviewer_key
-from {{ source('pv_raw', 'performance_reviews') }} r
-where r.subject_ref not in (select subject_ref from {{ source('pv_restricted', 'suppression') }})
+from {{ source('peoplevault_raw', 'performance_reviews') }} r
+where r.subject_ref not in (select subject_ref from {{ source('peoplevault_restricted', 'suppression') }})

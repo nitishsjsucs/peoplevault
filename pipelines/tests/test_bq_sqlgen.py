@@ -8,9 +8,9 @@ def test_table_function_golden():
     p = policy()
     q = p.queries["team_management"]["list"]
     assert sqlgen.routine_sql(p, "team_management", q, "bigquery") == (
-        "create or replace table function `{project}.pv_purpose_team_management.direct_reports`(p_manager_key STRING) as ("
+        "create or replace table function `{project}.peoplevault_purpose_team_management.direct_reports`(p_manager_key STRING) as ("
         "select employee_ref, full_name, work_email, job_title, job_level, org_unit, employment_status "
-        "from `{project}.pv_purpose_team_management.employees` where manager_key = p_manager_key)"
+        "from `{project}.peoplevault_purpose_team_management.employees` where manager_key = p_manager_key)"
     )
     q = p.queries["employee_relations"]["profile"]
     sql = sqlgen.routine_sql(p, "employee_relations", q, "bigquery")
@@ -22,8 +22,8 @@ def test_identity_lookup_golden_both_dialects():
     p = policy()
     q = p.queries["privacy_compliance"]["identity_lookup"]
     assert sqlgen.routine_sql(p, "privacy_compliance", q, "duckdb") == (
-        "create or replace macro pv_purpose_privacy_compliance.identity_lookup(p_q) as table "
-        "select employee_ref, full_name, work_email, org_unit, employment_status from pv_purpose_privacy_compliance.directory "
+        "create or replace macro peoplevault_purpose_privacy_compliance.identity_lookup(p_q) as table "
+        "select employee_ref, full_name, work_email, org_unit, employment_status from peoplevault_purpose_privacy_compliance.directory "
         "where (starts_with(lower(full_name), lower(p_q)) or starts_with(lower(work_email), lower(p_q))) order by full_name limit 20"
     )
 
@@ -31,13 +31,13 @@ def test_identity_lookup_golden_both_dialects():
 def test_row_access_policies_golden():
     macro = sqlgen.row_access_macro(policy())
     assert (
-        'create or replace row access policy rap_full on {{ this }} grant to ("serviceAccount:pv-er-reader@{{ target.project }}.iam.gserviceaccount.com", '
-        '"serviceAccount:pv-pc-reader@{{ target.project }}.iam.gserviceaccount.com", "serviceAccount:pv-lh-reader@{{ target.project }}.iam.gserviceaccount.com", '
-        '"serviceAccount:pv-executor@{{ target.project }}.iam.gserviceaccount.com") filter using (true);'
+        'create or replace row access policy rap_full on {{ this }} grant to ("serviceAccount:peoplevault-er-reader@{{ target.project }}.iam.gserviceaccount.com", '
+        '"serviceAccount:peoplevault-pc-reader@{{ target.project }}.iam.gserviceaccount.com", "serviceAccount:peoplevault-lh-reader@{{ target.project }}.iam.gserviceaccount.com", '
+        '"serviceAccount:peoplevault-executor@{{ target.project }}.iam.gserviceaccount.com") filter using (true);'
     ) in macro
     assert (
-        'create or replace row access policy rap_non_restricted on {{ this }} grant to ("serviceAccount:pv-tm-reader@{{ target.project }}.iam.gserviceaccount.com", '
-        '"serviceAccount:pv-wa-reader@{{ target.project }}.iam.gserviceaccount.com") filter using (is_restricted = false)'
+        'create or replace row access policy rap_non_restricted on {{ this }} grant to ("serviceAccount:peoplevault-tm-reader@{{ target.project }}.iam.gserviceaccount.com", '
+        '"serviceAccount:peoplevault-wa-reader@{{ target.project }}.iam.gserviceaccount.com") filter using (is_restricted = false)'
     ) in macro
     assert "{%- if target.type == 'bigquery' -%}" in macro
 

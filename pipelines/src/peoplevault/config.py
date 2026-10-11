@@ -155,17 +155,17 @@ def prod_resources() -> dict:
 
 
 def executor_service_account(project: str) -> str:
-    """dbt, loaders and the executor always run as pv-executor (never as the owner's user, who is in no
+    """dbt, loaders and the executor always run as peoplevault-executor (never as the owner's user, who is in no
     row access policy and would silently read zero rows)."""
-    return f"pv-executor@{project}.iam.gserviceaccount.com"
+    return f"peoplevault-executor@{project}.iam.gserviceaccount.com"
 
 
 PROD_DBT_TARGETS = ("bigquery", "bigquery_actions")
 
 
 def prod_dbt_target(project: str) -> str:
-    """dbt target for production runs: `bigquery` (the owner's machine, impersonating pv-executor) unless
-    PV_DBT_TARGET=bigquery_actions (the executor.yml job), which runs with the pv-executor key named by
+    """dbt target for production runs: `bigquery` (the owner's machine, impersonating peoplevault-executor) unless
+    PV_DBT_TARGET=bigquery_actions (the executor.yml job), which runs with the peoplevault-executor key named by
     GOOGLE_APPLICATION_CREDENTIALS and refuses a key that belongs to any other identity."""
     target = os.environ.get("PV_DBT_TARGET", "bigquery")
     if target not in PROD_DBT_TARGETS:
@@ -173,13 +173,13 @@ def prod_dbt_target(project: str) -> str:
     if target == "bigquery_actions":
         keyfile = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
         if not keyfile or not Path(keyfile).is_file():
-            raise RuntimeError("PV_DBT_TARGET=bigquery_actions needs GOOGLE_APPLICATION_CREDENTIALS pointing at the pv-executor key")
+            raise RuntimeError("PV_DBT_TARGET=bigquery_actions needs GOOGLE_APPLICATION_CREDENTIALS pointing at the peoplevault-executor key")
         try:
             email = json.loads(Path(keyfile).read_text()).get("client_email")
         except (OSError, ValueError) as exc:
             raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not a service account key file") from exc
         if email != executor_service_account(project):
-            raise RuntimeError("the key in GOOGLE_APPLICATION_CREDENTIALS is not pv-executor's; dbt runs only as pv-executor")
+            raise RuntimeError("the key in GOOGLE_APPLICATION_CREDENTIALS is not peoplevault-executor's; dbt runs only as peoplevault-executor")
     return target
 
 

@@ -33,28 +33,28 @@ def test_dbt_tests_pass_including_generic_tests(full_load):
 
 def test_purpose_views_emulate_the_ceilings(full_load):
     conn = duckdb.connect(str(full_load["duckdb"]))
-    tm = conn.execute("select count(*), count(base_salary), max(cast(is_restricted as int)) from pv_purpose_team_management.employees "
-                      "join pv_core.dim_employee using (employee_ref)").fetchone()
+    tm = conn.execute("select count(*), count(base_salary), max(cast(is_restricted as int)) from peoplevault_purpose_team_management.employees "
+                      "join peoplevault_core.dim_employee using (employee_ref)").fetchone()
     assert tm[0] > 0 and tm[1] == 0 and tm[2] == 0  # compensation nulled, restricted excluded
     er = conn.execute("select count(*) filter (where month(birth_date) <> 1 or day(birth_date) <> 1), count(leave_reason) "
-                      "from pv_purpose_employee_relations.employees").fetchone()
+                      "from peoplevault_purpose_employee_relations.employees").fetchone()
     assert er == (0, 0)  # birth date masked to January 1, health leave nulled
-    wa_cols = [r[0] for r in conn.execute("describe pv_purpose_workforce_analytics.employees").fetchall()]
+    wa_cols = [r[0] for r in conn.execute("describe peoplevault_purpose_workforce_analytics.employees").fetchall()]
     assert "full_name" not in wa_cols and "employee_ref" not in wa_cols and "gender" in wa_cols
-    lookup = conn.execute("select count(*) from pv_purpose_privacy_compliance.identity_lookup('a')").fetchone()[0]
+    lookup = conn.execute("select count(*) from peoplevault_purpose_privacy_compliance.identity_lookup('a')").fetchone()[0]
     assert 0 < lookup <= 20
 
 
 def test_second_build_after_dml_erase_does_not_bring_the_subject_back(small_load):
     conn = duckdb.connect(str(small_load["duckdb"]))
-    key, sref = conn.execute("select employee_key, subject_ref from pv_core.dim_employee order by employee_key limit 1").fetchone()
-    for t in ("pv_raw.hris_employees", "pv_raw.payroll_compensation", "pv_raw.leave_requests", "pv_raw.performance_reviews",
-              "pv_core.dim_employee", "pv_core.fct_compensation", "pv_core.fct_leave", "pv_core.fct_performance", "pv_marts.team_roster",
-              "pv_snapshots.dim_employee_history"):
+    key, sref = conn.execute("select employee_key, subject_ref from peoplevault_core.dim_employee order by employee_key limit 1").fetchone()
+    for t in ("peoplevault_raw.hris_employees", "peoplevault_raw.payroll_compensation", "peoplevault_raw.leave_requests", "peoplevault_raw.performance_reviews",
+              "peoplevault_core.dim_employee", "peoplevault_core.fct_compensation", "peoplevault_core.fct_leave", "peoplevault_core.fct_performance", "peoplevault_marts.team_roster",
+              "peoplevault_snapshots.dim_employee_history"):
         conn.execute(f"delete from {t} where employee_key = $k", {"k": key})
-    conn.execute("delete from pv_marts.attrition_features where subject_ref = $s", {"s": sref})
+    conn.execute("delete from peoplevault_marts.attrition_features where subject_ref = $s", {"s": sref})
     conn.close()
     assert dbt(["build", "--target", "local"]).success
     conn = duckdb.connect(str(small_load["duckdb"]))
-    for t in ("pv_core.dim_employee", "pv_core.fct_compensation", "pv_marts.team_roster", "pv_marts.attrition_features", "pv_snapshots.dim_employee_history"):
+    for t in ("peoplevault_core.dim_employee", "peoplevault_core.fct_compensation", "peoplevault_marts.team_roster", "peoplevault_marts.attrition_features", "peoplevault_snapshots.dim_employee_history"):
         assert conn.execute(f"select count(*) from {t} where subject_ref = $s", {"s": sref}).fetchone()[0] == 0, t

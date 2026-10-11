@@ -123,6 +123,8 @@ export interface CompiledPolicy {
     d1StageExclusions: Record<"before_identity_erasure" | "before_redaction", string[]>;
   };
   pseudonyms: { salt: string; infoPrefix: string; messagePrefix: string; length: number; kinds: Record<string, string> };
+  /** every Google Cloud name carries this prefix (shared project, SPEC.md section 30.3.8) */
+  naming: { prefix: string };
   datasets: { data: string[]; maxTimeTravelHours: number; failSafeDays: number; authorizedSources: string[] };
 }
 

@@ -3,7 +3,7 @@
 HKDF and HMAC code, finds tokens by extraction (Python regexes with lookbehind, unlike the product's RE2 patterns),
 and reads every store directly: DuckDB, pyiceberg, D1 and KV through `wrangler ... --local`, and R2 from Miniflare's
 state files. The production profile passes `OracleSources` instead (evals/prod_stores.py: R2 and KV through the
-Cloudflare REST API, D1 through `wrangler --remote`, BigQuery as pv-executor, the Basin Catalog).
+Cloudflare REST API, D1 through `wrangler --remote`, BigQuery as peoplevault-executor, the Basin Catalog).
 """
 
 from __future__ import annotations
@@ -223,7 +223,7 @@ def scan_duckdb(idx: TokenIndex, out: OracleFindings, path: Path | None = None) 
 
 
 def scan_warehouse(idx: TokenIndex, out: OracleFindings, wh: Any) -> None:
-    """Any warehouse with the Warehouse protocol (production: BigQuery as pv-executor): every base table of every
+    """Any warehouse with the Warehouse protocol (production: BigQuery as peoplevault-executor): every base table of every
     dataset, every string column, every row."""
     for ds in wh.list_datasets():
         for ref in wh.list_base_tables([ds]):

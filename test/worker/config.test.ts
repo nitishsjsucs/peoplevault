@@ -18,13 +18,13 @@ const prod = {
   PV_PSEUDONYM_MASTER_KEY: realKey,
   GCP_PROJECT_ID: "pv-test",
   BQ_LOCATION: "US",
-  BQ_GATEWAY_SA_EMAIL: "pv-gateway@pv-test.iam.gserviceaccount.com",
+  BQ_GATEWAY_SA_EMAIL: "peoplevault-gateway@pv-test.iam.gserviceaccount.com",
   GCP_GATEWAY_SA_KEY: '{"type":"service_account"}',
-  BQ_PURPOSE_SA_EMPLOYEE_RELATIONS: "pv-er-reader@pv-test.iam.gserviceaccount.com",
-  BQ_PURPOSE_SA_TEAM_MANAGEMENT: "pv-tm-reader@pv-test.iam.gserviceaccount.com",
-  BQ_PURPOSE_SA_WORKFORCE_ANALYTICS: "pv-wa-reader@pv-test.iam.gserviceaccount.com",
-  BQ_PURPOSE_SA_PRIVACY_COMPLIANCE: "pv-pc-reader@pv-test.iam.gserviceaccount.com",
-  BQ_PURPOSE_SA_LEGAL_HOLD_MANAGEMENT: "pv-lh-reader@pv-test.iam.gserviceaccount.com",
+  BQ_PURPOSE_SA_EMPLOYEE_RELATIONS: "peoplevault-er-reader@pv-test.iam.gserviceaccount.com",
+  BQ_PURPOSE_SA_TEAM_MANAGEMENT: "peoplevault-tm-reader@pv-test.iam.gserviceaccount.com",
+  BQ_PURPOSE_SA_WORKFORCE_ANALYTICS: "peoplevault-wa-reader@pv-test.iam.gserviceaccount.com",
+  BQ_PURPOSE_SA_PRIVACY_COMPLIANCE: "peoplevault-pc-reader@pv-test.iam.gserviceaccount.com",
+  BQ_PURPOSE_SA_LEGAL_HOLD_MANAGEMENT: "peoplevault-lh-reader@pv-test.iam.gserviceaccount.com",
   KV_PROPAGATION_WAIT: "70 seconds",
   EXECUTOR_WAIT_TIMEOUT: "24 hours",
   RETENTION_AS_OF: "",
@@ -46,7 +46,7 @@ describe("loadConfig", () => {
   });
   it("accepts a complete production configuration and treats empty strings as unset", () => {
     const cfg = loadConfig(prod);
-    expect(cfg.bigquery?.purposeSa.team_management).toBe("pv-tm-reader@pv-test.iam.gserviceaccount.com");
+    expect(cfg.bigquery?.purposeSa.team_management).toBe("peoplevault-tm-reader@pv-test.iam.gserviceaccount.com");
     expect(cfg.retentionAsOf).toBeNull();
     expect(cfg.dev).toBeNull();
   });

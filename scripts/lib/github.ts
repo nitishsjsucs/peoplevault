@@ -11,7 +11,7 @@ export const EXECUTOR_KEY_SECRET = "PV_GCP_EXECUTOR_KEY";
 /** A successful scheduled run is expected every hour; older than this means the schedule stopped. */
 export const MAX_RUN_AGE_HOURS = 26;
 
-/** Repository secrets read by executor.yml, except the pv-executor key (created by `pv setup actions-key`). */
+/** Repository secrets read by executor.yml, except the peoplevault-executor key (created by `pv setup actions-key`). */
 export const GITHUB_SECRET_SOURCES: Record<string, (env: Record<string, string>, res: ProdResources) => string | undefined> = {
   PV_BASE_URL: (e) => e.PV_BASE_URL,
   PV_CF_ACCESS_CLIENT_ID: (e) => e.PV_CF_ACCESS_CLIENT_ID_EXECUTOR,

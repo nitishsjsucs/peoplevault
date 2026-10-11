@@ -72,6 +72,10 @@ export interface ProdResources {
   retention_cron?: "on" | "off";
   /** the audit copy table exists (first `pv audit export --target prod`) and its snapshot expiration is enabled */
   audit_copy_table?: boolean;
+  /** Cloudflare resources this repo created (the account is shared; setup never adopts an unrecorded one) */
+  created_buckets?: string[];
+  created_queues?: string[];
+  worker_deployed?: boolean;
   audit_copy_expiration?: boolean;
   service_tokens?: Record<string, { id: string; client_id: string }>;
   policy_tags?: Record<string, string>;

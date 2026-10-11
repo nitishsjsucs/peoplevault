@@ -6,7 +6,7 @@ from peoplevault.dbtrun import DbtRefused, build_args
 from peoplevault.policy import protected
 from peoplevault.policy.model import TAGGED_CLASSES, policy
 
-PROTECTED_DATASETS = {"pv_core", "pv_snapshots", "pv_marts"}
+PROTECTED_DATASETS = {"peoplevault_core", "peoplevault_snapshots", "peoplevault_marts"}
 
 
 def _models(manifest):
@@ -69,6 +69,6 @@ def test_protected_columns_match_baseline_plus_migrations(empty_warehouse):
 
 def test_migration_parser(tmp_path, monkeypatch):
     monkeypatch.setattr(protected, "MIGRATIONS_DIR", tmp_path)
-    (tmp_path / "0001_add.sql").write_text("ALTER TABLE `p.pv_core.dim_employee` ADD COLUMN IF NOT EXISTS shoe_size INT64;\n")
-    assert protected.migration_columns() == {"pv_core.dim_employee": ["shoe_size"]}
-    assert protected.expected_columns()["pv_core.dim_employee"][-1] == "shoe_size"
+    (tmp_path / "0001_add.sql").write_text("ALTER TABLE `p.peoplevault_core.dim_employee` ADD COLUMN IF NOT EXISTS shoe_size INT64;\n")
+    assert protected.migration_columns() == {"peoplevault_core.dim_employee": ["shoe_size"]}
+    assert protected.expected_columns()["peoplevault_core.dim_employee"][-1] == "shoe_size"

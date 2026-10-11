@@ -223,3 +223,32 @@ describe("doctor --prod: the audit copy (pv audit status --json)", () => {
     expect(auditCopyCheck(fail)).toMatchObject({ status: "missing" });
   });
 });
+
+describe("doctor --prod: Cloudflare name conflicts on the shared account", () => {
+  it("a bucket with this repo's name that .secrets/prod-resources.json does not record is missing, with how to resolve it", async () => {
+    const env = { success: true, errors: [] };
+    const res = (result: unknown) => new Response(JSON.stringify({ ...env, result }), { status: 200 });
+    const run = (files: Record<string, string>) =>
+      prodChecks(
+        deps({
+          env: { CLOUDFLARE_ACCOUNT_ID: "acct" },
+          files,
+          commands: {
+            "wrangler whoami --json": ok(JSON.stringify({ loggedIn: true, accounts: [{ id: "acct", name: "a" }] })),
+            "wrangler auth token --json": ok(JSON.stringify({ token: "oauth" })),
+            "wrangler d1 list --json": ok(JSON.stringify([])),
+          },
+          routes: {
+            "GET /accounts/acct/r2/buckets": res({ buckets: [{ name: "pv-lake" }] }),
+            "GET /accounts/acct/storage/kv/namespaces?per_page=100": res([]),
+            "GET /accounts/acct/queues": res([]),
+          },
+        }),
+      );
+    const line = (await run({})).find((x) => x.name === "name conflicts")!;
+    expect(line).toMatchObject({ status: "missing", detail: "R2 bucket pv-lake exists but this repo has no record of creating it" });
+    expect(line.fix).toContain("record it in .secrets/prod-resources.json");
+    const recorded = (await run({ ".secrets/prod-resources.json": JSON.stringify({ created_buckets: ["pv-lake"] }) })).find((x) => x.name === "name conflicts")!;
+    expect(recorded.status).toBe("ok");
+  });
+});

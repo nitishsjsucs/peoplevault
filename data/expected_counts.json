@@ -122,19 +122,19 @@
     }
   },
   "warehouse": {
-    "pv_raw.hris_employees": 15600,
-    "pv_raw.payroll_compensation": 12018,
-    "pv_raw.leave_requests": 560,
-    "pv_raw.performance_reviews": 3939,
-    "pv_restricted.identity_xref": 1200,
-    "pv_core.dim_employee": 1200,
-    "pv_core.fct_compensation": 12018,
-    "pv_core.fct_leave": 560,
-    "pv_core.fct_performance": 3939,
-    "pv_snapshots.dim_employee_history": 1330,
-    "pv_marts.attrition_features": 12018,
-    "pv_marts.team_roster": 1199,
-    "pv_marts.headcount_monthly": 708
+    "peoplevault_raw.hris_employees": 15600,
+    "peoplevault_raw.payroll_compensation": 12018,
+    "peoplevault_raw.leave_requests": 560,
+    "peoplevault_raw.performance_reviews": 3939,
+    "peoplevault_restricted.identity_xref": 1200,
+    "peoplevault_core.dim_employee": 1200,
+    "peoplevault_core.fct_compensation": 12018,
+    "peoplevault_core.fct_leave": 560,
+    "peoplevault_core.fct_performance": 3939,
+    "peoplevault_snapshots.dim_employee_history": 1330,
+    "peoplevault_marts.attrition_features": 12018,
+    "peoplevault_marts.team_roster": 1199,
+    "peoplevault_marts.headcount_monthly": 708
   },
   "retention_expected": {
     "export_objects_expired": 8,

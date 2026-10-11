@@ -1,6 +1,6 @@
 """`pv load --target prod` (SPEC.md section 22.2 step 6). Status: written, not yet executed against BigQuery.
 
-As pv-executor: create the raw and restricted tables, sync the suppression list from the deployed Worker, upsert the
+As peoplevault-executor: create the raw and restricted tables, sync the suppression list from the deployed Worker, upsert the
 identity xref, land each export object (replacing rows of its export_date), replay the 13 weekly snapshots, run
 `dbt build --target bigquery` (merge-only protected tables), verify every tag and row access policy, and append the
 Iceberg history to the Basin Catalog after the self-test. Any zero count or missing control fails.
@@ -70,9 +70,9 @@ def load_prod(*, from_r2: bool = False) -> dict:
     hris_ids = sorted({json.loads(line)["employee_id"] for o in objects if o.family == "hris" for line in o.body.splitlines() if line.strip()})
     xref = [{"employee_id": e, "employee_key": r["warehouse_key"], "employee_ref": r["employee_ref"], "analytics_id": r["analytics_id"], "subject_ref": r["subject_ref"]}
             for e in hris_ids for r in [ps.all(e)] if r["subject_ref"] not in sup]
-    stage = f"{project}.pv_restricted._xref_stage"
-    client.load_table_from_json(xref, stage, job_config=bigquery.LoadJobConfig(schema=_bq_schema(all_tables()["pv_restricted.identity_xref"]), write_disposition="WRITE_TRUNCATE"), **load_kwargs()).result()
-    run_query(client, f"MERGE `{project}.pv_restricted.identity_xref` t USING `{stage}` s ON t.employee_id = s.employee_id "
+    stage = f"{project}.peoplevault_restricted._xref_stage"
+    client.load_table_from_json(xref, stage, job_config=bigquery.LoadJobConfig(schema=_bq_schema(all_tables()["peoplevault_restricted.identity_xref"]), write_disposition="WRITE_TRUNCATE"), **load_kwargs()).result()
+    run_query(client, f"MERGE `{project}.peoplevault_restricted.identity_xref` t USING `{stage}` s ON t.employee_id = s.employee_id "
               "WHEN NOT MATCHED THEN INSERT ROW").result()
     client.delete_table(stage, not_found_ok=True)
     for obj in objects:

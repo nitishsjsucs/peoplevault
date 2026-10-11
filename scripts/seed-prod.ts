@@ -3,7 +3,7 @@
 //    environment, never in argv); 2. remote D1 seed (only into an empty identity_map); 3. map the persona service
 //    tokens and sign-in emails to the seeded principals; 4. the 41 export objects into pv-source-exports; 5. the lake
 //    self-test and table; 6. Basin snapshot expiration on hr_history.employee_monthly; 7. `pv load --target prod`
-//    (dbt build as pv-executor, controls verified); 8. counts and controls through `pv doctor gcp --json`; 9. (P1) the 6
+//    (dbt build as peoplevault-executor, controls verified); 8. counts and controls through `pv doctor gcp --json`; 9. (P1) the 6
 //    analytics extracts as analyst-01 and the KV entries reachable with the persona service tokens, through Access.
 // Re-seeding a project that already has deletion requests is refused: re-uploading exports would resurrect erased data.
 import { readFileSync } from "node:fs";
@@ -77,7 +77,7 @@ async function main(): Promise<void> {
   const exp = await wrangler(["basin", "catalog", "snapshot-expiration", "enable", "pv-lake", "hr_history", "employee_monthly", "--older-than-days", "1", "--retain-last", "1"], { allowFail: true });
   if (exp.code !== 0) console.log("  snapshot expiration not enabled by this run (already enabled, or see `npx wrangler basin catalog snapshot-expiration --help`)");
 
-  console.log("seed:prod 7/9 pv load --target prod (dbt build as pv-executor; controls verified)");
+  console.log("seed:prod 7/9 pv load --target prod (dbt build as peoplevault-executor; controls verified)");
   await pv(["load", "--target", "prod"]);
 
   console.log("seed:prod 8/9 counts and controls");

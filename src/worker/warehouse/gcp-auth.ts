@@ -1,4 +1,4 @@
-// Google credentials for the Worker (SPEC.md section 11.4). The Worker holds only the pv-gateway key, whose sole
+// Google credentials for the Worker (SPEC.md section 11.4). The Worker holds only the peoplevault-gateway key, whose sole
 // permission is Token Creator on the five purpose service accounts: it signs an RS256 JWT bearer assertion for an
 // access token, then calls iamcredentials generateAccessToken for the purpose SA (lifetime 300 s) and caches that
 // purpose token for 4 minutes in module memory.

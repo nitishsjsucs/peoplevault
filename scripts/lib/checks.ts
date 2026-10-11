@@ -2,6 +2,7 @@
 // exact command or console path that fixes it. Every dependency (commands, environment, files, HTTP, ports) is injected
 // so tests drive each check with a fake runner and recorded API responses.
 import { CfApi } from "./cf-api.ts";
+import { nameConflicts, type AccountResources } from "./conflicts.ts";
 import { EXECUTOR_WORKFLOW, GITHUB_SECRETS, MAX_RUN_AGE_HOURS, readGithubState, type GithubState } from "./github.ts";
 import type { RunResult } from "./run.ts";
 
@@ -160,6 +161,7 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     out.push(absent.length ? missing(X, "service tokens", `missing: ${absent.join(", ")}`, "npm run setup:prod") : ok(X, "service tokens", "5 of 5"));
   }
   const R = "Cloudflare resources";
+  const seen: AccountResources = { buckets: [], d1: [], kv: [], queues: [], workerId: null };
   if (loggedIn && accountId) {
     const tok = await d.run(d.wrangler, ["auth", "token", "--json"]);
     let oauth = "";
@@ -172,11 +174,14 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     else {
       const api = new CfApi(accountId, oauth, d.fetchImpl);
       const buckets = new Set((await api.r2Buckets().catch(() => ({ buckets: [] }))).buckets.map((b) => b.name));
+      seen.buckets = [...buckets];
       const needB = ["pv-source-exports", "pv-derived", "pv-lake"].filter((b) => !buckets.has(b));
       out.push(needB.length ? missing(R, "R2 buckets", `missing: ${needB.join(", ")}`, "npm run setup:prod") : ok(R, "R2 buckets", "3 of 3"));
-      const kv = (await api.kvNamespaces().catch(() => [])).some((n) => n.title === "pv-cache" || n.title.endsWith("pv-cache"));
+      seen.kv = await api.kvNamespaces().catch(() => []);
+      const kv = seen.kv.some((n) => n.title === "pv-cache" || n.title.endsWith("pv-cache"));
       out.push(kv ? ok(R, "KV namespace", "pv-cache") : missing(R, "KV namespace", "pv-cache missing", "npm run setup:prod"));
       const qs = new Set((await api.queues().catch(() => [])).map((q) => q.queue_name));
+      seen.queues = [...qs];
       const needQ = ["pv-retention-sweep", "pv-retention-dlq"].filter((q) => !qs.has(q));
       out.push(needQ.length ? missing(R, "Queues", `missing: ${needQ.join(", ")}`, "npm run setup:prod") : ok(R, "Queues", "2 of 2"));
       const cat = await api.catalog("pv-lake").catch(() => null);
@@ -185,11 +190,16 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     const d1 = await d.run(d.wrangler, ["d1", "list", "--json"]);
     let hasD1 = false;
     try {
-      hasD1 = (jsonFrom(d1.stdout) as { name: string }[]).some((x) => x.name === "pv-control");
+      seen.d1 = jsonFrom(d1.stdout) as { name: string; uuid: string }[];
+      hasD1 = seen.d1.some((x) => x.name === "pv-control");
     } catch {
       hasD1 = false;
     }
     out.push(hasD1 ? ok(R, "D1", "pv-control") : missing(R, "D1", "pv-control missing", "npm run setup:prod"));
+    // shared account (SPEC.md section 30.3.9): a resource with one of this repo's names that setup did not record
+    const recorded = d.exists(".secrets/prod-resources.json") ? (JSON.parse(d.readFile(".secrets/prod-resources.json")) as Record<string, never>) : {};
+    const conflicts = nameConflicts(seen, recorded);
+    out.push(conflicts.length ? missing(R, "name conflicts", conflicts.map((c) => c.item).join("; "), conflicts[0]!.fix) : ok(R, "name conflicts", "every resource with this repo's names is recorded as this repo's"));
   }
   out.push(env.PV_R2_CATALOG_TOKEN ? ok(R, "PV_R2_CATALOG_TOKEN", "set (checked by the Google Cloud group's lake check)") : missing(R, "PV_R2_CATALOG_TOKEN", "not set", "create an R2 API token (docs/PRODUCTION.md step 8) and add it to .secrets/prod.env"));
   if (env.PV_R2_CATALOG_TOKEN && env.PV_BASE_URL) out.push(auditCopyCheck(await d.run("uv", ["run", "--project", "pipelines", "pv", "audit", "status", "--target", "prod", "--json"])));

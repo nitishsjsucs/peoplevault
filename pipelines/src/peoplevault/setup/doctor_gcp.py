@@ -22,7 +22,7 @@ G = "Google Cloud"
 B = "BigQuery objects"
 C = "Cloudflare resources"
 ADC_PATH = Path.home() / ".config" / "gcloud" / "application_default_credentials.json"
-PROBE_DATASET = "pv_authz_probe"
+PROBE_DATASET = "peoplevault_authz_probe"
 REQUIRED_APIS = ["bigquery.googleapis.com", "datacatalog.googleapis.com", "bigquerydatapolicy.googleapis.com", "iamcredentials.googleapis.com", "iam.googleapis.com"]
 
 Runner = Callable[[list[str]], tuple[int, str]]
@@ -64,7 +64,7 @@ class Probes(Protocol):
     def setup_steps(self) -> list[str]: ...
     def impersonate(self, service_account: str) -> None: ...
     def controls(self) -> list[str]: ...
-    def probe_dataset_exists(self) -> bool: ...
+    def probe_dataset_leftovers(self) -> int: ...
     def counts(self, tables: list[str]) -> dict[str, int]: ...
     def catalog_namespaces(self) -> list: ...
 
@@ -121,12 +121,12 @@ def bigquery_checks(probes: Probes, project: str, expected: dict[str, int], purp
     except Exception as e:  # noqa: BLE001
         out.append(missing(B, "setup state", f"could not read ({type(e).__name__})", "npm run setup:prod"))
     failed = []
-    for sa in [f"pv-executor@{project}.iam.gserviceaccount.com", *purpose_sas]:
+    for sa in [f"peoplevault-executor@{project}.iam.gserviceaccount.com", *purpose_sas]:
         try:
             probes.impersonate(sa)
         except Exception:  # noqa: BLE001
             failed.append(sa.split("@")[0])
-    out.append(ok(B, "impersonation", f"SELECT 1 as pv-executor and {len(purpose_sas)} purpose service accounts") if not failed else
+    out.append(ok(B, "impersonation", f"SELECT 1 as peoplevault-executor and {len(purpose_sas)} purpose service accounts") if not failed else
                missing(B, "impersonation", f"failed for: {', '.join(failed)}", "npm run setup:prod (grants your user Token Creator; IAM changes take about 30 seconds)"))
     try:
         problems = probes.controls()
@@ -135,9 +135,9 @@ def bigquery_checks(probes: Probes, project: str, expected: dict[str, int], purp
     except Exception as e:  # noqa: BLE001
         out.append(missing(B, "protected tables intact", f"could not verify ({type(e).__name__})", "uv run --project pipelines pv load --target prod"))
     try:
-        leftover = probes.probe_dataset_exists()
-        out.append(missing(B, "probe dataset", f"{PROBE_DATASET} still exists", "uv run --project pipelines pv authz warehouse --target bigquery --cleanup") if leftover else
-                   ok(B, "probe dataset", f"{PROBE_DATASET} absent"))
+        leftover = probes.probe_dataset_leftovers()
+        out.append(missing(B, "probe dataset", f"{PROBE_DATASET} still holds {leftover} probe view(s)", "uv run --project pipelines pv authz warehouse --target bigquery --cleanup") if leftover else
+                   ok(B, "probe dataset", f"{PROBE_DATASET} empty"))
     except Exception as e:  # noqa: BLE001
         out.append(missing(B, "probe dataset", f"could not check ({type(e).__name__})", "npm run setup:prod"))
     try:
@@ -167,7 +167,7 @@ def catalog_check(probes: Probes | None, env: dict[str, str]) -> Check:
 
 
 class LiveProbes:
-    """The real probes (user ADC; BigQuery reads as pv-executor by impersonation)."""
+    """The real probes (user ADC; BigQuery reads as peoplevault-executor by impersonation)."""
 
     def __init__(self, project: str):
         self.project = project
@@ -201,14 +201,14 @@ class LiveProbes:
 
         return bigquery.Client(project=self.project, credentials=executor_credentials(self.project), location="US")
 
-    def probe_dataset_exists(self) -> bool:
+    def probe_dataset_leftovers(self) -> int:
+        """Probe views left in the probe dataset (setup creates the dataset; a probe run empties it afterwards)."""
         from google.api_core.exceptions import NotFound
 
         try:
-            self._bq().get_dataset(f"{self.project}.{PROBE_DATASET}")
-            return True
+            return sum(1 for _ in self._bq().list_tables(f"{self.project}.{PROBE_DATASET}"))
         except NotFound:
-            return False
+            return 0
 
     def counts(self, tables: list[str]) -> dict[str, int]:
         from peoplevault.bqjob import run_query

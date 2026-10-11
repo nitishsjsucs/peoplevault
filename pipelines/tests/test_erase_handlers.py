@@ -9,8 +9,8 @@ from peoplevault.executor.handlers import ExecContext, handle_erase_batch, handl
 from peoplevault.lake.catalog import EMPLOYEE_MONTHLY, open_catalog
 from peoplevault.warehouse.duck import DuckWarehouse
 
-PROTECTED = ["pv_raw.hris_employees", "pv_raw.payroll_compensation", "pv_raw.leave_requests", "pv_raw.performance_reviews", "pv_core.dim_employee",
-             "pv_core.fct_compensation", "pv_core.fct_leave", "pv_core.fct_performance", "pv_snapshots.dim_employee_history", "pv_marts.team_roster"]
+PROTECTED = ["peoplevault_raw.hris_employees", "peoplevault_raw.payroll_compensation", "peoplevault_raw.leave_requests", "peoplevault_raw.performance_reviews", "peoplevault_core.dim_employee",
+             "peoplevault_core.fct_compensation", "peoplevault_core.fct_leave", "peoplevault_core.fct_performance", "peoplevault_snapshots.dim_employee_history", "peoplevault_marts.team_roster"]
 
 
 def _ctx(world):
@@ -61,20 +61,20 @@ def test_erase_batch_removes_rows_scrubs_references_rebuilds_and_erases_the_lake
     conn = duckdb.connect(str(small_load["duckdb"]))
     wk = PS.pseudonym("warehouse_key", manager)
     for table in PROTECTED:
-        key_col = "employee_id" if table.startswith("pv_raw") else "employee_key"
+        key_col = "employee_id" if table.startswith("peoplevault_raw") else "employee_key"
         val = manager if key_col == "employee_id" else wk
         assert conn.execute(f"select count(*) from {table} where {key_col} = ?", [val]).fetchone()[0] == 0, table
-    assert conn.execute("select count(*) from pv_raw.hris_employees where manager_employee_id = ?", [manager]).fetchone()[0] == 0
-    assert conn.execute("select count(*) from pv_raw.hris_employees where manager_employee_id = 'REDACTED'").fetchone()[0] > 0
-    assert conn.execute("select count(*) from pv_core.dim_employee where manager_key = ?", [wk]).fetchone()[0] == 0
-    sup = {r[0] for r in conn.execute("select subject_ref from pv_restricted.suppression").fetchall()}
+    assert conn.execute("select count(*) from peoplevault_raw.hris_employees where manager_employee_id = ?", [manager]).fetchone()[0] == 0
+    assert conn.execute("select count(*) from peoplevault_raw.hris_employees where manager_employee_id = 'REDACTED'").fetchone()[0] > 0
+    assert conn.execute("select count(*) from peoplevault_core.dim_employee where manager_key = ?", [wk]).fetchone()[0] == 0
+    sup = {r[0] for r in conn.execute("select subject_ref from peoplevault_restricted.suppression").fetchall()}
     assert PS.pseudonym("subject_ref", manager) in sup
     lake = open_catalog("local", root=small_load["lake"]).load_table(EMPLOYEE_MONTHLY).scan().to_arrow()
     assert wk not in set(lake["employee_key"].to_pylist()) and wk not in set(lake["manager_key"].to_pylist())
     # identity phase removes the xref rows and verifies the whole warehouse again
     ok, idres = handle_identity_batch([task(manager, "identity")], ctx)[f"req-{manager}:identity"]
     assert ok and idres["assets"][0]["verify_status"] == "clean" and idres["assets"][0]["rows_erased"] == 1
-    assert conn.execute("select count(*) from pv_restricted.identity_xref where employee_id = ?", [manager]).fetchone()[0] == 0
+    assert conn.execute("select count(*) from peoplevault_restricted.identity_xref where employee_id = ?", [manager]).fetchone()[0] == 0
 
 
 def test_hold_reference_conflict(small_load):
@@ -89,7 +89,7 @@ def test_hold_reference_conflict(small_load):
     by_id = {a["asset_id"]: a for a in result["assets"]}
     assert by_id["wh.raw"]["verify_status"] == "residue"
     conn = duckdb.connect(str(small_load["duckdb"]))
-    kept = conn.execute("select manager_employee_id from pv_raw.hris_employees where employee_id = ? limit 1", [held_active]).fetchone()
+    kept = conn.execute("select manager_employee_id from peoplevault_raw.hris_employees where employee_id = ? limit 1", [held_active]).fetchone()
     assert kept == (manager,)
 
 
@@ -104,16 +104,16 @@ def test_retention_rows_skip_held_subjects(small_load):
     held_refs = [PS.pseudonym("subject_ref", h) for h in held]
     ctx, _ = _ctx(small_load)
     conn = duckdb.connect(str(small_load["duckdb"]))
-    expected = conn.execute("select count(*) from pv_raw.hris_employees where export_date <= date '2026-09-21' and not list_contains(?, subject_ref)", [held_refs]).fetchone()[0]
-    held_rows = conn.execute("select count(*) from pv_raw.hris_employees where export_date <= date '2026-09-21' and list_contains(?, subject_ref)", [held_refs]).fetchone()[0]
+    expected = conn.execute("select count(*) from peoplevault_raw.hris_employees where export_date <= date '2026-09-21' and not list_contains(?, subject_ref)", [held_refs]).fetchone()[0]
+    held_rows = conn.execute("select count(*) from peoplevault_raw.hris_employees where export_date <= date '2026-09-21' and list_contains(?, subject_ref)", [held_refs]).fetchone()[0]
     conn.close()
     t = Task("run:rows", "retention", "executor_result_retention", "RETENTION", "run", None, "run",
-             {"runId": "run", "asOf": "2026-09-30", "rawCutoffs": {"pv_raw.hris_employees": "2026-09-21"}, "lakeCutoff": "2025-06-30", "heldSubjectRefs": held_refs})
+             {"runId": "run", "asOf": "2026-09-30", "rawCutoffs": {"peoplevault_raw.hris_employees": "2026-09-21"}, "lakeCutoff": "2025-06-30", "heldSubjectRefs": held_refs})
     ok, result = handle_retention(t, ctx)
     assert ok and result["counts"]["raw_rows_expired_hris_employees"] == expected > 0
     assert result["counts"]["lake_rows_expired_employee_monthly"] > 0
     conn = duckdb.connect(str(small_load["duckdb"]))
-    assert conn.execute("select count(*) from pv_raw.hris_employees where export_date <= date '2026-09-21'").fetchone()[0] == held_rows
+    assert conn.execute("select count(*) from peoplevault_raw.hris_employees where export_date <= date '2026-09-21'").fetchone()[0] == held_rows
     lake = open_catalog("local", root=small_load["lake"]).load_table(EMPLOYEE_MONTHLY).scan().to_arrow()
     held_keys = {PS.pseudonym("warehouse_key", h) for h in held}
     rows = lake.to_pylist()

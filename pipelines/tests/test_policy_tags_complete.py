@@ -43,7 +43,7 @@ def test_view_folders_do_not_persist_column_docs(bigquery_manifest):
 def test_every_column_of_every_model_is_classified(empty_warehouse):
     classes = policy().column_class
     for table, cols in empty_warehouse.items():
-        if table.startswith("pv_raw.stg_"):
+        if table.startswith("peoplevault_raw.stg_"):
             continue
         for col in cols:
             assert col in classes, f"{table}.{col} is not classified in policy.yaml"

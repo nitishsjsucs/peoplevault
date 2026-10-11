@@ -1,7 +1,7 @@
 """Production executor context (SPEC.md section 14.2). Status: written, not yet executed.
 
-Runs as pv-executor: from the owner's machine by impersonation, or in the scheduled executor.yml job with the
-pv-executor key (PV_DBT_TARGET=bigquery_actions, GOOGLE_APPLICATION_CREDENTIALS). It works against the Basin Catalog
+Runs as peoplevault-executor: from the owner's machine by impersonation, or in the scheduled executor.yml job with the
+peoplevault-executor key (PV_DBT_TARGET=bigquery_actions, GOOGLE_APPLICATION_CREDENTIALS). It works against the Basin Catalog
 through the Iceberg REST protocol and talks to the deployed Worker with the pv-executor Access service token; Access
 issues the JWT at the edge. Every production dbt invocation is followed by bq_controls.verify() and fails closed.
 """

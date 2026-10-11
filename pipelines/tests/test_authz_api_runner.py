@@ -25,8 +25,8 @@ def pop(full_load):
 def test_truth_values_match_the_purpose_views(full_load, pop):
     conn = duckdb.connect(str(full_load["duckdb"]))
     try:
-        er = {r[0]: r[1:] for r in conn.execute("select employee_ref, full_name, work_email, base_salary, rating, birth_date from pv_purpose_employee_relations.employees").fetchall()}
-        wa = {r[0]: r[1:] for r in conn.execute("select analytics_id, gender, birth_date from pv_purpose_workforce_analytics.employees").fetchall()}
+        er = {r[0]: r[1:] for r in conn.execute("select employee_ref, full_name, work_email, base_salary, rating, birth_date from peoplevault_purpose_employee_relations.employees").fetchall()}
+        wa = {r[0]: r[1:] for r in conn.execute("select analytics_id, gender, birth_date from peoplevault_purpose_workforce_analytics.employees").fetchall()}
     finally:
         conn.close()
     by_ref = {p.refs["employee_ref"]: p for p in pop.people.values()}

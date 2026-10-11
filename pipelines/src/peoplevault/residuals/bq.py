@@ -3,8 +3,8 @@
 Production: right after the erase the executor counts the subject's rows FOR SYSTEM_TIME AS OF just before the
 deletion; later `pv residuals check` runs the same read without tokens (SELECT COUNT(*)). Success means the pre-deletion
 version is still recoverable (pending). Only the documented out-of-window error counts as cleared; any other error
-(for example accessDenied) is error, never cleared. pv-executor can read history of row-policy tables only because it
-holds bigquery.rowAccessPolicies.overrideTimeTravelRestrictions through the custom role pvTimeTravelReader.
+(for example accessDenied) is error, never cleared. peoplevault-executor can read history of row-policy tables only because it
+holds bigquery.rowAccessPolicies.overrideTimeTravelRestrictions through the custom role peoplevaultTimeTravelReader.
 """
 
 from __future__ import annotations

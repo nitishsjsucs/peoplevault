@@ -47,7 +47,7 @@ def verify(get_table: Callable[[str], dict], list_row_policies: Callable[[str], 
 
 
 def live_verify(project: str) -> list[str]:
-    """verify() against the live BigQuery API as pv-executor (written, not yet executed)."""
+    """verify() against the live BigQuery API as peoplevault-executor (written, not yet executed)."""
     import json
 
     from google.auth.transport.requests import AuthorizedSession

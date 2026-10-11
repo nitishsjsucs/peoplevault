@@ -75,19 +75,19 @@ def build_plan(f_entries: list[dict], variants: list[dict], subjects: dict, othe
             r2("pv-source-exports", key, "{}\n")
             loc = f"pv-source-exports/{key}"
         elif scen == "wh.core_tmp_backup":
-            loc = f"pv_core.tmp_backup_{i}"
+            loc = f"peoplevault_core.tmp_backup_{i}"
             actions.append({"kind": "duckdb", "sql": [f"create table {loc} (employee_key varchar, full_name varchar)", f"insert into {loc} values ('{tok['warehouse_key']}', '{tok['full_name']}')"]})
         elif scen == "wh.marts_analyst_scratch":
-            loc = f"pv_marts.analyst_scratch_{i}"
+            loc = f"peoplevault_marts.analyst_scratch_{i}"
             actions.append({"kind": "duckdb", "sql": [f"create table {loc} (analytics_id varchar, org_unit varchar)", f"insert into {loc} values ('{tok['analytics_id']}', 'SCRATCH')"]})
         elif scen == "wh.scratch_schema":
-            loc = f"scratch.copy_{i}"
-            actions.append({"kind": "duckdb", "sql": ["create schema if not exists scratch", f"create table {loc} (employee_id varchar, full_name varchar)", f"insert into {loc} values ('{tok['employee_id']}', '{tok['full_name']}')"]})
+            loc = f"peoplevault_scratch.copy_{i}"
+            actions.append({"kind": "duckdb", "sql": ["create schema if not exists peoplevault_scratch", f"create table {loc} (employee_id varchar, full_name varchar)", f"insert into {loc} values ('{tok['employee_id']}', '{tok['full_name']}')"]})
         elif scen == "wh.restricted_legacy_xref":
-            loc = f"pv_restricted.legacy_xref_{i}"
+            loc = f"peoplevault_restricted.legacy_xref_{i}"
             actions.append({"kind": "duckdb", "sql": [f"create table {loc} (employee_id varchar, employee_ref varchar)", f"insert into {loc} values ('{tok['employee_id']}', '{tok['employee_ref']}')"]})
         elif scen == "wh.unregistered_email_text":
-            loc = f"pv_core.support_notes_{i}"
+            loc = f"peoplevault_core.support_notes_{i}"
             actions.append({"kind": "duckdb", "sql": [f"create table {loc} (note varchar)", f"insert into {loc} values ('Please reach {tok['work_email']} about the request.')"]})
         elif scen == "lake.adhoc_backup":
             loc = f"hr_history.adhoc_backup_{i}"

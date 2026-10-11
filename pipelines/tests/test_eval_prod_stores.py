@@ -65,10 +65,10 @@ def test_api_errors_never_carry_the_token():
 
 
 def test_bigquery_form_of_the_fault_sql():
-    assert bigquery_sql("create table pv_core.tmp_backup_2 (employee_key varchar, full_name varchar)", "p") == \
-        "create table `p.pv_core.tmp_backup_2` (employee_key STRING, full_name STRING)"
-    assert bigquery_sql("insert into pv_core.tmp_backup_2 values ('wk_a', 'Ann Lee')", "p") == "insert into `p.pv_core.tmp_backup_2` values ('wk_a', 'Ann Lee')"
-    assert bigquery_sql("create schema if not exists scratch", "p") == "CREATE SCHEMA IF NOT EXISTS `p.scratch` OPTIONS (location = 'US')"
+    assert bigquery_sql("create table peoplevault_core.tmp_backup_2 (employee_key varchar, full_name varchar)", "p") == \
+        "create table `p.peoplevault_core.tmp_backup_2` (employee_key STRING, full_name STRING)"
+    assert bigquery_sql("insert into peoplevault_core.tmp_backup_2 values ('wk_a', 'Ann Lee')", "p") == "insert into `p.peoplevault_core.tmp_backup_2` values ('wk_a', 'Ann Lee')"
+    assert bigquery_sql("create schema if not exists peoplevault_scratch", "p") == "CREATE SCHEMA IF NOT EXISTS `p.peoplevault_scratch` OPTIONS (location = 'US')"
     assert d1_statements("CREATE TABLE IF NOT EXISTS t (a TEXT); INSERT INTO t VALUES ('x');") == ["CREATE TABLE IF NOT EXISTS t (a TEXT)", "INSERT INTO t VALUES ('x')"]
 
 
@@ -118,15 +118,15 @@ def test_plant_then_cleanup_removes_exactly_what_was_planted():
     wh, cat, d1, puts = FakeWh(), FakeCat(), [], []
     plan = {"r2": [{"bucket": "pv-source-exports", "key": "exports/adhoc/backup-1.jsonl", "body": "{}\n"}], "kv": [{"key": "tmp:er_a", "value": "1"}],
             "d1": ["CREATE TABLE IF NOT EXISTS support_notes (id TEXT, body TEXT); INSERT INTO support_notes VALUES ('n5', 'call from E1 today');"]}
-    actions = [{"kind": "duckdb", "sql": ["create table pv_core.tmp_backup_2 (employee_key varchar, full_name varchar)", "insert into pv_core.tmp_backup_2 values ('wk_a', 'A B')"]},
+    actions = [{"kind": "duckdb", "sql": ["create table peoplevault_core.tmp_backup_2 (employee_key varchar, full_name varchar)", "insert into peoplevault_core.tmp_backup_2 values ('wk_a', 'A B')"]},
                {"kind": "lake", "table": "hr_history.adhoc_backup_3", "rows": {"employee_key": ["wk_a"]}}]
     t = plant_prod(plan, actions, cf=cf, kv_namespace="ns", wh=wh, cat=cat, project="p", d1=d1.append, put_object=lambda b, k, body: puts.append((b, k)))
-    assert t == ProdTargets(r2=[("pv-source-exports", "exports/adhoc/backup-1.jsonl")], kv=["tmp:er_a"], d1_tables=["support_notes"], bq_tables=["pv_core.tmp_backup_2"],
+    assert t == ProdTargets(r2=[("pv-source-exports", "exports/adhoc/backup-1.jsonl")], kv=["tmp:er_a"], d1_tables=["support_notes"], bq_tables=["peoplevault_core.tmp_backup_2"],
                             bq_schemas=[], lake_tables=["hr_history.adhoc_backup_3"], lake_namespaces=["hr_history"])
     assert len(d1) == 2 and puts == [("pv-source-exports", "exports/adhoc/backup-1.jsonl")] and cat.tables == {"hr_history.adhoc_backup_3": 1}
     assert cleanup_prod(t, cf=cf, kv_namespace="ns", wh=wh, cat=cat, project="p", d1=d1.append) == []
     assert d1[-1] == "DROP TABLE IF EXISTS support_notes"
-    assert wh.sql[-1] == "DROP TABLE IF EXISTS `p.pv_core.tmp_backup_2`"
+    assert wh.sql[-1] == "DROP TABLE IF EXISTS `p.peoplevault_core.tmp_backup_2`"
     assert ("DELETE", "/client/v4/accounts/acct/r2/buckets/pv-source-exports/objects/exports%2Fadhoc%2Fbackup-1.jsonl") in calls
     assert cat.dropped == ["hr_history.adhoc_backup_3", "hr_history"]
 

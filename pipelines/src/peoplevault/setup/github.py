@@ -1,8 +1,8 @@
-"""`pv setup actions-key --repo OWNER/NAME [--rotate]`: the pv-executor key for the P1 executor.yml job.
+"""`pv setup actions-key --repo OWNER/NAME [--rotate]`: the peoplevault-executor key for the P1 executor.yml job.
 
 The key is created through the IAM API and handed to `gh secret set PV_GCP_EXECUTOR_KEY` on standard input. It is
-never written to disk and never printed, so no pv-executor key exists on the owner's machine (the executor there
-keeps impersonating pv-executor). Only the key id is recorded (`executor_actions_key_id` in
+never written to disk and never printed, so no peoplevault-executor key exists on the owner's machine (the executor there
+keeps impersonating peoplevault-executor). Only the key id is recorded (`executor_actions_key_id` in
 .secrets/prod-resources.json), so a rotation can delete the previous key. Idempotent: an existing repository secret
 is left alone unless `--rotate` is given. Status: written, not yet executed against Google Cloud or GitHub.
 """

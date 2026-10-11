@@ -3,10 +3,10 @@
  "_note": "Constructed from the API reference on 2026-10-10 (no production response captured yet); replace with a captured response after the first production run.",
  "body": {
   "kind": "bigquery#table",
-  "id": "pv-test:pv_core.dim_employee",
+  "id": "pv-test:peoplevault_core.dim_employee",
   "tableReference": {
    "projectId": "pv-test",
-   "datasetId": "pv_core",
+   "datasetId": "peoplevault_core",
    "tableId": "dim_employee"
   },
   "schema": {

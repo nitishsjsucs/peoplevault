@@ -12,4 +12,4 @@ def test_exactly_37_probes_by_kind():
     assert Counter(p.kind for p in ps) == {"deny": 18, "mask": 4, "rows": 5, "iam": 10}
     rows = {p.purpose: p.expect for p in ps if p.kind == "rows"}
     assert rows == {"employee_relations": "positive", "team_management": "zero", "workforce_analytics": "zero", "privacy_compliance": "positive", "legal_hold_management": "positive"}
-    assert all("pv_authz_probe" in p.sql for p in ps if p.kind != "iam")
+    assert all("peoplevault_authz_probe" in p.sql for p in ps if p.kind != "iam")

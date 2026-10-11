@@ -1,6 +1,7 @@
 // Findings and location-to-asset mapping for the Worker probes (no imports from erase/ or workflows/).
 import type { AssetCategory } from "../../shared/policy-types.ts";
 import { ASSETS } from "../assets/registry.ts";
+import { POLICY } from "../policy/compiled.ts";
 
 export interface Finding {
   store: "r2" | "kv" | "d1" | "warehouse" | "iceberg";
@@ -54,9 +55,10 @@ export function categoryForLocation(store: Finding["store"], location: string): 
       return "historical_snapshots";
     case "warehouse": {
       const ds = location.split(".")[0] ?? "";
-      if (ds === "pv_snapshots") return "historical_snapshots";
-      if (ds === "pv_restricted") return "identity_mappings";
-      if (ds === "pv_marts") return "derived_datasets";
+      const p = POLICY.naming.prefix;
+      if (ds === `${p}_snapshots`) return "historical_snapshots";
+      if (ds === `${p}_restricted`) return "identity_mappings";
+      if (ds === `${p}_marts`) return "derived_datasets";
       return "warehouse_tables";
     }
   }

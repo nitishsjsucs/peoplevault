@@ -52,7 +52,7 @@ describe("personas and purposes", () => {
 
   it("derives row scope from the principal only", () => {
     const hr = decide({ principal: human("hr_partner"), purpose: "employee_relations", action: "read_profile" });
-    expect(hr).toMatchObject({ allow: true, rowScope: { kind: "org_units", orgUnits: ["ENG-PRODUCT", "SALES-NA"] }, bqIdentity: "pv-er-reader" });
+    expect(hr).toMatchObject({ allow: true, rowScope: { kind: "org_units", orgUnits: ["ENG-PRODUCT", "SALES-NA"] }, bqIdentity: "peoplevault-er-reader" });
     const mgr = decide({ principal: human("manager"), purpose: "team_management", action: "read_profile" });
     expect(mgr).toMatchObject({ allow: true, rowScope: { kind: "direct_reports", managerEmployeeId: "E10002" } });
     const wa = decide({ principal: human("people_analyst"), purpose: "workforce_analytics", action: "read_dataset" });

@@ -1,7 +1,7 @@
 {
   "description": "Columns of every protected BigQuery table (ADR 0006). Changing a protected model's columns needs a migration file in infra/bigquery/migrations/ (ALTER TABLE ... ADD COLUMN); test_dbt_materializations.py enforces it.",
   "baseline": {
-    "pv_core.dim_employee": [
+    "peoplevault_core.dim_employee": [
       "employee_key",
       "employee_ref",
       "analytics_id",
@@ -26,7 +26,7 @@
       "hire_year",
       "tenure_years"
     ],
-    "pv_core.fct_compensation": [
+    "peoplevault_core.fct_compensation": [
       "employee_key",
       "subject_ref",
       "pay_period_end",
@@ -36,7 +36,7 @@
       "salary_band",
       "is_restricted"
     ],
-    "pv_core.fct_leave": [
+    "peoplevault_core.fct_leave": [
       "leave_id",
       "employee_key",
       "subject_ref",
@@ -49,7 +49,7 @@
       "status",
       "is_restricted"
     ],
-    "pv_core.fct_performance": [
+    "peoplevault_core.fct_performance": [
       "review_id",
       "employee_key",
       "subject_ref",
@@ -60,7 +60,7 @@
       "rating_band",
       "is_restricted"
     ],
-    "pv_snapshots.dim_employee_history": [
+    "peoplevault_snapshots.dim_employee_history": [
       "employee_key",
       "subject_ref",
       "org_unit",
@@ -76,7 +76,7 @@
       "dbt_valid_from",
       "dbt_valid_to"
     ],
-    "pv_marts.attrition_features": [
+    "peoplevault_marts.attrition_features": [
       "analytics_id",
       "month",
       "org_unit",
@@ -90,7 +90,7 @@
       "is_restricted",
       "subject_ref"
     ],
-    "pv_marts.team_roster": [
+    "peoplevault_marts.team_roster": [
       "employee_key",
       "employee_ref",
       "manager_key",

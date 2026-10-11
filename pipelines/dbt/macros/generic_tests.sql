@@ -19,7 +19,7 @@
 {% test no_suppressed_subjects(model) %}
   select m.subject_ref
   from {{ model }} m
-  join {{ source('pv_restricted', 'suppression') }} s on s.subject_ref = m.subject_ref
+  join {{ source('peoplevault_restricted', 'suppression') }} s on s.subject_ref = m.subject_ref
 {% endtest %}
 
 {% test pv_unique_combination(model, columns) %}

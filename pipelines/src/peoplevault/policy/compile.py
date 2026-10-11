@@ -128,6 +128,7 @@ def compiled_policy(policy: Policy, source_hash: str) -> dict:
             "length": policy.pseudonyms.length,
             "kinds": dict(policy.pseudonyms.kinds),
         },
+        "naming": {"prefix": policy.naming.prefix},
         "datasets": {
             "data": list(policy.datasets.data),
             "maxTimeTravelHours": policy.datasets.max_time_travel_hours,

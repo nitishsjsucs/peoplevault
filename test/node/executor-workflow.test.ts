@@ -62,7 +62,7 @@ describe("executor.yml", () => {
   });
 
   it("writes the key with umask 077 into the runner temp dir and always deletes it", () => {
-    const write = job.steps.find((s) => s.name === "Write the pv-executor key")!;
+    const write = job.steps.find((s) => s.name === "Write the peoplevault-executor key")!;
     expect(write.env).toEqual({ PV_GCP_EXECUTOR_KEY: "${{ secrets.PV_GCP_EXECUTOR_KEY }}" });
     expect(write.run).toMatch(/^umask 077\n/);
     expect(write.run).toContain('"$RUNNER_TEMP/gcp.json"');

@@ -50,7 +50,7 @@ def test_bigquery_concurrent_update_aborts_are_retried():
 
         def result(self):
             if self.fail:
-                raise RuntimeError("Transaction is aborted due to concurrent update against table pv_core.dim_employee")
+                raise RuntimeError("Transaction is aborted due to concurrent update against table peoplevault_core.dim_employee")
             return []
 
     class Child:
@@ -75,7 +75,7 @@ def test_bigquery_concurrent_update_aborts_are_retried():
     client = Client()
     sleeps = []
     wh = BqWarehouse("pv-test", client=client, sleep=sleeps.append)
-    counts = wh.execute_script([("delete from `pv_core.dim_employee` where employee_key = @v", {"v": "wk_x"}), ("delete from `pv_raw.hris_employees` where employee_id = $v", {"v": "x"})])
+    counts = wh.execute_script([("delete from `peoplevault_core.dim_employee` where employee_key = @v", {"v": "wk_x"}), ("delete from `peoplevault_raw.hris_employees` where employee_id = $v", {"v": "x"})])
     assert counts == [1, 4] and client.calls == 3 and len(sleeps) == 2
     assert client.sql.startswith("BEGIN TRANSACTION;") and client.sql.rstrip().endswith("COMMIT TRANSACTION;")
     assert "@s0_v" in client.sql and "@s1_v" in client.sql
@@ -91,7 +91,7 @@ def test_bigquery_other_errors_are_not_retried():
 
         def query(self, sql, job_config=None, job_id_prefix=None):
             Client.calls += 1
-            raise RuntimeError("Access Denied: Table pv_core.dim_employee")
+            raise RuntimeError("Access Denied: Table peoplevault_core.dim_employee")
 
     with pytest.raises(RuntimeError, match="Access Denied"):
         BqWarehouse("pv-test", client=Client(), sleep=lambda s: None).execute_script([("select 1", {})])

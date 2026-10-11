@@ -169,7 +169,7 @@ def routines_macro(policy: Policy) -> str:
 
 
 def row_access_macro(policy: Policy) -> str:
-    full = [p.bq_identity for p in policy.purposes.values() if p.restricted_population == "include"] + ["pv-executor"]
+    full = [p.bq_identity for p in policy.purposes.values() if p.restricted_population == "include"] + [policy.executor_sa]
     limited = [p.bq_identity for p in policy.purposes.values() if p.restricted_population == "exclude"]
 
     def grantees(names: list[str]) -> str:
@@ -178,7 +178,7 @@ def row_access_macro(policy: Policy) -> str:
     return "\n".join([
         f"{{#- {GENERATED}",
         "    Row access policies (BigQuery only), re-issued by a post-hook after every build of a core, snapshot or",
-        "    row-level mart model. Principals outside every grantee list see no rows, so pv-executor is in rap_full.",
+        f"    row-level mart model. Principals outside every grantee list see no rows, so {policy.executor_sa} is in rap_full.",
         "    Protected tables are never replaced (ADR 0006), so the policies are never dropped. -#}",
         "{% macro pv_row_access_policies() -%}",
         "{%- if target.type == 'bigquery' -%}",

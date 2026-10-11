@@ -26,10 +26,10 @@ def from_d1_local() -> set[str]:
 
 
 def sync_duckdb(conn, subject_refs: set[str], request_id: str = "sync") -> int:
-    """Adds missing subject_refs to pv_restricted.suppression (append-only)."""
-    existing = {r[0] for r in conn.execute("select subject_ref from pv_restricted.suppression").fetchall()}
+    """Adds missing subject_refs to peoplevault_restricted.suppression (append-only)."""
+    existing = {r[0] for r in conn.execute("select subject_ref from peoplevault_restricted.suppression").fetchall()}
     new = sorted(subject_refs - existing)
     now = datetime.now(UTC).replace(tzinfo=None)
     for ref in new:
-        conn.execute("insert into pv_restricted.suppression values ($s, $r, $t)", {"s": ref, "r": request_id, "t": now})
+        conn.execute("insert into peoplevault_restricted.suppression values ($s, $r, $t)", {"s": ref, "r": request_id, "t": now})
     return len(new)

@@ -3,7 +3,7 @@ executed against Cloudflare or Google Cloud.
 
 R2 and KV go through the Cloudflare REST API with wrangler's OAuth token (read into memory with `wrangler auth token
 --json`, never printed or logged); D1 through `wrangler d1 execute --remote --json` with the rendered production
-config; BigQuery through BqWarehouse as pv-executor; Iceberg through the Basin Catalog REST endpoint. The eval oracle
+config; BigQuery through BqWarehouse as peoplevault-executor; Iceberg through the Basin Catalog REST endpoint. The eval oracle
 reads production only through these readers, and planting goes straight to the stores, never through product code.
 Endpoints: R2 objects list/get/delete and KV keys/values from the Cloudflare API reference (2026-10-10); the R2 list
 pagination fields (`result_info.cursor`, `is_truncated`) follow the API's usual envelope and are unverified.
@@ -23,6 +23,7 @@ from urllib.parse import quote
 import httpx
 
 from peoplevault import config
+from peoplevault.policy.model import policy
 
 CF = "https://api.cloudflare.com/client/v4"
 PROD_CONFIG = "infra/cloudflare/wrangler.production.jsonc"
@@ -143,7 +144,7 @@ def d1_exec(sql: str) -> None:
 
 
 # ---- planting and cleanup ----------------------------------------------------------------------------------------------
-_QUALIFIED = re.compile(r"(?<![`.\w])((?:pv_\w+|scratch)\.\w+)\b")
+_QUALIFIED = re.compile(r"(?<![`.\w])(peoplevault_\w+\.\w+)\b")
 
 
 def bigquery_sql(sql: str, project: str) -> str:
@@ -197,7 +198,9 @@ def plant_prod(plan: dict, actions: list[dict], *, cf: CloudflareRest, kv_namesp
                 if m:
                     t.bq_tables.append(m.group(1))
                 s = re.fullmatch(r"create schema if not exists (\w+)", sql.strip(), re.I)
-                if s:
+                # the scratch dataset is created by `pv setup gcp` (the executor cannot create datasets in the shared
+                # project), so cleanup drops only the planted tables in it, never the dataset
+                if s and s.group(1) != policy().scratch_dataset:
                     t.bq_schemas.append(s.group(1))
         elif a["kind"] == "lake":
             import pyarrow as pa

@@ -8,13 +8,13 @@ const json = (f: { status: number; body: unknown }) => new Response(JSON.stringi
 
 async function gatewayKey() {
   const { privateKey } = await generateKeyPair("RS256", { extractable: true });
-  return JSON.stringify({ type: "service_account", client_email: "pv-gateway@pv-test.iam.gserviceaccount.com", private_key: await exportPKCS8(privateKey), private_key_id: "kid-1", token_uri: TOKEN_URL });
+  return JSON.stringify({ type: "service_account", client_email: "peoplevault-gateway@pv-test.iam.gserviceaccount.com", private_key: await exportPKCS8(privateKey), private_key_id: "kid-1", token_uri: TOKEN_URL });
 }
 
 describe("Google token contract (recorded responses)", () => {
   beforeEach(() => clearTokenCaches());
 
-  it("signs a JWT bearer assertion for pv-gateway, then generateAccessToken for the purpose SA with lifetime 300s", async () => {
+  it("signs a JWT bearer assertion for peoplevault-gateway, then generateAccessToken for the purpose SA with lifetime 300s", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     let now = 1_790_000_000_000;
     const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
@@ -22,7 +22,7 @@ describe("Google token contract (recorded responses)", () => {
       return String(url) === TOKEN_URL ? json(tokenResponse) : json(gatResponse);
     }) as typeof fetch;
     const src = createGcpTokenSource(await gatewayKey(), fetchImpl, () => now);
-    const sa = "pv-tm-reader@pv-test.iam.gserviceaccount.com";
+    const sa = "peoplevault-tm-reader@pv-test.iam.gserviceaccount.com";
     expect(await src.purposeToken(sa)).toBe("purpose-access-token-contract");
     expect(calls).toHaveLength(2);
     const form = new URLSearchParams(calls[0]!.init.body as string);
@@ -30,7 +30,7 @@ describe("Google token contract (recorded responses)", () => {
     const assertion = form.get("assertion")!;
     expect(decodeProtectedHeader(assertion)).toMatchObject({ alg: "RS256", kid: "kid-1" });
     const claims = decodeJwt(assertion);
-    expect(claims).toMatchObject({ iss: "pv-gateway@pv-test.iam.gserviceaccount.com", aud: TOKEN_URL, scope: SCOPE });
+    expect(claims).toMatchObject({ iss: "peoplevault-gateway@pv-test.iam.gserviceaccount.com", aud: TOKEN_URL, scope: SCOPE });
     expect(claims.exp! - claims.iat!).toBe(3600);
     expect(calls[1]!.url).toBe(`https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${encodeURIComponent(sa)}:generateAccessToken`);
     expect(JSON.parse(calls[1]!.init.body as string)).toEqual({ scope: [SCOPE], lifetime: "300s" });
@@ -51,6 +51,6 @@ describe("Google token contract (recorded responses)", () => {
     const fetchImpl = (async (url: string | URL | Request) =>
       String(url) === TOKEN_URL ? json(tokenResponse) : new Response("{}", { status: 403 })) as typeof fetch;
     const src = createGcpTokenSource(await gatewayKey(), fetchImpl);
-    await expect(src.purposeToken("pv-er-reader@pv-test.iam.gserviceaccount.com")).rejects.toMatchObject({ code: "impersonation_denied" });
+    await expect(src.purposeToken("peoplevault-er-reader@pv-test.iam.gserviceaccount.com")).rejects.toMatchObject({ code: "impersonation_denied" });
   });
 });

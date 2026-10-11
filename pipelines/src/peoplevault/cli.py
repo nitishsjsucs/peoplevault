@@ -156,7 +156,7 @@ def authz() -> None:
 @click.option("--write-results", is_flag=True, help="write evals/results/authz-local-<date>.json")
 @click.option("--pdp-report", type=click.Path(exists=True, dir_okay=False), default=None, help="vitest JSON report of the 100 pdp cases")
 @click.option("--ceiling-probes", is_flag=True, help="BigQuery only: the 37 ceiling probes (section 15.8)")
-@click.option("--cleanup", is_flag=True, help="BigQuery only: remove a leftover pv_authz_probe dataset and its pv_core grants, then exit")
+@click.option("--cleanup", is_flag=True, help="BigQuery only: remove a leftover peoplevault_authz_probe dataset and its peoplevault_core grants, then exit")
 def authz_warehouse(target: str, write_results: bool, pdp_report: str | None, ceiling_probes: bool, cleanup: bool) -> None:
     """Runs the 48 warehouse-layer cases (DuckDB from world.yaml locally; BigQuery as each purpose SA in production)."""
     import tempfile
@@ -236,7 +236,7 @@ def _authz_bigquery(write_results: bool, ceiling_probes: bool, cleanup: bool) ->
         from peoplevault.warehouse.bq import executor_credentials
 
         bq_ceiling.cleanup_probe_dataset(bigquery.Client(project=project, credentials=executor_credentials(project), location="US"), project)
-        click.echo(f"removed {bq_ceiling.PROBE_DATASET} and its pv_core view grants (if present)")
+        click.echo(f"removed {bq_ceiling.PROBE_DATASET} and its peoplevault_core view grants (if present)")
         return
     report = run_all(bq_ceiling.purpose_runner(project))
     click.echo(f"warehouse layer (BigQuery): {report.passed}/{len(report.results)} passed {report.by_category()}")
@@ -453,21 +453,21 @@ def setup_gcp(dry_run: bool) -> None:
         res = gcp.apply(client, project, user, gateway_key_recorded=recorded)
     except Exception as e:
         if "disableServiceAccountKeyCreation" in str(e):
-            raise click.ClickException("organization policy iam.disableServiceAccountKeyCreation blocks the pv-gateway key: use a project outside that "
+            raise click.ClickException("organization policy iam.disableServiceAccountKeyCreation blocks the peoplevault-gateway key: use a project outside that "
                                        "organization or ask for an exception (docs/PRODUCTION.md step 14)") from None
         raise
     gcp.record(res.resources)
     for step in res.steps:
         click.echo(step.line())
     click.echo(f"{len(res.steps)} step(s) applied; policy tag names recorded in .secrets/prod-resources.json"
-               + ("; pv-gateway key written to .secrets/worker-secrets.env" if res.resources.get("gateway_key") else ""))
+               + ("; peoplevault-gateway key written to .secrets/worker-secrets.env" if res.resources.get("gateway_key") else ""))
 
 
 @setup.command("actions-key")
 @click.option("--repo", required=True, help="OWNER/NAME of the GitHub repository that runs executor.yml")
 @click.option("--rotate", is_flag=True, help="replace an existing PV_GCP_EXECUTOR_KEY secret and delete the previous key")
 def setup_actions_key(repo: str, rotate: bool) -> None:
-    """(P1) pv-executor key for executor.yml, piped into the PV_GCP_EXECUTOR_KEY repository secret; never on disk."""
+    """(P1) peoplevault-executor key for executor.yml, piped into the PV_GCP_EXECUTOR_KEY repository secret; never on disk."""
     from peoplevault import config
     from peoplevault.setup import github
     from peoplevault.setup.gcp_client import RealGcpClient
@@ -478,7 +478,7 @@ def setup_actions_key(repo: str, rotate: bool) -> None:
         out = github.ensure_actions_key(RealGcpClient(project), github.real_gh, repo, project, rotate=rotate, recorded_key_id=recorded)
     except Exception as e:
         if "disableServiceAccountKeyCreation" in str(e):
-            raise click.ClickException("organization policy iam.disableServiceAccountKeyCreation blocks the pv-executor key: the executor keeps "
+            raise click.ClickException("organization policy iam.disableServiceAccountKeyCreation blocks the peoplevault-executor key: the executor keeps "
                                        "running from your machine (pv executor run --target prod --drain)") from None
         raise
     if out.get("key_id"):

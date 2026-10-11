@@ -41,13 +41,13 @@ def test_time_travel_window_is_48_hours(project):
     from peoplevault.warehouse.bq import BqWarehouse
 
     wh = BqWarehouse(project)
-    for ds in ("pv_raw", "pv_core", "pv_snapshots", "pv_restricted", "pv_marts"):
+    for ds in ("peoplevault_raw", "peoplevault_core", "peoplevault_snapshots", "peoplevault_restricted", "peoplevault_marts"):
         assert wh.time_travel_hours(ds) == 48
 
 
 def test_time_travel_read_as_executor(project):
-    """A row-policy table read at now minus 1 minute as pv-executor succeeds (pvTimeTravelReader)."""
+    """A row-policy table read at now minus 1 minute as peoplevault-executor succeeds (peoplevaultTimeTravelReader)."""
     from peoplevault.warehouse.bq import BqWarehouse
 
-    rows = BqWarehouse(project).query(f"SELECT COUNT(*) AS n FROM `{project}.pv_core.dim_employee` FOR SYSTEM_TIME AS OF TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 MINUTE)")
+    rows = BqWarehouse(project).query(f"SELECT COUNT(*) AS n FROM `{project}.peoplevault_core.dim_employee` FOR SYSTEM_TIME AS OF TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 MINUTE)")
     assert rows[0]["n"] > 0

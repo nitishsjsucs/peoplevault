@@ -5,7 +5,7 @@ snapshots:
       SCD2 history of employee attributes, replayed over the 13 weekly HRIS exports by the loader
       (one `dbt snapshot` per export date). Protected: row access policies; merge-based after creation.
     config:
-      schema: pv_snapshots
+      schema: peoplevault_snapshots
       unique_key: employee_key
       strategy: check
       check_cols: [org_unit, job_level, job_title, manager_key, employment_status, location]

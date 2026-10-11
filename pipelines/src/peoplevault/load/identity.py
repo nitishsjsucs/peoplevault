@@ -1,4 +1,4 @@
-"""pv_restricted.identity_xref: employee_id to the four pseudonyms (asset id.wh.identity_xref)."""
+"""peoplevault_restricted.identity_xref: employee_id to the four pseudonyms (asset id.wh.identity_xref)."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ def upsert_xref(conn, employee_ids: list[str], ps: Pseudonymizer, suppressed: se
         refs = ps.all(e_id)
         if refs["subject_ref"] in suppressed:
             continue
-        conn.execute("delete from pv_restricted.identity_xref where employee_id = $e", {"e": e_id})
+        conn.execute("delete from peoplevault_restricted.identity_xref where employee_id = $e", {"e": e_id})
         conn.execute(
-            "insert into pv_restricted.identity_xref values ($e, $wk, $er, $an, $sr)",
+            "insert into peoplevault_restricted.identity_xref values ($e, $wk, $er, $an, $sr)",
             {"e": e_id, "wk": refs["warehouse_key"], "er": refs["employee_ref"], "an": refs["analytics_id"], "sr": refs["subject_ref"]},
         )
         n += 1

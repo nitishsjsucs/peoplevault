@@ -8,11 +8,11 @@ import { buildQueryRequest, classifyBigQueryError, createBigQueryClient, MAX_PAG
 import { WarehouseError } from "../../src/worker/warehouse/client.ts";
 
 const purposeSa = {
-  employee_relations: "pv-er-reader@pv-test.iam.gserviceaccount.com",
-  team_management: "pv-tm-reader@pv-test.iam.gserviceaccount.com",
-  workforce_analytics: "pv-wa-reader@pv-test.iam.gserviceaccount.com",
-  privacy_compliance: "pv-pc-reader@pv-test.iam.gserviceaccount.com",
-  legal_hold_management: "pv-lh-reader@pv-test.iam.gserviceaccount.com",
+  employee_relations: "peoplevault-er-reader@pv-test.iam.gserviceaccount.com",
+  team_management: "peoplevault-tm-reader@pv-test.iam.gserviceaccount.com",
+  workforce_analytics: "peoplevault-wa-reader@pv-test.iam.gserviceaccount.com",
+  privacy_compliance: "peoplevault-pc-reader@pv-test.iam.gserviceaccount.com",
+  legal_hold_management: "peoplevault-lh-reader@pv-test.iam.gserviceaccount.com",
 };
 const tokens = { gatewayToken: async () => "g", purposeToken: async (sa: string) => `token-for-${sa}` };
 const json = (f: { status: number; body: unknown }) => new Response(JSON.stringify(f.body), { status: f.status, headers: { "content-type": "application/json" } });
@@ -48,7 +48,7 @@ describe("BigQuery REST contract (recorded responses)", () => {
     expect(calls[1]!.url).toContain("/projects/pv-test/queries/job_contract_001?location=US");
     expect(calls[2]!.url).toContain("pageToken=page-2-token");
     const auth = (calls[0]!.init!.headers as Record<string, string>).authorization;
-    expect(auth).toBe("Bearer token-for-pv-er-reader@pv-test.iam.gserviceaccount.com");
+    expect(auth).toBe("Bearer token-for-peoplevault-er-reader@pv-test.iam.gserviceaccount.com");
   });
 
   it("sends named parameters, the purpose label and useQueryCache=false", () => {
@@ -57,7 +57,7 @@ describe("BigQuery REST contract (recorded responses)", () => {
     expect(req.useLegacySql).toBe(false);
     expect(req.parameterMode).toBe("NAMED");
     expect(req.labels).toEqual({ app: "peoplevault", purpose: "employee_relations" });
-    expect(req.query).toContain("`pv-test.pv_purpose_employee_relations.profile`(@org_units, @employee_ref)");
+    expect(req.query).toContain("`pv-test.peoplevault_purpose_employee_relations.profile`(@org_units, @employee_ref)");
     expect(req.queryParameters).toEqual([
       { name: "org_units", parameterType: { type: "ARRAY", arrayType: { type: "STRING" } }, parameterValue: { arrayValues: [{ value: "A" }, { value: "B" }] } },
       { name: "employee_ref", parameterType: { type: "STRING" }, parameterValue: { value: "er_x" } },

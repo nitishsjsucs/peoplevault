@@ -1,4 +1,4 @@
-"""Lands source export objects in pv_raw (SPEC.md sections 8.2, 9.3).
+"""Lands source export objects in peoplevault_raw (SPEC.md sections 8.2, 9.3).
 
 - Unknown columns fail closed: the object is quarantined (a report with column names only, never values) and not
   loaded.

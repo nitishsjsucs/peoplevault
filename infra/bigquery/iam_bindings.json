@@ -11,124 +11,118 @@
     "project": [
       {
         "role": "roles/bigquery.jobUser",
-        "member": "serviceAccount:pv-er-reader@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-er-reader@{project}.iam.gserviceaccount.com"
       },
       {
         "role": "roles/bigquery.jobUser",
-        "member": "serviceAccount:pv-tm-reader@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-tm-reader@{project}.iam.gserviceaccount.com"
       },
       {
         "role": "roles/bigquery.jobUser",
-        "member": "serviceAccount:pv-wa-reader@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-wa-reader@{project}.iam.gserviceaccount.com"
       },
       {
         "role": "roles/bigquery.jobUser",
-        "member": "serviceAccount:pv-pc-reader@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-pc-reader@{project}.iam.gserviceaccount.com"
       },
       {
         "role": "roles/bigquery.jobUser",
-        "member": "serviceAccount:pv-lh-reader@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-lh-reader@{project}.iam.gserviceaccount.com"
       },
       {
         "role": "roles/bigquery.jobUser",
-        "member": "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
-      },
-      {
-        "role": "roles/bigquery.metadataViewer",
-        "member": "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
-      },
-      {
-        "role": "roles/bigquery.dataViewer",
-        "member": "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
-      },
-      {
-        "role": "roles/datacatalog.viewer",
-        "member": "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-executor@{project}.iam.gserviceaccount.com"
       }
     ],
     "service_account": [
       {
-        "service_account": "pv-er-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-er-reader@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
-        "member": "serviceAccount:pv-gateway@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-gateway@{project}.iam.gserviceaccount.com"
       },
       {
-        "service_account": "pv-tm-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-tm-reader@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
-        "member": "serviceAccount:pv-gateway@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-gateway@{project}.iam.gserviceaccount.com"
       },
       {
-        "service_account": "pv-wa-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-wa-reader@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
-        "member": "serviceAccount:pv-gateway@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-gateway@{project}.iam.gserviceaccount.com"
       },
       {
-        "service_account": "pv-pc-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-pc-reader@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
-        "member": "serviceAccount:pv-gateway@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-gateway@{project}.iam.gserviceaccount.com"
       },
       {
-        "service_account": "pv-lh-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-lh-reader@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
-        "member": "serviceAccount:pv-gateway@{project}.iam.gserviceaccount.com"
+        "member": "serviceAccount:peoplevault-gateway@{project}.iam.gserviceaccount.com"
       },
       {
-        "service_account": "pv-executor@{project}.iam.gserviceaccount.com",
-        "role": "roles/iam.serviceAccountTokenCreator",
-        "member": "user:{user}"
-      },
-      {
-        "service_account": "pv-er-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-executor@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
         "member": "user:{user}"
       },
       {
-        "service_account": "pv-tm-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-er-reader@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
         "member": "user:{user}"
       },
       {
-        "service_account": "pv-wa-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-tm-reader@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
         "member": "user:{user}"
       },
       {
-        "service_account": "pv-pc-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-wa-reader@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
         "member": "user:{user}"
       },
       {
-        "service_account": "pv-lh-reader@{project}.iam.gserviceaccount.com",
+        "service_account": "peoplevault-pc-reader@{project}.iam.gserviceaccount.com",
+        "role": "roles/iam.serviceAccountTokenCreator",
+        "member": "user:{user}"
+      },
+      {
+        "service_account": "peoplevault-lh-reader@{project}.iam.gserviceaccount.com",
         "role": "roles/iam.serviceAccountTokenCreator",
         "member": "user:{user}"
       }
     ],
+    "taxonomy": [
+      {
+        "role": "roles/datacatalog.viewer",
+        "member": "serviceAccount:peoplevault-executor@{project}.iam.gserviceaccount.com"
+      }
+    ],
     "fine_grained_reader": {
       "direct_identifier": [
-        "serviceAccount:pv-er-reader@{project}.iam.gserviceaccount.com",
-        "serviceAccount:pv-tm-reader@{project}.iam.gserviceaccount.com",
-        "serviceAccount:pv-pc-reader@{project}.iam.gserviceaccount.com",
-        "serviceAccount:pv-lh-reader@{project}.iam.gserviceaccount.com",
-        "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
+        "serviceAccount:peoplevault-er-reader@{project}.iam.gserviceaccount.com",
+        "serviceAccount:peoplevault-tm-reader@{project}.iam.gserviceaccount.com",
+        "serviceAccount:peoplevault-pc-reader@{project}.iam.gserviceaccount.com",
+        "serviceAccount:peoplevault-lh-reader@{project}.iam.gserviceaccount.com",
+        "serviceAccount:peoplevault-executor@{project}.iam.gserviceaccount.com"
       ],
       "date_of_birth": [
-        "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
+        "serviceAccount:peoplevault-executor@{project}.iam.gserviceaccount.com"
       ],
       "compensation": [
-        "serviceAccount:pv-er-reader@{project}.iam.gserviceaccount.com",
-        "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
+        "serviceAccount:peoplevault-er-reader@{project}.iam.gserviceaccount.com",
+        "serviceAccount:peoplevault-executor@{project}.iam.gserviceaccount.com"
       ],
       "performance": [
-        "serviceAccount:pv-er-reader@{project}.iam.gserviceaccount.com",
-        "serviceAccount:pv-tm-reader@{project}.iam.gserviceaccount.com",
-        "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
+        "serviceAccount:peoplevault-er-reader@{project}.iam.gserviceaccount.com",
+        "serviceAccount:peoplevault-tm-reader@{project}.iam.gserviceaccount.com",
+        "serviceAccount:peoplevault-executor@{project}.iam.gserviceaccount.com"
       ],
       "health_leave": [
-        "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
+        "serviceAccount:peoplevault-executor@{project}.iam.gserviceaccount.com"
       ],
       "protected_attribute": [
-        "serviceAccount:pv-wa-reader@{project}.iam.gserviceaccount.com",
-        "serviceAccount:pv-executor@{project}.iam.gserviceaccount.com"
+        "serviceAccount:peoplevault-wa-reader@{project}.iam.gserviceaccount.com",
+        "serviceAccount:peoplevault-executor@{project}.iam.gserviceaccount.com"
       ]
     }
   }

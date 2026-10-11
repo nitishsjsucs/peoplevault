@@ -29,7 +29,7 @@ def test_params_are_typed_and_exact():
     with pytest.raises(ShimError):
         resolve("team_management", "team_management.list", {"manager_key": "x", "cursor": "", "limit": 100000})
     sql, bound = resolve("team_management", "team_management.list", {"manager_key": "x", "cursor": "", "limit": 10})
-    assert "pv_purpose_team_management.direct_reports($manager_key)" in sql and bound["limit"] == 10
+    assert "peoplevault_purpose_team_management.direct_reports($manager_key)" in sql and bound["limit"] == 10
 
 
 def test_http_token_required_and_query_runs(full_load):

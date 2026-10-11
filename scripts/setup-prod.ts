@@ -30,8 +30,8 @@ import { REPO_ROOT, parseJsonOutput, pv, run, wrangler, wranglerBin, type RunRes
 
 export const GROUPS = ["cloudflare", "gcp", "worker", "access", "data", "github"] as const;
 export type Group = (typeof GROUPS)[number];
-export const BUCKETS = ["pv-source-exports", "pv-derived", "pv-lake"];
-export const QUEUES = ["pv-retention-sweep", "pv-retention-dlq"];
+import { BUCKETS, QUEUES, isKvTitle, nameConflicts } from "./lib/conflicts.ts";
+export { BUCKETS, QUEUES };
 // Workers Free (SPEC.md section 30, ADR 0007): no Basin Pipelines resources (Workers Paid only; this account returned
 // code 1021). The audit copy governance.audit_events is pulled by `pv audit export`.
 
@@ -91,6 +91,8 @@ export function preflight(s: SetupState, env: Record<string, string>): Missing[]
   if (env.PV_CF_API_TOKEN && !s.subdomain && !env.PV_WORKERS_SUBDOMAIN)
     out.push({ item: "workers.dev subdomain", fix: `https://dash.cloudflare.com/${acct(s)}/workers/onboarding, or set PV_WORKERS_SUBDOMAIN in .secrets/prod.env` });
   for (const g of s.gcpMissing) out.push({ item: `Google Cloud: ${g.name}`, fix: g.fix });
+  // shared Cloudflare account (SPEC.md section 30.3.9): never adopt a same-named resource this repo has no record of
+  for (const c of nameConflicts(s, s.resources)) out.push({ item: `conflict: ${c.item}`, fix: c.fix });
   return out;
 }
 
@@ -118,9 +120,8 @@ export function planSetup(s: SetupState, env: Record<string, string>, render: st
   for (const b of BUCKETS) if (!s.buckets.includes(b)) add("cloudflare", `r2:${b}`, `${W} r2 bucket create ${b}`);
   const d1 = s.d1.find((d) => d.name === "pv-control");
   if (!d1) add("cloudflare", "d1:create", `${W} d1 create pv-control (records database_id)`);
-  const kv = s.kv.find((n) => n.title === "pv-cache" || n.title.endsWith("pv-cache"));
+  const kv = s.kv.find((n) => isKvTitle(n.title));
   if (!kv) add("cloudflare", "kv:create", `${W} kv namespace create pv-cache (records id)`);
-  if ((d1 && s.resources.d1_id !== d1.uuid) || (kv && s.resources.kv_id !== kv.id)) add("cloudflare", "cloudflare:record", "record the D1 and KV ids in .secrets/prod-resources.json");
   for (const q of QUEUES) if (!s.queues.includes(q)) add("cloudflare", `queue:${q}`, `${W} queues create ${q}`);
   if (!s.catalogEnabled) add("cloudflare", "catalog:enable", `${W} basin catalog enable pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE in .secrets/prod.env)`);
   else if (!env.PV_CATALOG_URI || !env.PV_CATALOG_WAREHOUSE) add("cloudflare", "catalog:record", `GET /client/v4/accounts/${acct(s)}/r2-catalog/pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE)`);
@@ -175,7 +176,7 @@ export function planGithub(s: SetupState, env: Record<string, string>): Step[] {
   const recorded = (s.resources.github_secrets ?? {}) as Record<string, string>;
   const waiting: string[] = [];
   if (!g.secrets.includes(EXECUTOR_KEY_SECRET))
-    add("github:executor-key", `uv run --project pipelines pv setup actions-key --repo ${R} (creates a pv-executor key and pipes it into gh secret set ${EXECUTOR_KEY_SECRET}; never written to disk)`);
+    add("github:executor-key", `uv run --project pipelines pv setup actions-key --repo ${R} (creates a peoplevault-executor key and pipes it into gh secret set ${EXECUTOR_KEY_SECRET}; never written to disk)`);
   for (const [name, source] of Object.entries(GITHUB_SECRET_SOURCES)) {
     const value = source(env, s.resources);
     if (!value) waiting.push(name);
@@ -288,6 +289,7 @@ function parseCatalog(text: string): { uri?: string; warehouse?: string } {
 
 async function deploy(): Promise<void> {
   await run(process.execPath, [path.join(REPO_ROOT, "scripts", "deploy-prod.ts")], { quiet: true });
+  writeResources({ worker_deployed: true });
 }
 
 function renderTo(s: SetupState, env: Record<string, string>): void {
@@ -310,29 +312,25 @@ async function applyStep(st: Step, s: SetupState, env: Record<string, string>): 
     }
     case "r2":
       await wrangler(["r2", "bucket", "create", arg!]);
+      writeResources({ created_buckets: [...new Set([...(readResources().created_buckets ?? []), arg!])] });
       return;
     case "d1": {
       const out = await wrangler(["d1", "create", "pv-control"]);
       const id = out.stdout.match(/"?database_id"?\s*[:=]\s*"([0-9a-f-]{36})"/)?.[1];
-      if (!id) throw new Error("could not read database_id from `wrangler d1 create`; run setup again to record it from `wrangler d1 list`");
+      if (!id) throw new Error("could not read database_id from `wrangler d1 create`: copy it from `npx wrangler d1 list` into .secrets/prod-resources.json as d1_id");
       writeResources({ d1_id: id });
       return;
     }
     case "kv": {
       const out = await wrangler(["kv", "namespace", "create", "pv-cache"]);
       const id = out.stdout.match(/"?id"?\s*[:=]\s*"([0-9a-f]{32})"/)?.[1];
-      if (!id) throw new Error("could not read the namespace id from `wrangler kv namespace create`; run setup again to record it");
+      if (!id) throw new Error("could not read the namespace id from `wrangler kv namespace create`: copy it from `npx wrangler kv namespace list` into .secrets/prod-resources.json as kv_id");
       writeResources({ kv_id: id });
-      return;
-    }
-    case "cloudflare:record": {
-      const d1 = s.d1.find((x) => x.name === "pv-control");
-      const kv = s.kv.find((n) => n.title === "pv-cache" || n.title.endsWith("pv-cache"));
-      writeResources({ ...(d1 ? { d1_id: d1.uuid } : {}), ...(kv ? { kv_id: kv.id } : {}) });
       return;
     }
     case "queue":
       await wrangler(["queues", "create", arg!]);
+      writeResources({ created_queues: [...new Set([...(readResources().created_queues ?? []), arg!])] });
       return;
     case "catalog": {
       const text = arg === "enable" ? (await wrangler(["basin", "catalog", "enable", "pv-lake"])).stdout : (await wrangler(["basin", "catalog", "get", "pv-lake"], { allowFail: true })).stdout;

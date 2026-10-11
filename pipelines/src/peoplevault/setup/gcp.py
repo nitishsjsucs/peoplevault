@@ -1,11 +1,13 @@
 """`pv setup gcp [--dry-run]`: idempotent Google Cloud setup from infra/bigquery/*.json (SPEC.md sections 15 and 22.2).
 
 Every step reads the current state first and creates only what is missing: APIs, 7 service accounts, the custom role
-pvTimeTravelReader, project and service-account IAM (Token Creator for the owner on pv-executor and the purpose
-readers, for pv-gateway on the purpose readers), 10 datasets with max_time_travel_hours = 48 on the data datasets,
-the dataset grant of the custom role, the policy tag taxonomy and its 6 tags (resource names recorded in
-.secrets/prod-resources.json for `pv dbt --vars`), Fine-Grained Reader grants, data masking policies, and one key: the
-pv-gateway key (created only if none is recorded locally). Status: written, not yet executed against Google Cloud;
+peoplevaultTimeTravelReader, project IAM (roles/bigquery.jobUser only: the project `master-magnet-444903-u4` is shared
+with three other repos, so no identity of this repo gets a project-level data role), service-account IAM (Token
+Creator for the owner on peoplevault-executor and the purpose readers, for peoplevault-gateway on the purpose readers),
+10 datasets with max_time_travel_hours = 48 on the data datasets, the dataset grant of the custom role, the policy tag
+taxonomy and its 6 tags (resource names recorded in .secrets/prod-resources.json for `pv dbt --vars`),
+roles/datacatalog.viewer for the executor on the taxonomy resource, Fine-Grained Reader grants, data masking
+policies, and one key: the peoplevault-gateway key (created only if none is recorded locally). Status: written, not yet executed against Google Cloud;
 the dry-run plans are golden-tested with a fake client (tests/test_setup_gcp_dryrun.py).
 """
 
@@ -53,6 +55,8 @@ class GcpClient(Protocol):
     def taxonomy(self, display_name: str) -> dict | None: ...
     def create_taxonomy(self, tax: dict) -> dict: ...
     def create_policy_tag(self, taxonomy_name: str, display_name: str, description: str) -> str: ...
+    def taxonomy_bindings(self, taxonomy_name: str) -> set[tuple[str, str]]: ...
+    def add_taxonomy_binding(self, taxonomy_name: str, role: str, member: str) -> None: ...
     def tag_readers(self, tag_name: str) -> set[str]: ...
     def add_tag_reader(self, tag_name: str, member: str) -> None: ...
     def data_policies(self) -> set[str]: ...
@@ -127,6 +131,10 @@ def plan(client: GcpClient, project: str, user: str, *, gateway_key_recorded: bo
     for t in tax_spec["policy_tags"]:
         if t["display_name"] not in tags:
             add(Step("create policy tag", t["display_name"], None))
+    have_tax = client.taxonomy_bindings(tax["name"]) if tax is not None else set()
+    for b in iam.get("taxonomy", []):
+        if (b["role"], b["member"]) not in have_tax:
+            add(Step("grant taxonomy role", f"{tax_spec['display_name']}: {b['role']} -> {b['member']}", None))
     readers = iam["fine_grained_reader"]
     for cls, members in readers.items():
         have = client.tag_readers(tags[cls]) if cls in tags else set()
@@ -138,7 +146,7 @@ def plan(client: GcpClient, project: str, user: str, *, gateway_key_recorded: bo
         if dp["data_policy_id"] not in have_dp:
             add(Step("create data masking policy", f"{dp['data_policy_id']} ({dp['predefined_expression']} on {dp['policy_tag']}; grantees {', '.join(dp['grantees'])})", None))
     if not gateway_key_recorded:
-        add(Step("create service account key", f"pv-gateway@{project}.iam.gserviceaccount.com -> .secrets/worker-secrets.env (GCP_GATEWAY_SA_KEY)", None))
+        add(Step("create service account key", f"peoplevault-gateway@{project}.iam.gserviceaccount.com -> .secrets/worker-secrets.env (GCP_GATEWAY_SA_KEY)", None))
     out.resources["policy_tags"] = tags
     return out
 
@@ -155,7 +163,12 @@ def apply(client: GcpClient, project: str, user: str, *, gateway_key_recorded: b
     for t in tax_spec["policy_tags"]:
         if t["display_name"] not in tags:
             tags[t["display_name"]] = client.create_policy_tag(tax["name"], t["display_name"], t["description"])
-    for cls, members in fill(spec("iam_bindings"), project, user)["fine_grained_reader"].items():
+    iam = fill(spec("iam_bindings"), project, user)
+    have_tax = client.taxonomy_bindings(tax["name"])
+    for b in iam.get("taxonomy", []):
+        if (b["role"], b["member"]) not in have_tax:
+            client.add_taxonomy_binding(tax["name"], b["role"], b["member"])
+    for cls, members in iam["fine_grained_reader"].items():
         have = client.tag_readers(tags[cls])
         for m in members:
             if m not in have:
@@ -167,7 +180,7 @@ def apply(client: GcpClient, project: str, user: str, *, gateway_key_recorded: b
     result.resources["policy_tags"] = tags
     result.resources["taxonomy"] = tax["name"]
     if not gateway_key_recorded:
-        result.resources["gateway_key"] = client.create_sa_key(f"pv-gateway@{project}.iam.gserviceaccount.com")
+        result.resources["gateway_key"] = client.create_sa_key(f"peoplevault-gateway@{project}.iam.gserviceaccount.com")
     return result
 
 

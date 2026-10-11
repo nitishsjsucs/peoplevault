@@ -20,8 +20,8 @@ def test_compiled_json_shape():
     assert len(compiled["assets"]) == 13
     assert len({a["category"] for a in compiled["assets"]}) == 6
     for purpose, p in compiled["purposes"].items():
-        assert p["dataset"] == f"pv_purpose_{purpose}"
-        assert p["bqIdentity"].startswith("pv-") and p["bqIdentity"].endswith("-reader")
+        assert p["dataset"] == f"peoplevault_purpose_{purpose}"
+        assert p["bqIdentity"].startswith("peoplevault-") and p["bqIdentity"].endswith("-reader")
     # each purpose is bound to its own BigQuery identity
     assert len({p["bqIdentity"] for p in compiled["purposes"].values()}) == 5
 

@@ -5,5 +5,5 @@ select
   cast(p.base_salary as {{ dbt.type_float() }}) as base_salary,
   cast(p.bonus_target_pct as {{ dbt.type_float() }}) as bonus_target_pct,
   p.currency
-from {{ source('pv_raw', 'payroll_compensation') }} p
-where p.subject_ref not in (select subject_ref from {{ source('pv_restricted', 'suppression') }})
+from {{ source('peoplevault_raw', 'payroll_compensation') }} p
+where p.subject_ref not in (select subject_ref from {{ source('peoplevault_restricted', 'suppression') }})

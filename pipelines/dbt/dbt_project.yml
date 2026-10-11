@@ -37,9 +37,9 @@ models:
       # relation exists and var('pv_snapshot_export_date') applies at compile time.
       +materialized: ephemeral
     core:
-      +schema: pv_core
+      +schema: peoplevault_core
     marts:
-      +schema: pv_marts
+      +schema: peoplevault_marts
     purpose:
       # Views never declare policy_tags (column-level access control applies to tables; views use the tags of
       # their underlying tables), and columns: false stops dbt-bigquery from patching policyTags onto views.

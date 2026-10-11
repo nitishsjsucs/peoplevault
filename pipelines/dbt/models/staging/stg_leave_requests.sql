@@ -9,5 +9,5 @@ select
   l.leave_reason,
   l.accommodation_note,
   l.status
-from {{ source('pv_raw', 'leave_requests') }} l
-where l.subject_ref not in (select subject_ref from {{ source('pv_restricted', 'suppression') }})
+from {{ source('peoplevault_raw', 'leave_requests') }} l
+where l.subject_ref not in (select subject_ref from {{ source('peoplevault_restricted', 'suppression') }})

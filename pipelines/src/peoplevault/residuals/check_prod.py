@@ -1,7 +1,7 @@
 """`pv residuals check --target prod` (SPEC.md section 14.4). Status: written, not yet executed.
 
-bq_time_travel: a token-free COUNT(*) FOR SYSTEM_TIME AS OF one second before the deletion, as pv-executor (which
-holds the custom role pvTimeTravelReader). Success means the pre-deletion version is still recoverable (pending);
+bq_time_travel: a token-free COUNT(*) FOR SYSTEM_TIME AS OF one second before the deletion, as peoplevault-executor (which
+holds the custom role peoplevaultTimeTravelReader). Success means the pre-deletion version is still recoverable (pending);
 only the documented out-of-window error clears it; any other error is error, never cleared.
 iceberg_snapshots: pending while a snapshot older than the deletion commit is retained in the Basin Catalog.
 """
