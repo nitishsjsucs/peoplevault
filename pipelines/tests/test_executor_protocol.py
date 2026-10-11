@@ -1,6 +1,8 @@
 """Executor loop and results: completes every claimed task, fails closed with counts only, and never sends
 identifiers back to the Worker."""
 
+from dataclasses import replace
+
 from executor_helpers import assert_identifier_free, task
 
 from peoplevault.executor import loop
@@ -38,6 +40,23 @@ def test_a_failing_batch_reports_ok_false_with_the_error_type_only(monkeypatch):
     (tid, ok, result), = api.completed
     assert ok is False and result["error"] == "RuntimeError"
     assert_identifier_free(result)
+
+
+def test_a_task_whose_completion_fails_twice_does_not_stop_the_batch(monkeypatch):
+    """The first completion of t1 fails (for example the event delivery after the commit) and so does the fallback:
+    the loop logs the error type and still completes t2, and the executor thread keeps running."""
+    monkeypatch.setattr(loop, "handle_erase_batch", lambda tasks, ctx: {t.id: (True, {"assets": [], "findings": [], "residuals": [], "counts": {}}) for t in tasks})
+
+    class Flaky(FakeApi):
+        def complete(self, task_id, ok, result):
+            self.completed.append((task_id, ok))
+            if task_id == "t1":
+                raise RuntimeError("HTTP 500")
+
+    t1, t2 = replace(task("E00002"), id="t1"), replace(task("E00003"), id="t2")
+    api = Flaky([[t1, t2], []])
+    assert loop.run_loop(api, ctx=None, drain=True) == 1
+    assert api.completed == [("t1", True), ("t1", False), ("t2", True)]
 
 
 def test_bigquery_concurrent_update_aborts_are_retried():

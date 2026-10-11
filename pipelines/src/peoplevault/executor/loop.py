@@ -39,7 +39,13 @@ def process(api, ctx: ExecContext, tasks) -> int:
                 api.complete(t.id, ok, result)
             except Exception as exc:  # noqa: BLE001  (a rejected result still completes the task as failed)
                 log.warning("complete rejected for a task: %s", type(exc).__name__)
-                api.complete(t.id, False, failure_result(exc))
+                try:
+                    # a rejected result completes the task as failed; if the first completion was committed and only
+                    # its event delivery failed, the Worker sends the stored outcome again instead
+                    api.complete(t.id, False, failure_result(exc))
+                except Exception as again:  # noqa: BLE001  (never stop the batch: the other tasks still complete)
+                    log.warning("complete failed twice for a task: %s", type(again).__name__)
+                    continue
             done += 1
     return done
 

@@ -40,17 +40,21 @@ executor.post(COMPLETE, async (c) => {
     return errorJson(c, 400, "invalid_result");
   }
   const id = c.req.param("id");
-  let task;
+  let done;
   try {
-    task = await createTaskStore(c.env.DB).complete(id, c.get("principal").id, body.data.ok, body.data.result);
+    done = await createTaskStore(c.env.DB).complete(id, c.get("principal").id, body.data.ok, body.data.result);
   } catch (e) {
     if (e instanceof TaskError) return errorJson(c, e.code === "not_found" ? 404 : 409, e.code);
     throw e;
   }
+  // The task is committed before the event is sent; if delivery throws (or the response is lost), the executor
+  // completes again and the store hands back the stored outcome to send again.
+  const { task } = done;
   const instance = await c.env[task.workflow].get(task.instanceId);
-  await instance.sendEvent({ type: task.eventType, payload: { taskId: task.id, ok: body.data.ok, result: body.data.result } });
-  await audit(c, { action: "executor_complete", route: COMPLETE, requestId: task.requestId, decision: "allow", reason: body.data.ok ? "ok" : "executor_failed" });
-  return c.json({ ok: true });
+  await instance.sendEvent({ type: task.eventType, payload: { taskId: task.id, ok: done.ok, result: done.result } });
+  const reason = done.redelivered ? "redelivered" : done.ok ? "ok" : "executor_failed";
+  await audit(c, { action: "executor_complete", route: COMPLETE, requestId: task.requestId, decision: "allow", reason });
+  return c.json({ ok: true, redelivered: done.redelivered });
 });
 
 const SUPPRESSION = "/api/v1/executor/suppression";

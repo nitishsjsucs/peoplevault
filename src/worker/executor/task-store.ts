@@ -104,10 +104,19 @@ export class TaskError extends Error {
   }
 }
 
+/** The outcome of a completion. `redelivered` is true when the task was already completed by the same lease owner:
+ * the stored outcome (not the retried one) is returned, so the route can send the event again. */
+export interface Completion {
+  task: ExecutorTask;
+  ok: boolean;
+  result: ExecutorResult;
+  redelivered: boolean;
+}
+
 export interface TaskStore {
   create(t: { id: string; phase: Phase; eventType: string; workflow: WorkflowBinding; instanceId: string; requestId?: string; runId?: string; payload: unknown }): Promise<void>;
   claim(executorId: string, phases: Phase[], max: number, leaseSeconds: number, now?: Date): Promise<ExecutorTask[]>;
-  complete(id: string, executorId: string, ok: boolean, result: ExecutorResult, now?: Date): Promise<ExecutorTask>;
+  complete(id: string, executorId: string, ok: boolean, result: ExecutorResult, now?: Date): Promise<Completion>;
   purgePayloads(requestId: string): Promise<number>;
   get(id: string): Promise<(ExecutorTask & { status: string; result: ExecutorResult | null }) | null>;
 }
@@ -149,10 +158,17 @@ export function createTaskStore(db: D1Database): TaskStore {
         )
         .bind(ok ? "done" : "failed", JSON.stringify(result), now.toISOString(), id, executorId)
         .first<TaskRow>();
-      if (row) return toTask(row);
-      const existing = await db.prepare("SELECT status, lease_owner FROM executor_tasks WHERE id = ?").bind(id).first<{ status: string; lease_owner: string | null }>();
+      if (row) return { task: toTask(row), ok, result, redelivered: false };
+      const existing = await db.prepare("SELECT * FROM executor_tasks WHERE id = ?").bind(id).first<TaskRow>();
       if (!existing) throw new TaskError("not_found");
       if (existing.lease_owner !== executorId) throw new TaskError("not_lease_owner");
+      if (existing.status === "done" || existing.status === "failed") {
+        // Idempotent for the lease owner: a lost response or a failed event delivery after the commit is retried by
+        // completing again, and the first stored outcome is delivered again (the workflow waits for one event of the
+        // task's type, so a duplicate is never consumed).
+        const stored = ExecutorResult.safeParse(existing.result_json ? JSON.parse(existing.result_json) : {});
+        return { task: toTask(existing), ok: existing.status === "done" && stored.success, result: stored.success ? stored.data : ExecutorResult.parse({}), redelivered: true };
+      }
       throw new TaskError("not_leased");
     },
 

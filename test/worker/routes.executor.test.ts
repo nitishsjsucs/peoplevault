@@ -1,9 +1,10 @@
 import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createTaskStore, ExecutorResult } from "../../src/worker/executor/task-store.ts";
-import { call, seedWorld, worldApp } from "../fixtures/seed.ts";
+import { BASE, CSRF, call, seedWorld, tokenFor, worldApp } from "../fixtures/seed.ts";
 
 beforeAll(seedWorld);
+const store = () => createTaskStore(env.DB);
 
 const task = (id: string, phase: "erase" | "identity" | "retention" = "erase") => ({
   id,
@@ -38,8 +39,10 @@ describe("executor task protocol", () => {
     await expect(store.complete("t3", "exec-b", true, empty)).rejects.toMatchObject({ code: "not_lease_owner" });
     await expect(store.complete("missing", "exec-a", true, empty)).rejects.toMatchObject({ code: "not_found" });
     const done = await store.complete("t3", "exec-a", true, empty);
-    expect(done.id).toBe("t3");
-    await expect(store.complete("t3", "exec-a", true, empty)).rejects.toMatchObject({ code: "not_leased" });
+    expect(done).toMatchObject({ task: { id: "t3" }, ok: true, redelivered: false });
+    // completing again returns the first stored outcome (not the retried one), so the event can be sent again
+    expect(await store.complete("t3", "exec-a", false, ExecutorResult.parse({ error: "retry" }))).toMatchObject({ task: { id: "t3" }, ok: true, result: empty, redelivered: true });
+    await expect(store.complete("t3", "exec-b", true, empty)).rejects.toMatchObject({ code: "not_lease_owner" });
     expect(await store.purgePayloads("req-t3")).toBe(1);
     expect((await store.get("t3"))!.payload).toBeNull();
   });
@@ -74,6 +77,36 @@ describe("executor task protocol", () => {
 });
 
 describe("completion delivers the event to the waiting instance", () => {
+  it("a completion whose event delivery failed is delivered on the next completion", async () => {
+    const { app } = worldApp();
+    await createTaskStore(env.DB).create(task("t5"));
+    const claim = await call(app, "pv-executor-local", "POST", "/api/v1/executor/tasks/claim", { phases: ["erase"] });
+    expect(((await claim.json()) as { tasks: { id: string }[] }).tasks.map((t) => t.id)).toContain("t5");
+    const sent: unknown[] = [];
+    let failures = 1;
+    const DELETION = {
+      get: async (id: string) => ({
+        sendEvent: async (e: { type: string; payload: unknown }) => {
+          if (failures-- > 0) throw new Error("instance unavailable");
+          sent.push({ id, ...e });
+        },
+      }),
+    };
+    const complete = async (ok: boolean, result: unknown) =>
+      app.request(
+        `${BASE}/api/v1/executor/tasks/t5/complete`,
+        { method: "POST", headers: { "Cf-Access-Jwt-Assertion": await tokenFor("pv-executor-local"), ...CSRF, "content-type": "application/json" }, body: JSON.stringify({ ok, result }) },
+        { ...env, DELETION },
+      );
+    const result = { counts: { "peoplevault_core.dim_employee": 1 } };
+    expect((await complete(true, result)).status).toBe(500);
+    expect((await store().get("t5"))!.status).toBe("done");
+    const retried = await complete(false, { error: "complete_failed" });
+    expect(retried.status).toBe(200);
+    expect(await retried.json()).toEqual({ ok: true, redelivered: true });
+    expect(sent).toEqual([{ id: "inst-t5", type: "executor_result_erase", payload: { taskId: "t5", ok: true, result: ExecutorResult.parse(result) } }]);
+  });
+
   it("claim and complete through the API resume the deletion workflow to completion", async () => {
     const { introspectWorkflowInstance } = await import("cloudflare:test");
     const { executorEraseResult, executorIdentityResult, identityOf, seedObjects, subject } = await import("../fixtures/seed.ts");
