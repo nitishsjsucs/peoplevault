@@ -10,7 +10,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { REPO_ROOT, parseJsonOutput, pv, wrangler } from "./lib/run.ts";
 
-export const STEPS_IMPLEMENTED = [1, 2, 3, 4, 7] as const;
+export const STEPS_IMPLEMENTED = [1, 2, 3, 4, 5, 7] as const;
 
 interface Manifest {
   exports: { key: string; family: string; rows: number }[];
@@ -68,14 +68,18 @@ async function main(): Promise<void> {
   log("step 3: D1 migrated and seeded");
   const objects = await seedR2();
   log(`step 4: ${objects} export objects in R2 pv-source-exports`);
+  await pv(["load", "--target", "local", "--from-r2"]);
+  log("step 5: warehouse, identity xref, snapshot replay, dbt build and Iceberg loaded (read back from local R2)");
   const expected = JSON.parse(readFileSync(path.join(REPO_ROOT, "data/expected_counts.json"), "utf8"));
   const problems = await verifyD1(expected);
   if (objects !== expected.export_objects) problems.push(`r2 export objects: expected ${expected.export_objects}, put ${objects}`);
+  const counts = await pv(["counts", "--target", "local"], { allowFail: true });
+  if (counts.code !== 0) problems.push(...counts.stderr.split("\n").filter((l) => l.startsWith("MISMATCH")));
   if (problems.length > 0) {
     for (const p of problems) console.error(`[seed:local] MISMATCH ${p}`);
     process.exit(1);
   }
-  log("step 7: counts match data/expected_counts.json (D1, R2)");
+  log("step 7: counts match data/expected_counts.json (D1, R2, warehouse, lake)");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

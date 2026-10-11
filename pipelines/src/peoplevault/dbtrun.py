@@ -55,9 +55,15 @@ def build_args(args: Sequence[str], *, policy_tags: dict[str, str] | None = None
     if target in PROD_TARGETS:
         if not policy_tags:
             raise DbtRefused("policy tag names missing; run `npm run setup:prod` (pv setup gcp records them)")
-        if any(a == "--vars" for a in out):
-            raise DbtRefused("pass policy tag vars through pv dbt only")
-        out += ["--vars", json.dumps({"pv_policy_tags": policy_tags}, sort_keys=True)]
+        merged: dict = {}
+        if "--vars" in out:
+            i = out.index("--vars")
+            merged = json.loads(out[i + 1])
+            del out[i : i + 2]
+        if "pv_policy_tags" in merged:
+            raise DbtRefused("policy tag names come only from .secrets/prod-resources.json")
+        merged["pv_policy_tags"] = policy_tags
+        out += ["--vars", json.dumps(merged, sort_keys=True)]
     out += ["--project-dir", str(config.DBT_DIR), "--profiles-dir", str(config.DBT_DIR)]
     if "--log-level" not in out:
         out = ["--log-level", "warn", *out]

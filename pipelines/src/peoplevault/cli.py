@@ -45,6 +45,54 @@ def synth(out_dir: str | None, master_key_b64: str | None, write_expected: bool)
                f"{counts['d1']['principals']} principals, {counts['d1']['identity_map']} identity rows -> {target}")
 
 
+@main.command()
+@click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
+@click.option("--from-r2", is_flag=True, help="read export objects from R2 instead of data/generated")
+def load(target: str, from_r2: bool) -> None:
+    """Raw tables, identity xref, 13-step snapshot replay, dbt build, Iceberg employee_monthly."""
+    if target == "prod":
+        raise click.ClickException("pv load --target prod is not implemented yet; it lands with the production commit (see PROGRESS.md)")
+    from peoplevault.load.run import load_local
+
+    result = load_local(from_r2=from_r2)
+    raw = result["raw"]
+    click.echo(f"load: {raw['objects_loaded']} objects, rows {raw['rows_loaded']}, xref {result['identity_xref']}, "
+               f"snapshot replays {result['snapshot_replays']}, lake {result['lake']}")
+    if raw["quarantined"]:
+        raise click.ClickException(f"{len(raw['quarantined'])} export object(s) quarantined (unknown or missing columns); see pipelines/.data/quarantine/")
+
+
+@main.command()
+@click.option("--target", type=click.Choice(["local"]), default="local", show_default=True)
+def counts(target: str) -> None:
+    """Compares warehouse and lake row counts with data/expected_counts.json (exit 1 on any mismatch)."""
+    import json
+
+    from peoplevault import config
+    from peoplevault.lake.catalog import EMPLOYEE_MONTHLY, open_catalog
+    from peoplevault.warehouse.duck import DuckWarehouse
+
+    golden = json.loads((config.REPO_ROOT / "data" / "expected_counts.json").read_text())
+    wh = DuckWarehouse.open()
+    problems = []
+    for table, want in golden["warehouse"].items():
+        got = wh.query(f"select count(*) as n from {table}")[0]["n"]
+        if got != want:
+            problems.append(f"{table}: expected {want}, found {got}")
+    wh.close()
+    tbl = open_catalog("local").load_table(EMPLOYEE_MONTHLY)
+    lake_rows = tbl.scan().to_arrow().num_rows
+    if lake_rows != golden["lake"]["employee_monthly"]["rows"]:
+        problems.append(f"lake rows: expected {golden['lake']['employee_monthly']['rows']}, found {lake_rows}")
+    if len(tbl.snapshots()) < golden["lake"]["employee_monthly"]["appends"]:
+        problems.append("lake snapshots fewer than the 8 yearly appends")
+    for p in problems:
+        click.echo(f"MISMATCH {p}", err=True)
+    if problems:
+        raise SystemExit(1)
+    click.echo(f"counts match: {len(golden['warehouse'])} warehouse tables and the lake table")
+
+
 @main.group()
 def policy() -> None:
     """Compile policy/policy.yaml or check generated files for drift."""

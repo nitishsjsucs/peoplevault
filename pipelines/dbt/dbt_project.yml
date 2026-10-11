@@ -33,11 +33,9 @@ models:
       relation: true
       columns: true
     staging:
-      +schema: pv_raw
-      +materialized: view
-      +persist_docs:
-        relation: true
-        columns: false
+      # Ephemeral: inlined into each model (and into each `dbt snapshot` run of the replay), so no staging
+      # relation exists and var('pv_snapshot_export_date') applies at compile time.
+      +materialized: ephemeral
     core:
       +schema: pv_core
     marts:

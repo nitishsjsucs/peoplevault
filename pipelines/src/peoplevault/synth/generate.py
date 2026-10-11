@@ -85,8 +85,39 @@ def expected_counts(pop: Population, exports: list[ExportObject], lake_rows: dic
             profile: {k: len(v) for k, v in cohorts[profile].items() if isinstance(v, list)} for profile in ("full", "ci", "prod")
         },
     }
+    out["warehouse"] = warehouse_expectations(pop, exports)
     out.update(retention_expectations(pop, exports, lake_rows, cohorts))
     return out
+
+
+def warehouse_expectations(pop: Population, exports: list[ExportObject]) -> dict:
+    """Row counts the local load must produce, computed from truth (not by reading the warehouse)."""
+    rows = {fam: sum(len(o.rows) for o in exports if o.family == fam) for fam in ("hris", "payroll", "leave", "performance")}
+    groups: dict[tuple, int] = {}
+    for o in exports:
+        if o.family != "payroll":
+            continue
+        for r in o.rows:
+            f = pop.final(r["employee_id"])
+            if f.is_restricted:
+                continue
+            k = (r["pay_period_end"][:7], f.org_unit, f.job_level)
+            groups[k] = groups.get(k, 0) + 1
+    return {
+        "pv_raw.hris_employees": rows["hris"],
+        "pv_raw.payroll_compensation": rows["payroll"],
+        "pv_raw.leave_requests": rows["leave"],
+        "pv_raw.performance_reviews": rows["performance"],
+        "pv_restricted.identity_xref": C.EMPLOYEES_EVER,
+        "pv_core.dim_employee": C.EMPLOYEES_EVER,
+        "pv_core.fct_compensation": rows["payroll"],
+        "pv_core.fct_leave": rows["leave"],
+        "pv_core.fct_performance": rows["performance"],
+        "pv_snapshots.dim_employee_history": C.EMPLOYEES_EVER + len(pop.changes),
+        "pv_marts.attrition_features": rows["payroll"],
+        "pv_marts.team_roster": sum(1 for e in pop.ids() if pop.final(e).manager_id is not None),
+        "pv_marts.headcount_monthly": sum(1 for n in groups.values() if n >= 5),
+    }
 
 
 def generate(out_dir: Path, master_key: bytes, *, clean: bool = True) -> dict:
