@@ -1,0 +1,940 @@
+# Exactly 100 authorization and policy test cases (SPEC.md section 18.4) over the hand-authored fixture world
+# (data/fixtures/world.yaml). Every case runs against the Worker policy decision point through the real Hono app
+# (test/worker/authz.cases.test.ts); the 48 with layer `warehouse` also run against the DuckDB purpose views of a
+# warehouse built from the same world (pipelines/tests/test_authz_warehouse.py). Subjects are case selectors resolved
+# from data/fixtures/authz_subjects.json. Categories: A 12, B 15, C 30, D 16, E 8, F 13, G 6.
+- id: A01
+  category: A
+  layers: [pdp]
+  description: valid user token
+  principal: privacy-01
+  token: user
+  action: me
+  expect: {status: 200}
+- id: A02
+  category: A
+  layers: [pdp]
+  description: expired token
+  principal: privacy-01
+  token: expired
+  action: me
+  expect: {status: 401, code: expired}
+- id: A03
+  category: A
+  layers: [pdp]
+  description: nbf in the future
+  principal: privacy-01
+  token: nbf_future
+  action: me
+  expect: {status: 401, code: not_yet_valid}
+- id: A04
+  category: A
+  layers: [pdp]
+  description: wrong audience
+  principal: privacy-01
+  token: wrong_aud
+  action: me
+  expect: {status: 401, code: bad_audience}
+- id: A05
+  category: A
+  layers: [pdp]
+  description: wrong issuer
+  principal: privacy-01
+  token: wrong_iss
+  action: me
+  expect: {status: 401, code: bad_issuer}
+- id: A06
+  category: A
+  layers: [pdp]
+  description: signed by another key
+  principal: privacy-01
+  token: other_key
+  action: me
+  expect: {status: 401, code: bad_signature}
+- id: A07
+  category: A
+  layers: [pdp]
+  description: alg none
+  principal: privacy-01
+  token: alg_none
+  action: me
+  expect: {status: 401, code: bad_algorithm}
+- id: A08
+  category: A
+  layers: [pdp]
+  description: HS256 signed with the public key bytes
+  principal: privacy-01
+  token: hs256_confusion
+  action: me
+  expect: {status: 401, code: bad_algorithm}
+- id: A09
+  category: A
+  layers: [pdp]
+  description: missing token
+  principal: privacy-01
+  token: missing
+  action: me
+  expect: {status: 401, code: missing_token}
+- id: A10
+  category: A
+  layers: [pdp]
+  description: unknown kid
+  principal: privacy-01
+  token: unknown_kid
+  action: me
+  expect: {status: 401, code: unknown_kid}
+- id: A11
+  category: A
+  layers: [pdp]
+  description: service token mapped to the executor reaches an executor route
+  principal: pv-executor-local
+  token: service
+  action: executor_claim
+  expect: {status: 200}
+- id: A12
+  category: A
+  layers: [pdp]
+  description: valid token for an unknown email
+  principal: privacy-01
+  token: unknown_email
+  action: me
+  expect: {status: 403, code: unknown_principal}
+- id: B01
+  category: B
+  layers: [pdp]
+  description: hr_partner on team_management
+  principal: hrbp-01
+  purpose: team_management
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B02
+  category: B
+  layers: [pdp]
+  description: hr_partner on workforce_analytics
+  principal: hrbp-01
+  purpose: workforce_analytics
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B03
+  category: B
+  layers: [pdp]
+  description: hr_partner on privacy_compliance
+  principal: hrbp-01
+  purpose: privacy_compliance
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B04
+  category: B
+  layers: [pdp]
+  description: hr_partner on legal_hold_management
+  principal: hrbp-01
+  purpose: legal_hold_management
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B05
+  category: B
+  layers: [pdp]
+  description: manager on employee_relations
+  principal: mgr-001
+  purpose: employee_relations
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B06
+  category: B
+  layers: [pdp]
+  description: manager on workforce_analytics
+  principal: mgr-001
+  purpose: workforce_analytics
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B07
+  category: B
+  layers: [pdp]
+  description: manager on privacy_compliance
+  principal: mgr-001
+  purpose: privacy_compliance
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B08
+  category: B
+  layers: [pdp]
+  description: manager on legal_hold_management
+  principal: mgr-001
+  purpose: legal_hold_management
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B09
+  category: B
+  layers: [pdp]
+  description: people_analyst on employee_relations
+  principal: analyst-01
+  purpose: employee_relations
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B10
+  category: B
+  layers: [pdp]
+  description: people_analyst on team_management
+  principal: analyst-01
+  purpose: team_management
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B11
+  category: B
+  layers: [pdp]
+  description: people_analyst on privacy_compliance
+  principal: analyst-01
+  purpose: privacy_compliance
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B12
+  category: B
+  layers: [pdp]
+  description: people_analyst on legal_hold_management
+  principal: analyst-01
+  purpose: legal_hold_management
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B13
+  category: B
+  layers: [pdp]
+  description: privacy_officer on employee_relations
+  principal: privacy-01
+  purpose: employee_relations
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B14
+  category: B
+  layers: [pdp]
+  description: privacy_officer on team_management
+  principal: privacy-01
+  purpose: team_management
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: B15
+  category: B
+  layers: [pdp]
+  description: privacy_officer on workforce_analytics
+  principal: privacy-01
+  purpose: workforce_analytics
+  action: list_employees
+  expect: {status: 403, code: purpose_not_permitted}
+- id: C-employee_relations-direct_identifier
+  category: C
+  layers: [pdp, warehouse]
+  description: direct_identifier is allow for employee_relations
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: &id001 {principal: hrbp-01, selector: in_unit, index: 2}
+  expect:
+    status: 200
+    class_visibility: {direct_identifier: allow}
+- id: C-employee_relations-date_of_birth
+  category: C
+  layers: [pdp, warehouse]
+  description: date_of_birth is mask_date_year for employee_relations
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: *id001
+  expect:
+    status: 200
+    class_visibility: {date_of_birth: mask_date_year}
+- id: C-employee_relations-compensation
+  category: C
+  layers: [pdp, warehouse]
+  description: compensation is allow for employee_relations
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: *id001
+  expect:
+    status: 200
+    class_visibility: {compensation: allow}
+- id: C-employee_relations-performance
+  category: C
+  layers: [pdp, warehouse]
+  description: performance is allow for employee_relations
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: *id001
+  expect:
+    status: 200
+    class_visibility: {performance: allow}
+- id: C-employee_relations-health_leave
+  category: C
+  layers: [pdp, warehouse]
+  description: health_leave is mask_nullify for employee_relations
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: *id001
+  expect:
+    status: 200
+    class_visibility: {health_leave: mask_nullify}
+- id: C-employee_relations-protected_attribute
+  category: C
+  layers: [pdp, warehouse]
+  description: protected_attribute is deny for employee_relations
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: *id001
+  expect:
+    status: 200
+    class_visibility: {protected_attribute: deny}
+- id: C-team_management-direct_identifier
+  category: C
+  layers: [pdp, warehouse]
+  description: direct_identifier is allow for team_management
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: &id002 {principal: mgr-001, selector: direct_report, index: 0}
+  expect:
+    status: 200
+    class_visibility: {direct_identifier: allow}
+- id: C-team_management-date_of_birth
+  category: C
+  layers: [pdp, warehouse]
+  description: date_of_birth is deny for team_management
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: *id002
+  expect:
+    status: 200
+    class_visibility: {date_of_birth: deny}
+- id: C-team_management-compensation
+  category: C
+  layers: [pdp, warehouse]
+  description: compensation is mask_nullify for team_management
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: *id002
+  expect:
+    status: 200
+    class_visibility: {compensation: mask_nullify}
+- id: C-team_management-performance
+  category: C
+  layers: [pdp, warehouse]
+  description: performance is allow for team_management
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: *id002
+  expect:
+    status: 200
+    class_visibility: {performance: allow}
+- id: C-team_management-health_leave
+  category: C
+  layers: [pdp, warehouse]
+  description: health_leave is deny for team_management
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: *id002
+  expect:
+    status: 200
+    class_visibility: {health_leave: deny}
+- id: C-team_management-protected_attribute
+  category: C
+  layers: [pdp, warehouse]
+  description: protected_attribute is deny for team_management
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: *id002
+  expect:
+    status: 200
+    class_visibility: {protected_attribute: deny}
+- id: C-workforce_analytics-direct_identifier
+  category: C
+  layers: [pdp, warehouse]
+  description: direct_identifier is deny for workforce_analytics
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: read_profile
+  subject: &id003 {principal: '*', selector: active, index: 0}
+  expect:
+    status: 200
+    class_visibility: {direct_identifier: deny}
+- id: C-workforce_analytics-date_of_birth
+  category: C
+  layers: [pdp, warehouse]
+  description: date_of_birth is mask_date_year for workforce_analytics
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: read_profile
+  subject: *id003
+  expect:
+    status: 200
+    class_visibility: {date_of_birth: mask_date_year}
+- id: C-workforce_analytics-compensation
+  category: C
+  layers: [pdp, warehouse]
+  description: compensation is deny for workforce_analytics
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: read_profile
+  subject: *id003
+  expect:
+    status: 200
+    class_visibility: {compensation: deny}
+- id: C-workforce_analytics-performance
+  category: C
+  layers: [pdp, warehouse]
+  description: performance is deny for workforce_analytics
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: read_profile
+  subject: *id003
+  expect:
+    status: 200
+    class_visibility: {performance: deny}
+- id: C-workforce_analytics-health_leave
+  category: C
+  layers: [pdp, warehouse]
+  description: health_leave is deny for workforce_analytics
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: read_profile
+  subject: *id003
+  expect:
+    status: 200
+    class_visibility: {health_leave: deny}
+- id: C-workforce_analytics-protected_attribute
+  category: C
+  layers: [pdp, warehouse]
+  description: protected_attribute is allow for workforce_analytics
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: read_profile
+  subject: *id003
+  expect:
+    status: 200
+    class_visibility: {protected_attribute: allow}
+- id: C-privacy_compliance-direct_identifier
+  category: C
+  layers: [pdp, warehouse]
+  description: direct_identifier is allow for privacy_compliance
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: identity_lookup
+  subject: &id004 {principal: '*', selector: active, index: 0}
+  expect:
+    status: 200
+    class_visibility: {direct_identifier: allow}
+- id: C-privacy_compliance-date_of_birth
+  category: C
+  layers: [pdp, warehouse]
+  description: date_of_birth is deny for privacy_compliance
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: identity_lookup
+  subject: *id004
+  expect:
+    status: 200
+    class_visibility: {date_of_birth: deny}
+- id: C-privacy_compliance-compensation
+  category: C
+  layers: [pdp, warehouse]
+  description: compensation is deny for privacy_compliance
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: identity_lookup
+  subject: *id004
+  expect:
+    status: 200
+    class_visibility: {compensation: deny}
+- id: C-privacy_compliance-performance
+  category: C
+  layers: [pdp, warehouse]
+  description: performance is deny for privacy_compliance
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: identity_lookup
+  subject: *id004
+  expect:
+    status: 200
+    class_visibility: {performance: deny}
+- id: C-privacy_compliance-health_leave
+  category: C
+  layers: [pdp, warehouse]
+  description: health_leave is deny for privacy_compliance
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: identity_lookup
+  subject: *id004
+  expect:
+    status: 200
+    class_visibility: {health_leave: deny}
+- id: C-privacy_compliance-protected_attribute
+  category: C
+  layers: [pdp, warehouse]
+  description: protected_attribute is deny for privacy_compliance
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: identity_lookup
+  subject: *id004
+  expect:
+    status: 200
+    class_visibility: {protected_attribute: deny}
+- id: C-legal_hold_management-direct_identifier
+  category: C
+  layers: [pdp, warehouse]
+  description: direct_identifier is allow for legal_hold_management
+  principal: privacy-01
+  purpose: legal_hold_management
+  action: identity_lookup
+  subject: &id005 {principal: '*', selector: active, index: 0}
+  expect:
+    status: 200
+    class_visibility: {direct_identifier: allow}
+- id: C-legal_hold_management-date_of_birth
+  category: C
+  layers: [pdp, warehouse]
+  description: date_of_birth is deny for legal_hold_management
+  principal: privacy-01
+  purpose: legal_hold_management
+  action: identity_lookup
+  subject: *id005
+  expect:
+    status: 200
+    class_visibility: {date_of_birth: deny}
+- id: C-legal_hold_management-compensation
+  category: C
+  layers: [pdp, warehouse]
+  description: compensation is deny for legal_hold_management
+  principal: privacy-01
+  purpose: legal_hold_management
+  action: identity_lookup
+  subject: *id005
+  expect:
+    status: 200
+    class_visibility: {compensation: deny}
+- id: C-legal_hold_management-performance
+  category: C
+  layers: [pdp, warehouse]
+  description: performance is deny for legal_hold_management
+  principal: privacy-01
+  purpose: legal_hold_management
+  action: identity_lookup
+  subject: *id005
+  expect:
+    status: 200
+    class_visibility: {performance: deny}
+- id: C-legal_hold_management-health_leave
+  category: C
+  layers: [pdp, warehouse]
+  description: health_leave is deny for legal_hold_management
+  principal: privacy-01
+  purpose: legal_hold_management
+  action: identity_lookup
+  subject: *id005
+  expect:
+    status: 200
+    class_visibility: {health_leave: deny}
+- id: C-legal_hold_management-protected_attribute
+  category: C
+  layers: [pdp, warehouse]
+  description: protected_attribute is deny for legal_hold_management
+  principal: privacy-01
+  purpose: legal_hold_management
+  action: identity_lookup
+  subject: *id005
+  expect:
+    status: 200
+    class_visibility: {protected_attribute: deny}
+- id: D01
+  category: D
+  layers: [pdp, warehouse]
+  description: HR list limited to the 2 assigned org units
+  principal: hrbp-01
+  purpose: employee_relations
+  action: list_employees
+  expect:
+    status: 200
+    rows:
+      within_principal_units: true
+      count_selectors: [in_unit, restricted_in_unit, terminated_in_unit, held_in_unit]
+- id: D02
+  category: D
+  layers: [pdp, warehouse]
+  description: HR profile in an unassigned unit
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: {principal: hrbp-01, selector: outside_unit, index: 0}
+  expect: {status: 404}
+- id: D03
+  category: D
+  layers: [pdp, warehouse]
+  description: HR sees a restricted employee in an assigned unit
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: {principal: hrbp-01, selector: restricted_in_unit, index: 0}
+  expect: {status: 200}
+- id: D04
+  category: D
+  layers: [pdp, warehouse]
+  description: manager list equals direct reports
+  principal: mgr-001
+  purpose: team_management
+  action: list_employees
+  expect:
+    status: 200
+    rows:
+      equals_selectors: [direct_report, held_direct_report]
+- id: D05
+  category: D
+  layers: [pdp, warehouse]
+  description: skip-level report
+  principal: mgr-003
+  purpose: team_management
+  action: read_profile
+  subject: {principal: mgr-003, selector: skip_level_report, index: 0}
+  expect: {status: 404}
+- id: D06
+  category: D
+  layers: [pdp, warehouse]
+  description: a peer's report
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: {principal: mgr-001, selector: peer_report, index: 0}
+  expect: {status: 404}
+- id: D07
+  category: D
+  layers: [pdp, warehouse]
+  description: restricted direct report hidden
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: {principal: mgr-001, selector: restricted_direct_report, index: 0}
+  expect: {status: 404}
+- id: D08
+  category: D
+  layers: [pdp, warehouse]
+  description: manager's own record via team_management
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: {principal: mgr-001, selector: self, index: 0}
+  expect: {status: 404}
+- id: D09
+  category: D
+  layers: [pdp, warehouse]
+  description: analyst rows exclude the restricted population
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: list_employees
+  expect:
+    status: 200
+    rows: {excludes_selector: restricted}
+- id: D10
+  category: D
+  layers: [pdp, warehouse]
+  description: analyst rows include terminated employees
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: list_employees
+  expect:
+    status: 200
+    rows: {includes_selector: terminated}
+- id: D11
+  category: D
+  layers: [pdp, warehouse]
+  description: privacy identity lookup finds restricted and terminated employees
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: identity_lookup
+  expect:
+    status: 200
+    lookup_finds: [restricted, terminated]
+- id: D12
+  category: D
+  layers: [pdp]
+  description: privacy officer profile read
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: read_profile
+  subject: {principal: '*', selector: active, index: 0}
+  expect: {status: 403, code: action_not_permitted}
+- id: D13
+  category: D
+  layers: [pdp, warehouse]
+  description: held subject still visible to HR
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: {principal: hrbp-01, selector: held_in_unit, index: 0}
+  expect: {status: 200}
+- id: D14
+  category: D
+  layers: [pdp, warehouse]
+  description: deleted subject absent for HR
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: {principal: '*', selector: deleted, index: 0}
+  expect: {status: 404}
+- id: D15
+  category: D
+  layers: [pdp, warehouse]
+  description: deleted subject absent for manager
+  principal: mgr-001
+  purpose: team_management
+  action: read_profile
+  subject: {principal: '*', selector: deleted, index: 1}
+  expect: {status: 404}
+- id: D16
+  category: D
+  layers: [pdp, warehouse]
+  description: deleted subject absent for analyst
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: read_profile
+  subject: {principal: '*', selector: deleted, index: 2}
+  expect: {status: 404}
+- id: E01
+  category: E
+  layers: [pdp, warehouse]
+  description: analyst rows carry analytics_id and no employee_ref, employee_id or email
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: list_employees
+  expect:
+    status: 200
+    rows: {pseudonymous_only: true}
+- id: E02
+  category: E
+  layers: [pdp, warehouse]
+  description: the three pseudonyms of one subject differ
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: {principal: hrbp-01, selector: in_unit, index: 2}
+  expect: {status: 200, pseudonyms_distinct: true}
+- id: E03
+  category: E
+  layers: [pdp]
+  description: analyst profile by employee_ref
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: read_profile
+  subject: {principal: '*', selector: active, index: 0}
+  ref_kind: employee_ref
+  expect: {status: 404}
+- id: E04
+  category: E
+  layers: [pdp]
+  description: analyst filter by email rejected
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: list_employees
+  subject: {principal: '*', selector: active, index: 0}
+  query: {email: subject_work_email}
+  expect: {status: 400, code: unsupported_parameter}
+- id: E05
+  category: E
+  layers: [pdp, warehouse]
+  description: HR and manager responses carry employee_ref, never raw ids
+  principal: hrbp-01
+  purpose: employee_relations
+  action: list_employees
+  also: {principal: mgr-001, purpose: team_management, action: list_employees}
+  expect:
+    status: 200
+    rows: {employee_ref_no_raw_ids: true}
+- id: E06
+  category: E
+  layers: [pdp]
+  description: tampered ref 404 like out-of-scope
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: {principal: hrbp-01, selector: in_unit, index: 2}
+  tamper: true
+  expect: {status: 404}
+- id: E07
+  category: E
+  layers: [pdp]
+  description: audit events for reads carry subject_ref only
+  principal: hrbp-01
+  purpose: employee_relations
+  action: read_profile
+  subject: {principal: hrbp-01, selector: in_unit, index: 2}
+  expect: {status: 200, audit: subject_ref_only}
+- id: E08
+  category: E
+  layers: [pdp]
+  description: analytics extract objects contain no direct identifier column
+  principal: analyst-01
+  purpose: workforce_analytics
+  action: create_extract
+  body: {month: 2026-09}
+  expect: {status: 201, extract_no_direct_identifiers: true}
+- id: F01
+  category: F
+  layers: [pdp]
+  description: privacy officer creates a DSR
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: create_deletion_request
+  subject: {principal: '*', selector: active, index: 3}
+  expect: {status: 202}
+- id: F02
+  category: F
+  layers: [pdp]
+  description: hr_partner cannot create a DSR
+  principal: hrbp-01
+  purpose: privacy_compliance
+  action: create_deletion_request
+  subject: {principal: '*', selector: active, index: 3}
+  expect: {status: 403, code: purpose_not_permitted}
+- id: F03
+  category: F
+  layers: [pdp]
+  description: manager cannot create a DSR
+  principal: mgr-001
+  purpose: privacy_compliance
+  action: create_deletion_request
+  subject: {principal: '*', selector: active, index: 3}
+  expect: {status: 403, code: purpose_not_permitted}
+- id: F04
+  category: F
+  layers: [pdp]
+  description: people_analyst cannot create a DSR
+  principal: analyst-01
+  purpose: privacy_compliance
+  action: create_deletion_request
+  subject: {principal: '*', selector: active, index: 3}
+  expect: {status: 403, code: purpose_not_permitted}
+- id: F05
+  category: F
+  layers: [pdp]
+  description: privacy officer places a hold
+  principal: privacy-01
+  purpose: legal_hold_management
+  action: place_legal_hold
+  subject: {principal: '*', selector: active, index: 4}
+  expect: {status: 201}
+- id: F06
+  category: F
+  layers: [pdp]
+  description: hr_partner cannot place a hold
+  principal: hrbp-01
+  purpose: legal_hold_management
+  action: place_legal_hold
+  subject: {principal: '*', selector: active, index: 4}
+  expect: {status: 403, code: purpose_not_permitted}
+- id: F07
+  category: F
+  layers: [pdp]
+  description: manager cannot place a hold
+  principal: mgr-001
+  purpose: legal_hold_management
+  action: place_legal_hold
+  subject: {principal: '*', selector: active, index: 4}
+  expect: {status: 403, code: purpose_not_permitted}
+- id: F08
+  category: F
+  layers: [pdp]
+  description: people_analyst cannot place a hold
+  principal: analyst-01
+  purpose: legal_hold_management
+  action: place_legal_hold
+  subject: {principal: '*', selector: active, index: 4}
+  expect: {status: 403, code: purpose_not_permitted}
+- id: F09
+  category: F
+  layers: [pdp]
+  description: privacy officer releases a hold
+  principal: privacy-01
+  purpose: legal_hold_management
+  action: release_legal_hold
+  hold_id: hold-w01
+  expect: {status: 200}
+- id: F10
+  category: F
+  layers: [pdp]
+  description: user token of hrbp-01 on the executor claim route
+  principal: hrbp-01
+  action: executor_claim
+  expect: {status: 403, code: system_only}
+- id: F11
+  category: F
+  layers: [pdp]
+  description: user token of mgr-001 on the executor claim route
+  principal: mgr-001
+  action: executor_claim
+  expect: {status: 403, code: system_only}
+- id: F12
+  category: F
+  layers: [pdp]
+  description: user token of analyst-01 on the executor claim route
+  principal: analyst-01
+  action: executor_claim
+  expect: {status: 403, code: system_only}
+- id: F13
+  category: F
+  layers: [pdp]
+  description: user token of privacy-01 on the executor claim route
+  principal: privacy-01
+  action: executor_claim
+  expect: {status: 403, code: system_only}
+- id: G01
+  category: G
+  layers: [pdp]
+  description: mutating request without X-PV-Requested-With
+  principal: privacy-01
+  purpose: privacy_compliance
+  action: create_deletion_request
+  subject: {principal: '*', selector: active, index: 5}
+  omit_csrf: true
+  expect: {status: 403, code: csrf}
+- id: G02
+  category: G
+  layers: [pdp]
+  description: unknown purpose
+  principal: hrbp-01
+  purpose: marketing_outreach
+  action: list_employees
+  expect: {status: 404, code: unknown_purpose}
+- id: G03
+  category: G
+  layers: [pdp]
+  description: disabled principal
+  principal: mgr-009
+  action: me
+  expect: {status: 403, code: principal_disabled}
+- id: G04
+  category: G
+  layers: [pdp]
+  description: executor service token on a data route
+  principal: pv-executor-local
+  token: service
+  purpose: employee_relations
+  action: list_employees
+  expect: {status: 403, code: human_only}
+- id: G05
+  category: G
+  layers: [pdp]
+  description: a deny writes an audit event with decision deny
+  principal: mgr-001
+  purpose: employee_relations
+  action: list_employees
+  expect: {status: 403, audit: deny_event}
+- id: G06
+  category: G
+  layers: [pdp]
+  description: an allow writes an audit event with row_count
+  principal: hrbp-01
+  purpose: employee_relations
+  action: list_employees
+  expect: {status: 200, audit: allow_event_with_row_count}

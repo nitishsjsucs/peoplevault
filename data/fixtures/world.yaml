@@ -1,0 +1,74 @@
+# Hand-authored fixture world for the 100 authorization cases (SPEC.md sections 6.6 and 18.4).
+# 40 synthetic employees in 4 org units. `pv fixtures build` loads it through the real loaders and dbt into a
+# temporary DuckDB with the published TEST master key and writes data/fixtures/{purpose_rows.json,
+# authz_subjects.json, d1_seed.sql}. Deleted subjects go through the suppression path, so they never reach the
+# warehouse. All names, emails and values are synthetic.
+as_of: "2026-09-30"
+export_date: "2026-09-28"
+pay_period: "2026-09"
+leave_month: "2026-09"
+review_cycle: "2026H1"
+org_units: [ENG-PRODUCT, SALES-NA, FINANCE, PEOPLE]
+
+# id, first, last, unit, level, title, manager, hire, termination, restricted, birth, gender, ethnicity, salary,
+# rating, leave (type, reason, note), held (matter), deleted
+employees:
+  - { id: E10001, first: Grace, last: Okafor, unit: ENG-PRODUCT, level: M2, title: Head of Product Engineering, manager: null, hire: "2012-04-02", restricted: true, birth: "1971-05-14", gender: female, ethnicity: group_b, salary: 241000, rating: 4 }
+  - { id: E10002, first: Hugo, last: Santos, unit: ENG-PRODUCT, level: M1, title: Engineering Manager, manager: E10001, hire: "2014-09-15", birth: "1980-11-03", gender: male, ethnicity: group_a, salary: 171500, rating: 3 }
+  - { id: E10003, first: Leila, last: Moreau, unit: ENG-PRODUCT, level: M1, title: Engineering Manager, manager: E10001, hire: "2015-01-12", birth: "1983-02-27", gender: female, ethnicity: group_c, salary: 168000, rating: 4 }
+  - { id: E10004, first: Ada, last: Novak, unit: ENG-PRODUCT, level: IC2, title: Software Engineer, manager: E10002, hire: "2021-03-01", birth: "1994-07-19", gender: female, ethnicity: group_d, salary: 98500, rating: 3, leave: [medical, Recovery after a scheduled procedure, Remote work during recovery] }
+  - { id: E10005, first: Bruno, last: Castillo, unit: ENG-PRODUCT, level: IC3, title: Senior Software Engineer, manager: E10002, hire: "2018-06-11", birth: "1988-12-01", gender: male, ethnicity: group_a, salary: 129000, rating: 5 }
+  - { id: E10006, first: Camila, last: Fischer, unit: ENG-PRODUCT, level: IC1, title: Associate Software Engineer, manager: E10002, hire: "2024-02-05", restricted: true, birth: "1999-03-08", gender: female, ethnicity: group_e, salary: 74000, rating: 3 }
+  - { id: E10007, first: Dmitri, last: Haddad, unit: ENG-PRODUCT, level: IC2, title: Software Engineer, manager: E10002, hire: "2019-08-19", termination: "2025-03-31", birth: "1991-09-23", gender: male, ethnicity: group_b, salary: 97000, rating: 2 }
+  - { id: E10008, first: Elena, last: Iwu, unit: ENG-PRODUCT, level: IC4, title: Staff Software Engineer, manager: E10002, hire: "2016-10-03", birth: "1985-04-30", gender: female, ethnicity: group_c, salary: 158500, rating: 4, held: LH-2026-001 }
+  - { id: E10009, first: Farah, last: Jensen, unit: ENG-PRODUCT, level: IC2, title: Software Engineer, manager: E10003, hire: "2022-01-10", birth: "1996-06-06", gender: female, ethnicity: group_a, salary: 95000, rating: 3 }
+  - { id: E10010, first: Gabriel, last: Kowalski, unit: ENG-PRODUCT, level: IC3, title: Senior Software Engineer, manager: E10003, hire: "2017-05-22", birth: "1987-01-17", gender: male, ethnicity: group_d, salary: 127500, rating: 4 }
+  - { id: E10011, first: Imani, last: Lindqvist, unit: ENG-PRODUCT, level: IC2, title: Software Engineer, manager: E10002, hire: "2020-11-16", birth: "1993-10-12", gender: female, ethnicity: group_b, salary: 99000, rating: 3, deleted: true }
+  - { id: E10012, first: Javier, last: Nakamura, unit: SALES-NA, level: M1, title: Sales Manager, manager: null, hire: "2013-07-08", birth: "1979-08-25", gender: male, ethnicity: group_c, salary: 172000, rating: 3 }
+  - { id: E10013, first: Keiko, last: Petrov, unit: SALES-NA, level: IC2, title: Account Executive, manager: E10012, hire: "2021-09-13", birth: "1995-02-14", gender: female, ethnicity: group_e, salary: 94000, rating: 4, leave: [parental, Care for a newborn child, ""] }
+  - { id: E10014, first: Lars, last: Quintero, unit: SALES-NA, level: IC3, title: Senior Account Executive, manager: E10012, hire: "2016-03-28", birth: "1984-05-05", gender: male, ethnicity: group_a, salary: 131000, rating: 3 }
+  - { id: E10015, first: Maya, last: Rahman, unit: SALES-NA, level: IC1, title: Associate Account Executive, manager: E10012, hire: "2019-02-04", termination: "2022-06-30", birth: "1997-09-09", gender: female, ethnicity: group_d, salary: 71000, rating: 2 }
+  - { id: E10016, first: Naveen, last: Takahashi, unit: SALES-NA, level: IC2, title: Account Executive, manager: E10012, hire: "2020-04-20", birth: "1992-12-30", gender: male, ethnicity: group_b, salary: 96000, rating: 3, deleted: true }
+  - { id: E10017, first: Olga, last: Ueda, unit: SALES-NA, level: IC2, title: Account Executive, manager: E10012, hire: "2019-10-07", restricted: true, birth: "1990-07-21", gender: female, ethnicity: group_c, salary: 97500, rating: 4 }
+  - { id: E10018, first: Priya, last: Varga, unit: FINANCE, level: M1, title: Finance Manager, manager: null, hire: "2012-11-05", birth: "1978-03-16", gender: female, ethnicity: group_a, salary: 169000, rating: 4 }
+  - { id: E10019, first: Quentin, last: Whitfield, unit: FINANCE, level: M1, title: Finance Manager, manager: null, hire: "2015-06-01", birth: "1982-10-08", gender: male, ethnicity: group_e, salary: 166500, rating: 3 }
+  - { id: E10020, first: Rafael, last: Xu, unit: FINANCE, level: IC2, title: Financial Analyst, manager: E10018, hire: "2020-08-24", birth: "1993-04-02", gender: male, ethnicity: group_b, salary: 95500, rating: 3 }
+  - { id: E10021, first: Rania, last: Yilmaz, unit: FINANCE, level: IC3, title: Senior Financial Analyst, manager: E10018, hire: "2017-02-13", birth: "1986-08-19", gender: female, ethnicity: group_d, salary: 128000, rating: 4, leave: [family_care, Care for an ill family member, Reduced schedule for two weeks] }
+  - { id: E10022, first: Ravi, last: Zhou, unit: FINANCE, level: IC4, title: Staff Financial Analyst, manager: E10018, hire: "2015-09-21", birth: "1983-11-11", gender: male, ethnicity: group_c, salary: 154000, rating: 3, deleted: true }
+  - { id: E10023, first: Rosa, last: Ahmadi, unit: FINANCE, level: IC2, title: Financial Analyst, manager: E10019, hire: "2022-05-16", birth: "1997-01-25", gender: female, ethnicity: group_a, salary: 93000, rating: 3 }
+  - { id: E10024, first: Samir, last: Bianchi, unit: PEOPLE, level: M1, title: People Operations Manager, manager: null, hire: "2013-03-11", birth: "1981-06-29", gender: male, ethnicity: group_d, salary: 167000, rating: 4 }
+  - { id: E10025, first: Sofia, last: Costa, unit: PEOPLE, level: IC3, title: HR Business Partner, manager: E10024, hire: "2016-08-01", birth: "1987-09-14", gender: female, ethnicity: group_b, salary: 124000, rating: 4 }
+  - { id: E10026, first: Tariq, last: Delgado, unit: PEOPLE, level: IC3, title: HR Business Partner, manager: E10024, hire: "2018-01-08", birth: "1989-02-03", gender: male, ethnicity: group_e, salary: 123500, rating: 3 }
+  - { id: E10027, first: Teresa, last: Esposito, unit: PEOPLE, level: IC3, title: People Analyst, manager: E10024, hire: "2019-04-15", birth: "1990-12-19", gender: female, ethnicity: group_c, salary: 122000, rating: 4 }
+  - { id: E10028, first: Tomas, last: Garcia, unit: PEOPLE, level: IC3, title: Privacy Counsel, manager: E10024, hire: "2017-10-30", birth: "1985-07-07", gender: male, ethnicity: group_a, salary: 133000, rating: 4 }
+  - { id: E10029, first: Uma, last: Gomez, unit: PEOPLE, level: IC3, title: Privacy Counsel, manager: E10024, hire: "2020-02-17", birth: "1991-03-22", gender: female, ethnicity: group_d, salary: 129500, rating: 3 }
+  - { id: E10030, first: Valeria, last: Horvat, unit: PEOPLE, level: IC2, title: People Operations Specialist, manager: E10024, hire: "2021-06-07", termination: "2026-02-27", birth: "1995-05-10", gender: female, ethnicity: group_b, salary: 92000, rating: 3 }
+  - { id: E10031, first: Victor, last: Ivanova, unit: ENG-PRODUCT, level: IC2, title: Software Engineer, manager: E10002, hire: "2022-07-25", birth: "1996-11-28", gender: male, ethnicity: group_e, salary: 96500, rating: 4 }
+  - { id: E10032, first: Wei, last: Joshi, unit: ENG-PRODUCT, level: IC3, title: Senior Software Engineer, manager: E10003, hire: "2018-09-04", birth: "1989-04-11", gender: nonbinary, ethnicity: group_a, salary: 126000, rating: 3 }
+  - { id: E10033, first: Xavier, last: Kim, unit: SALES-NA, level: IC1, title: Associate Account Executive, manager: E10012, hire: "2025-01-13", birth: "2000-01-30", gender: male, ethnicity: group_c, salary: 72500, rating: 3 }
+  - { id: E10034, first: Yara, last: Mensah, unit: FINANCE, level: IC2, title: Financial Analyst, manager: E10018, hire: "2021-12-06", restricted: true, birth: "1994-08-08", gender: female, ethnicity: group_e, salary: 94500, rating: 4 }
+  - { id: E10035, first: Yusuf, last: Ortiz, unit: PEOPLE, level: IC2, title: People Operations Specialist, manager: E10024, hire: "2023-03-20", birth: "1998-10-16", gender: male, ethnicity: group_b, salary: 91000, rating: 3 }
+  - { id: E10036, first: Zainab, last: Abbott, unit: ENG-PRODUCT, level: IC3, title: Senior Software Engineer, manager: E10002, hire: "2019-01-07", birth: "1990-02-20", gender: female, ethnicity: group_d, salary: 130500, rating: 4, leave: [accommodation, Workplace accommodation review, Ergonomic equipment requested] }
+  - { id: E10037, first: Zoe, last: Banerjee, unit: ENG-PRODUCT, level: IC2, title: Software Engineer, manager: E10003, hire: "2020-05-11", termination: "2024-11-15", birth: "1994-06-03", gender: female, ethnicity: group_a, salary: 95000, rating: 3 }
+  - { id: E10038, first: Kenji, last: Dubois, unit: SALES-NA, level: IC2, title: Account Executive, manager: E10012, hire: "2022-10-03", birth: "1995-12-12", gender: male, ethnicity: group_d, salary: 93500, rating: 4 }
+  - { id: E10039, first: Ines, last: Eriksen, unit: FINANCE, level: IC3, title: Senior Financial Analyst, manager: E10018, hire: "2018-04-23", birth: "1988-07-04", gender: female, ethnicity: group_c, salary: 127000, rating: 3, leave: [personal, Personal matters, ""] }
+  - { id: E10040, first: Aaron, last: Fujita, unit: PEOPLE, level: IC2, title: People Operations Specialist, manager: E10024, hire: "2023-08-14", birth: "1997-04-26", gender: male, ethnicity: group_e, salary: 90500, rating: 3 }
+
+# Opaque principal ids, as in production; the world's principals map to these employees.
+principals:
+  - { id: hrbp-01, persona: hr_partner, employee: E10025, org_units: [ENG-PRODUCT, SALES-NA] }
+  - { id: hrbp-02, persona: hr_partner, employee: E10026, org_units: [FINANCE, PEOPLE] }
+  - { id: mgr-001, persona: manager, employee: E10002 }   # line manager with direct reports (one restricted, one held)
+  - { id: mgr-002, persona: manager, employee: E10003 }   # peer manager in the same unit
+  - { id: mgr-003, persona: manager, employee: E10001 }   # skip-level: manages mgr-001 and mgr-002
+  - { id: mgr-004, persona: manager, employee: E10012 }
+  - { id: mgr-005, persona: manager, employee: E10018 }
+  - { id: mgr-006, persona: manager, employee: E10024 }
+  - { id: mgr-009, persona: manager, employee: E10019, status: disabled }
+  - { id: analyst-01, persona: people_analyst, employee: E10027 }
+  - { id: privacy-01, persona: privacy_officer, employee: E10028 }
+  - { id: privacy-02, persona: privacy_officer, employee: E10029 }
+  - { id: pv-executor-local, system_role: executor }
+
+legal_holds:
+  - { id: hold-w01, matter: LH-2026-001, employee: E10008, reason: Preservation notice for matter LH-2026-001 }

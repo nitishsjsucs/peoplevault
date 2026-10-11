@@ -4,7 +4,7 @@ Tracks the build against the commit plan in SPEC.md section 26. Updated in every
 
 ## Position
 
-Commit 11 done (spec plan item 12): `feat(load): loaders, identity xref, snapshot replay, suppression, Iceberg table`. Commits are numbered in the order made; spec item 10 follows next.
+Commit 12 done (spec plan item 10): `feat(pdp): fixture world, purpose-scoped decision point and 100 authorization cases`. Commits are numbered in the order made.
 
 ## Done
 
@@ -21,14 +21,15 @@ Commit 11 done (spec plan item 12): `feat(load): loaders, identity xref, snapsho
 | 9 | `feat(auth): Access JWT verification, principals and local dev login` | jose RS256 verification with remote JWKS (team certs URL, fetched once) and local JWKS, every 401 code (`missing_token`, `expired`, `not_yet_valid`, `bad_signature`, `bad_audience`, `bad_issuer`, `bad_algorithm` incl. `alg: none` and HS256 confusion, `unknown_kid`, `malformed`), user vs service identity, D1 principal resolution (403 `unknown_principal`, `principal_disabled`), cookie only in local mode, CSRF header, loopback-only `/dev/login`, `/dev/logout`, `/dev/principals`, `/api/v1/me`, `npm run dev:token`; committed test-only RS256 keys |
 | 10 | `feat(warehouse): dbt models, snapshot, marts and generated purpose views` | staging views (suppression-aware), core `dim_employee` and three facts, SCD2 snapshot from an ephemeral pseudonymous input, marts `attrition_features`, `team_roster` (incremental merge) and `headcount_monthly` (the only rebuilt table, k-anonymity 5); every protected model incremental `merge`, `full_refresh: false`, `on_schema_change: ignore`, row access post-hook; generated purpose views per purpose (DuckDB mask expressions, BigQuery raw columns plus data policies, authorized view grants), generated `create_purpose_routines()` (BigQuery table functions, DuckDB table macros), generated row access macro, generic tests (`no_direct_identifiers`, `k_anonymity`, `no_suppressed_subjects`); named query SQL for both dialects in the compiled policy; `infra/bigquery/protected_schemas.json` baseline with the migration rule; tests for materializations, policy tags both ways, golden BigQuery SQL and a full build on an empty DuckDB |
 | 11 | `feat(load): loaders, identity xref, snapshot replay, suppression, Iceberg table` | `pv load --target local [--from-r2]`: raw tables with loader-computed keys (fail-closed quarantine of unknown or missing columns, suppressed rows skipped and references redacted, idempotent per object), `pv_restricted.identity_xref`, suppression sync from local D1, 13-step snapshot replay (1,330 history rows), `dbt build` with generic tests, Iceberg `hr_history.employee_monthly` through pyiceberg SqlCatalog (86,148 rows in 8 yearly appends); `DuckWarehouse` behind the Warehouse protocol; truth-derived warehouse golden counts; `pv counts`; `npm run seed:local` now runs steps 1 to 5 and 7 (verified: 75 s, every count matches); tests for quarantine, suppression and resurrection, golden counts of a full temp load, generic tests, emulated ceilings and DML erase followed by a rebuild |
+| 12 | `feat(pdp): fixture world, purpose-scoped decision point and 100 authorization cases` | hand-authored `data/fixtures/world.yaml` (40 employees, 4 org units, 13 principals incl. a disabled one and the executor, a held subject, 3 deleted subjects); `pv fixtures build` and `pv fixtures check` load it through the real loaders and dbt and commit `purpose_rows.json`, `authz_subjects.json` and `d1_seed.sql`; `src/worker/policy/pdp.ts` (`decide`, `columnsFor`, `filterColumns` with Worker-side masking); `policy/cases/authz_cases.yaml` with exactly 100 cases (A 12, B 15, C 30, D 16, E 8, F 13, G 6; 48 warehouse-layer); catalog tests in both languages and PDP persona tests. The harness that runs all 100 through the app lands with the routes it needs (next commits) |
 
 ## Next
 
-12. `feat(pdp): fixture world, purpose-scoped decision point and 100 authorization cases` (spec item 10)
+13. `feat(shim): local warehouse shim and Worker warehouse clients`, then 14. API routes with the 100-case harness
 
 ## Check status
 
-At commit 11: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 71 passed, 0 failed; `npm run test:py` 119 passed, 0 failed; `ruff check pipelines` clean; `pv policy check` clean.
+At commit 12: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 80 passed, 0 failed; `npm run test:py` 126 passed, 0 failed; `pv fixtures check` clean; `ruff check pipelines` clean; `pv policy check` clean.
 
 ## Deviations from SPEC.md
 

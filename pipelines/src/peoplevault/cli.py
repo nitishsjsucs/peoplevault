@@ -94,6 +94,32 @@ def counts(target: str) -> None:
 
 
 @main.group()
+def fixtures() -> None:
+    """Committed Worker test fixtures built from data/fixtures/world.yaml."""
+
+
+@fixtures.command("build")
+def fixtures_build() -> None:
+    from peoplevault import config
+    from peoplevault.fixtures.world import build
+
+    for p in build(config.FIXTURES_DIR):
+        click.echo(f"wrote {p.relative_to(config.REPO_ROOT)}")
+
+
+@fixtures.command("check")
+def fixtures_check() -> None:
+    from peoplevault.fixtures.world import check
+
+    problems = check()
+    for p in problems:
+        click.echo(p, err=True)
+    if problems:
+        raise click.ClickException("committed fixtures differ from a rebuild of world.yaml; run `uv run --project pipelines pv fixtures build`")
+    click.echo("fixtures check: committed fixtures match a rebuild of world.yaml")
+
+
+@main.group()
 def policy() -> None:
     """Compile policy/policy.yaml or check generated files for drift."""
 
