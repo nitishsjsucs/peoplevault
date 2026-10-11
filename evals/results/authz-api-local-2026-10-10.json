@@ -1,0 +1,141 @@
+{
+  "command": "pv authz api --target local --allow-writes",
+  "date": "2026-10-10",
+  "git_sha": "d1cb5c2b9e342a8d911e411201accf06726bacb0",
+  "git_dirty": false,
+  "environment": "local (Miniflare, DuckDB, pyiceberg SqlCatalog)",
+  "versions": {
+    "wrangler": "4.149.0",
+    "dbt-core": "1.12.5",
+    "dbt-duckdb": "1.11.0",
+    "duckdb": "1.5.6",
+    "pyiceberg": "0.12.0"
+  },
+  "kind": "authz",
+  "cases_total": 100,
+  "layers": {
+    "api": {
+      "target": "local",
+      "runnable": 85,
+      "passed": 85,
+      "failed": 0,
+      "skipped": 15,
+      "allow_writes": true,
+      "runner": "pv authz api (the case file through the deployed API, full synthetic population, one token per persona principal and the executor)"
+    }
+  },
+  "by_category": {
+    "A": {
+      "cases": 12,
+      "runnable": 2,
+      "passed": 2,
+      "skipped": 10
+    },
+    "B": {
+      "cases": 15,
+      "runnable": 15,
+      "passed": 15,
+      "skipped": 0
+    },
+    "C": {
+      "cases": 30,
+      "runnable": 30,
+      "passed": 30,
+      "skipped": 0
+    },
+    "D": {
+      "cases": 16,
+      "runnable": 12,
+      "passed": 12,
+      "skipped": 4
+    },
+    "E": {
+      "cases": 8,
+      "runnable": 8,
+      "passed": 8,
+      "skipped": 0
+    },
+    "F": {
+      "cases": 13,
+      "runnable": 13,
+      "passed": 13,
+      "skipped": 0
+    },
+    "G": {
+      "cases": 6,
+      "runnable": 5,
+      "passed": 5,
+      "skipped": 1
+    }
+  },
+  "failures": [],
+  "skipped": [
+    {
+      "id": "A02",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "A03",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "A04",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "A05",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "A06",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "A07",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "A08",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "A09",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "A10",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "A12",
+      "reason": "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)"
+    },
+    {
+      "id": "D05",
+      "reason": "principal mgr-003 has no token in this environment (only the persona principals and the executor do)"
+    },
+    {
+      "id": "D13",
+      "reason": "no subject for selector hrbp-01/held_in_unit index 0 in this population"
+    },
+    {
+      "id": "D14",
+      "reason": "no completed deletion in this principal's scope yet"
+    },
+    {
+      "id": "D15",
+      "reason": "no completed deletion in this principal's scope yet"
+    },
+    {
+      "id": "G03",
+      "reason": "principal mgr-009 has no token in this environment (only the persona principals and the executor do)"
+    }
+  ],
+  "skip_reasons": {
+    "forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)": 10,
+    "principal mgr-003 has no token in this environment (only the persona principals and the executor do)": 1,
+    "no subject for selector hrbp-01/held_in_unit index 0 in this population": 1,
+    "no completed deletion in this principal's scope yet": 2,
+    "principal mgr-009 has no token in this environment (only the persona principals and the executor do)": 1
+  }
+}

@@ -28,7 +28,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Production executor, residual check and Basin Catalog self-test | written, not yet executed |
 | Production deletion eval profile (`pv eval deletion --profile prod`) | written, not yet executed |
 | Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
-| The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built and tested; the production run is written, not yet executed |
+| The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built; the local rehearsal ran (Results); the production run is written, not yet executed |
 | Audit copy through Basin Pipelines (stream `pv_audit_events`, sink into the Basin Catalog table `governance.audit_events`) | written, not yet executed; locally the stream is disabled and the Worker's stream code is tested with a fake binding |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
@@ -179,6 +179,15 @@ All results below are local (Miniflare, DuckDB, pyiceberg SqlCatalog); nothing h
 
 - Decision point (Worker app, fixture world): 100 of 100 cases
 - Warehouse layer (DuckDB purpose views): 48 of 48 cases
+
+**Authorization cases** (`pv authz api --target local --allow-writes`, 2026-10-10; local (Miniflare, DuckDB, pyiceberg SqlCatalog))
+
+- Through the API (local Worker, limited to the tokens production has, full synthetic population, one token per persona principal and the executor): 85 of 85 runnable cases passed; 15 of 100 not runnable there
+  - 10 skipped: forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)
+  - 2 skipped: no completed deletion in this principal's scope yet
+  - 1 skipped: no subject for selector hrbp-01/held_in_unit index 0 in this population
+  - 1 skipped: principal mgr-003 has no token in this environment (only the persona principals and the executor do)
+  - 1 skipped: principal mgr-009 has no token in this environment (only the persona principals and the executor do)
 <!-- results:end -->
 
 About the two applicability disagreements in the full profile: a team roster is cached as one KV key per manager, and erasing any member of a team removes that key. When two members of one team (or a manager and a direct report) are deleted at the same time, the second request can find the key already gone and record `not_present`, which was true when it looked; the ground truth is computed before any request runs and cannot know their order. The disagreements are reported as measured.

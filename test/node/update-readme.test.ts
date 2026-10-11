@@ -70,7 +70,7 @@ describe("readme:results", () => {
     };
     const text = renderResults([f]);
     expect(text).toContain("**Authorization cases** (`npm run authz:api:local`, 2026-10-10; local (Miniflare, DuckDB, pyiceberg SqlCatalog))");
-    expect(text).toContain("- Through the API (local Worker, full synthetic population, one token per persona principal and the executor): 85 of 85 runnable cases passed; 15 of 100 not runnable there");
+    expect(text).toContain("- Through the API (local Worker, limited to the tokens production has, full synthetic population, one token per persona principal and the executor): 85 of 85 runnable cases passed; 15 of 100 not runnable there");
     expect(text).toContain("  - 10 skipped: forged tokens cannot pass Cloudflare Access");
   });
 

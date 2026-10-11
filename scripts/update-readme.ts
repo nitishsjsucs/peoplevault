@@ -75,7 +75,7 @@ function authz(f: ResultFile): string[] {
   if (d.ceiling_probes) lines.push(`- BigQuery ceiling probes (reported separately): ${d.ceiling_probes.passed} of ${d.ceiling_probes.total}`);
   if (d.layers.api) {
     const a = d.layers.api;
-    const where = a.target === "prod" ? "deployed Worker behind Cloudflare Access" : "local Worker";
+    const where = a.target === "prod" ? "deployed Worker behind Cloudflare Access" : "local Worker, limited to the tokens production has";
     lines.push(`- Through the API (${where}, full synthetic population, one token per persona principal and the executor): ${a.passed} of ${a.runnable} runnable cases passed; ${a.skipped} of ${d.cases_total} not runnable there`);
     for (const [reason, n] of Object.entries((d.skip_reasons ?? {}) as Record<string, number>).sort(([x], [y]) => x.localeCompare(y))) lines.push(`  - ${n} skipped: ${reason}`);
   }
