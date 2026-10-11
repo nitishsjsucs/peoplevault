@@ -44,18 +44,25 @@ describe("executor.yml", () => {
     expect([...used].sort()).toEqual([...GITHUB_SECRETS].sort());
   });
 
-  it("sets every variable the Python executor reads in production, with public logs and the key-based dbt target", () => {
-    for (const name of ["PV_BASE_URL", "PV_CF_ACCESS_CLIENT_ID_EXECUTOR", "PV_CF_ACCESS_CLIENT_SECRET_EXECUTOR", "PV_GCP_PROJECT", "PV_R2_CATALOG_TOKEN", "PV_CATALOG_URI", "PV_CATALOG_WAREHOUSE", "PV_POLICY_TAGS_JSON"])
-      expect(job.env[name], name).toMatch(/^\$\{\{ secrets\.[A-Z0-9_]+ \}\}$/);
-    expect(job.env.PV_PUBLIC_LOGS).toBe("true");
-    expect(job.env.PV_DBT_TARGET).toBe("bigquery_actions");
+  it("sets every variable the Python executor reads on each pv step only, with public logs and the key-based dbt target", () => {
+    const pvSteps = job.steps.filter((s) => (s.run ?? "").startsWith("uv run --project pipelines pv "));
+    expect(pvSteps).toHaveLength(3);
+    for (const step of pvSteps)
+      for (const name of ["PV_BASE_URL", "PV_CF_ACCESS_CLIENT_ID_EXECUTOR", "PV_CF_ACCESS_CLIENT_SECRET_EXECUTOR", "PV_GCP_PROJECT", "PV_R2_CATALOG_TOKEN", "PV_CATALOG_URI", "PV_CATALOG_WAREHOUSE", "PV_POLICY_TAGS_JSON"])
+        expect(step.env?.[name], `${step.name}: ${name}`).toMatch(/^\$\{\{ secrets\.[A-Z0-9_]+ \}\}$/);
+    // no secret at job level, so checkout, setup-uv and uv sync never see one
+    expect(job.env).toEqual({ PV_PUBLIC_LOGS: "true", PV_DBT_TARGET: "bigquery_actions" });
+    for (const step of job.steps.filter((s) => s.uses || s.run === "uv sync --project pipelines --locked")) expect(step.env, step.uses ?? step.run).toBeUndefined();
     const python = readFileSync(path.join(REPO_ROOT, "pipelines", "src", "peoplevault", "executor", "prod.py"), "utf8");
     for (const name of ["PV_BASE_URL", "PV_CF_ACCESS_CLIENT_ID_EXECUTOR", "PV_CF_ACCESS_CLIENT_SECRET_EXECUTOR", "PV_GCP_PROJECT"]) expect(python).toContain(`"${name}"`);
   });
 
-  it("uses the same pinned actions and uv as CI, and does not keep git credentials", () => {
+  it("uses the same actions, pinned to full commit SHAs, and uv as CI, and does not keep git credentials", () => {
     const uses = job.steps.filter((s) => s.uses).map((s) => s.uses);
-    expect(uses).toEqual(["actions/checkout@v7", "astral-sh/setup-uv@v10.3.0"]);
+    expect(uses).toEqual(["actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884"]);
+    const ci = readFileSync(path.join(REPO_ROOT, ".github", "workflows", "ci.yml"), "utf8");
+    for (const wfText of [text, ci]) for (const m of wfText.matchAll(/uses: (\S+)/g)) expect(m[1], m[1]).toMatch(/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/);
+    for (const u of uses) expect(ci).toContain(`uses: ${u}`);
     expect(job.steps[0]!.with).toEqual({ "persist-credentials": false });
     expect(job.steps[1]!.with).toMatchObject({ version: "0.12.17", "python-version": "3.12" });
     expect(job.steps.some((s) => s.run === "uv sync --project pipelines --locked")).toBe(true);
