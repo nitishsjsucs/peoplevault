@@ -73,8 +73,7 @@ describe("readme:results", () => {
     const text = renderResults([f]);
     expect(text).toContain("**CPU of the Worker's hot paths** (`npm run bench:cpu`, 2026-10-10; local (Node v25.9.0 on darwin arm64, Apple M3); 8 cores, 1-minute load average 2.5 at the start)");
     expect(text).toContain("123 comparisons over all 41 generated export objects");
-    expect(text).toContain("Largest median 1.8 ms against the design target of 2.5 ms on this machine");
-    expect(text).toContain("within target");
+    expect(text).toContain("Largest median 1.8 ms on this machine; at 3 times (edge cores and cold isolates) 5.40 ms against Free's 10 ms (within the design target of 2.5 ms here");
   });
 
   it("refuses files with a missing header field or from a dirty tree", () => {

@@ -216,10 +216,13 @@ async function main(): Promise<void> {
   };
   const largest = Math.max(prefiltered.warm_median_ms, probeWorst.warm_median_ms, verify.warm_median_ms, exportPage.warm_median_ms, kv.warm_median_ms);
   (result as Record<string, unknown>).largest_step_ms = largest;
+  (result as Record<string, unknown>).at_edge_factor_ms = Number((largest * 3).toFixed(2));
+  // the design target (2.5 ms here, 7.5 ms at three times) keeps a 25% margin under the 10 ms limit
   (result as Record<string, unknown>).within_target = largest <= 2.5;
+  (result as Record<string, unknown>).within_free_limit_at_edge_factor = largest * 3 <= 10;
   const file = path.join(REPO_ROOT, "evals", "results", `cpu-${date}.json`);
   writeFileSync(file, JSON.stringify(result, null, 2) + "\n");
-  console.log(JSON.stringify({ file: path.relative(REPO_ROOT, file), largest_step_ms: largest, within_target: largest <= 2.5, measurements_ms: result.measurements_ms }, null, 1));
+  console.log(JSON.stringify({ file: path.relative(REPO_ROOT, file), largest_step_ms: largest, at_edge_factor_ms: largest * 3, within_target: largest <= 2.5, measurements_ms: result.measurements_ms }, null, 1));
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
