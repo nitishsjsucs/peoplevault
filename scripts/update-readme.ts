@@ -95,7 +95,7 @@ function cpu(f: ResultFile): string[] {
     "",
     `- Prefiltered transform byte-identical to the unfiltered one: ${d.prefilter_identical.comparisons} comparisons over all ${d.prefilter_identical.objects} generated export objects`,
     `- Erase step at the 4 MiB cap (${m.erase_step_at_cap!.objects} HRIS objects, ${m.erase_step_at_cap!.mib} MiB): ${v("erase_step_at_cap")}; the revision 2 HRIS step that parsed every line of ${m.revision2_hris_erase_every_line_parsed!.objects} objects: ${v("revision2_hris_erase_every_line_parsed")}`,
-    `- Probe step at the 2 MiB cap (${m.probe_step_at_cap_clean!.mib} MiB): ${v("probe_step_at_cap_clean")} after a clean erasure, ${v("probe_step_at_cap_every_line")} when every line must be matched`,
+    `- Probe step at the 2 MiB cap (${m.probe_step_at_cap_clean!.mib} MiB): ${v("probe_step_at_cap_clean")} after a clean erasure, ${v("probe_step_at_cap_every_line")} with the subject still in every object`,
     `- Audit verification window of 100 events: ${v("audit_verify_window_100")}; audit export page of 500 rows: ${v("audit_export_page_500")}; KV probe over 420 values: ${v("kv_probe_420_values")}`,
     `- Largest step-sized path: ${d.largest_step_ms} ms (fastest warm run; largest median ${d.largest_step_median_ms ?? d.largest_step_ms} ms) on this machine; at ${d.design.edge_factor} times (edge cores and cold isolates) ${d.at_edge_factor_ms ?? (d.largest_step_ms * d.design.edge_factor).toFixed(2)} ms against Free's ${d.design.free_cpu_limit_ms} ms (${d.within_target ? "within" : "over"} the design target of ${d.design.target_ms_here} ms here, which keeps a 25% margin). Miniflare enforces no CPU limit; production readings come from the canary deletion and the doctor's CPU p99 line`,
   ];
