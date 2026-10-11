@@ -6,7 +6,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 
 ## Status
 
-2026-10-11: everything in the core plan is built and runs locally; the production paths are written for the **Cloudflare Workers Free plan** but have not run against Cloudflare or Google Cloud. Production shares one Cloudflare account and one Google Cloud project (`master-magnet-444903-u4`) with three other repos, so this repo plans for at most 25% of every per-account Free allowance and names everything it creates in Google Cloud with the `peoplevault` prefix (SPEC.md section 30, [ADR 0007](docs/adr/0007-production-on-workers-free.md)). The design contract is [SPEC.md](SPEC.md); progress against its commit plan, the exact check status and every deviation are in [PROGRESS.md](PROGRESS.md).
+2026-10-11: everything in the commit plan is built and runs locally, and CI passes on GitHub; the production paths are written for the **Cloudflare Workers Free plan** but have not run against Cloudflare or Google Cloud (the doctor and the setup dry runs have read both accounts, read-only). Production shares one Cloudflare account and one Google Cloud project (`master-magnet-444903-u4`) with three other repos, so this repo plans for at most 25% of every per-account Free allowance and names everything it creates in Google Cloud with the `peoplevault` prefix (SPEC.md section 30, [ADR 0007](docs/adr/0007-production-on-workers-free.md)). The design contract is [SPEC.md](SPEC.md); progress against its commit plan, the exact check status and every deviation are in [PROGRESS.md](PROGRESS.md).
 
 | Area | State |
 |---|---|
@@ -22,19 +22,19 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Residual tracking (Iceberg, BigQuery, D1 Time Travel 7 days on Free, KV) and the deletion eval with an independent oracle and fault injection | built, run locally (results below) |
 | Audit hash chain, windowed verification (100 events per request), the deletion report in SQL, and the exactly-once audit copy into the Iceberg table `governance.audit_events` (`pv audit export`, which replaces the Workers Paid Basin Pipelines stream) | built; the audit copy runs locally in the ci eval (pyiceberg SqlCatalog); the production export (Basin Catalog) is written, not yet executed |
 | Workers Free budget model (`scripts/lib/free-budget.ts`; the budget test fails if a cap pushes the worst-case day past the 25% share) and `npm run bench:cpu` | built, tested |
-| CI (GitHub Actions: worker, python and e2e jobs, no secrets) | workflow written; each job's commands pass locally; it has not run on GitHub because the repository has not been pushed |
-| `npm run doctor` and `npm run doctor -- --prod` (including the Workers Free usage lines) | built; tested with fakes and recorded responses; on this Mac the production lines report the missing setup |
-| `npm run setup:prod` (with `--retention-cron on\|off`; refuses to adopt a same-named Cloudflare resource it did not create), `pv setup gcp`, `npm run deploy`, `npm run seed:prod` | written, not yet executed (dry-run plans golden-tested) |
+| CI (GitHub Actions on ubuntu-latest: worker, python and e2e jobs, no secrets; the e2e job runs the ci deletion eval with its gate and the case file through the local API) | runs on every push; all three jobs passed on 2026-10-11 for commit `c3c114f` ([run 38128292785](https://github.com/nitishsjsucs/peoplevault/actions/runs/38128292785)) and for commit `a5fd381`, the first pushed commit with the doctor and setup fixes ([run 38129508690](https://github.com/nitishsjsucs/peoplevault/actions/runs/38129508690)) |
+| `npm run doctor` and `npm run doctor -- --prod` (including the Workers Free usage lines) | built; tested with fakes and recorded responses; run read-only against the real logins on 2026-10-11, it lists 22 missing items, each with its fix ([docs/PRODUCTION.md](docs/PRODUCTION.md#doctor-run-of-2026-10-11-read-only)); the usage lines need a deployed Worker |
+| `npm run setup:prod` (with `--retention-cron on\|off`; refuses to adopt a same-named Cloudflare resource it did not create), `pv setup gcp`, `npm run deploy`, `npm run seed:prod` | written, not yet executed; dry-run plans golden-tested, and the dry runs read the real accounts on 2026-10-11 (`pv setup gcp --dry-run` plans 84 steps on the shared project, starting with the 4 APIs that are off there) |
 | BigQuery path (dbt build, protected-table controls, 48 cases as purpose service accounts, 37 ceiling probes, Worker REST client with 20 polls, 10 pages and a 100 MiB byte cap; every Python and dbt query capped at 1 GiB) | written, not yet executed |
 | Cloudflare Access in front of the deployed Worker, R2, D1, KV and Workflows on Cloudflare | written, not yet executed |
 | Production executor, residual check and Basin Catalog self-test | written, not yet executed |
 | Production deletion eval profile (`pv eval deletion --profile prod`, canary deletion first) | written, not yet executed |
-| Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the audit copy when due and the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
+| Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the audit copy when due and the daily residual check) | on GitHub and active; its job is skipped until `npm run setup:prod -- --only github` sets its secrets and `PV_PROD_ENABLED` |
 | The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built; the local rehearsal ran (Results); the production run is written, not yet executed |
 | Privacy console (React SPA in `src/web`, deployed with the Worker as Workers static assets: sign-in, purpose-scoped employee browser with masked columns labeled, deletion requests with identity lookup by POST, request detail with receipt and retry, legal holds, coverage report, audit log with the windowed chain check) | built, tested (happy-dom against a mocked API, plus a contract test of every route it reads); used locally against `wrangler dev`; not yet deployed |
 | Schema-drift triage (P1): rule classes plus a model's class for a column of a quarantined export, suggestion max_severity(rule, model), never a policy change; Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` through the AI Gateway (no stored logs, no cache) with a D1 neuron meter capped at 2,000 a day; Qwen3-1.7B on llama-server or a stub locally; resumable eval over 120 labeled columns | built, tested; the local eval ran on Qwen3-1.7B (Results); the Workers AI path and its two-day production eval are written, not yet executed |
 
-Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service. Until the production runs in [docs/PRODUCTION.md](docs/PRODUCTION.md) pass, the honest wording for the BigQuery and Cloudflare parts is "designed for" them and "verified against local stand-ins" (SPEC.md section 24).
+Nothing in this repository has created or changed anything on Cloudflare or Google Cloud; the doctor and the setup dry runs only read the accounts. Local stand-ins are never described as the production service. Until the production runs in [docs/PRODUCTION.md](docs/PRODUCTION.md) pass, the honest wording for the BigQuery and Cloudflare parts is "designed for" them and "verified against local stand-ins" (SPEC.md section 24).
 
 ## Architecture
 
@@ -193,7 +193,7 @@ uv run --project pipelines pv eval drift --target local --start --ai-mode llama-
 
 ## Production setup
 
-Production runs on **Workers Free**: nothing needs Workers Paid, Basin Pipelines or a new Google Cloud project. Everything a script can do is in `npm run setup:prod` (idempotent; `-- --dry-run` prints the plan) and `npm run doctor -- --prod` (prints exactly what is missing, with the fix for each line). The steps only the owner can do are listed in [docs/PRODUCTION.md](docs/PRODUCTION.md): enable billing on the shared Google Cloud project (the BigQuery sandbox has no DML) with a $1 budget alert, add the One-time PIN login method, create the two Cloudflare tokens, write `.secrets/prod.env`, and run the commands in order. The production eval submits one canary deletion alone before the other 11, and the retention cron stays off until its result is committed (`npm run setup:prod -- --only worker --retention-cron on`).
+Production runs on **Workers Free**: nothing needs Workers Paid, Basin Pipelines or a new Google Cloud project. Everything a script can do is in `npm run setup:prod` (idempotent; `-- --dry-run` prints the plan) and `npm run doctor -- --prod` (prints exactly what is missing, with the fix for each line; its read-only run of 2026-10-11 is in [docs/PRODUCTION.md](docs/PRODUCTION.md#doctor-run-of-2026-10-11-read-only)). The steps only the owner can do are listed in [docs/PRODUCTION.md](docs/PRODUCTION.md): enable billing on the shared Google Cloud project (the BigQuery sandbox has no DML) with a $1 budget alert, add the One-time PIN login method, create the two Cloudflare tokens, write `.secrets/prod.env`, and run the commands in order. The production eval submits one canary deletion alone before the other 11, and the retention cron stays off until its result is committed (`npm run setup:prod -- --only worker --retention-cron on`).
 
 The production executor can run hourly in GitHub Actions (`.github/workflows/executor.yml`, enabled by `npm run setup:prod -- --only github`), which also copies the audit chain when due. GitHub disables scheduled workflows in a public repository after 60 days without repository activity; `npm run doctor -- --prod` reports the workflow's state and the age of its last successful run, and deletions that wait more than 24 hours for the executor fail (and can be retried).
 
@@ -217,9 +217,9 @@ All results below are local (Miniflare, DuckDB, pyiceberg SqlCatalog, llama-serv
 - Legal holds: 6 held requests, held data intact for 6
 - Retention sweep: 70 retention requests (2 held), 3 export objects deleted and 5 minimized for holds, 3 extracts expired; every count equal to the golden counts
 - Applicability agreement with ground truth: 1318 of 1320 pairs (cache.kv.team_rosters: system not_present, truth present; cache.kv.team_rosters: system not_present, truth present)
-- Audit hash chain: verified over 1365 events (14 windows of at most 100)
-- Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 1368 rows, 1368 copied by this run; last hash equals D1's at seq 1368
-- Workflow duration (create to terminal, local): p50 33.9 s, p95 55.8 s
+- Audit hash chain: verified over 1398 events (14 windows of at most 100)
+- Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 1401 rows, 1401 copied by this run; last hash equals D1's at seq 1401
+- Workflow duration (create to terminal, local): p50 65.8 s, p95 110.0 s
 - Gate: passed
 
 **Deletion eval, ci profile** (`npm run eval:deletion:ci`, 2026-10-11; local (Miniflare, DuckDB, pyiceberg SqlCatalog))
@@ -237,9 +237,9 @@ All results below are local (Miniflare, DuckDB, pyiceberg SqlCatalog, llama-serv
 - Legal holds: 4 held requests, held data intact for 4
 - Retention sweep: 10 retention requests (2 held), 3 export objects deleted and 5 minimized for holds, 3 extracts expired; every count equal to the golden counts
 - Applicability agreement with ground truth: 192 of 192 pairs
-- Audit hash chain: verified over 969 events (10 windows of at most 100)
-- Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 971 rows, 971 copied by this run; last hash equals D1's at seq 971
-- Workflow duration (create to terminal, local): p50 14.7 s, p95 19.9 s
+- Audit hash chain: verified over 962 events (10 windows of at most 100)
+- Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 964 rows, 964 copied by this run; last hash equals D1's at seq 964
+- Workflow duration (create to terminal, local): p50 5.8 s, p95 10.1 s
 - Gate: passed
 
 **Authorization cases** (`npm run eval:authz`, 2026-10-11; local (Miniflare, DuckDB, pyiceberg SqlCatalog))
