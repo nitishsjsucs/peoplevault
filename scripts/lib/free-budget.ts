@@ -64,7 +64,7 @@ export interface Caps {
   queueMaxRetries: number;
   /** Cron Triggers of the production template */
   cronTriggers: number;
-  /** AI_DAILY_NEURONS (P1, planned) */
+  /** AI_DAILY_NEURONS of the production template (P1 schema-drift triage) */
   aiDailyNeurons: number;
 }
 
@@ -81,7 +81,7 @@ export interface BudgetRow {
 export const queueOpsPerMessage = (maxRetries: number) => 1 + (1 + maxRetries) + 1 + 1;
 
 /** Workers requests on the worst-case day (SPEC.md section 30.4, row by row). */
-export const REQUESTS_WORST_DAY = { seed: 33, authzProd: 170, prodEval: 1160, executorYml: 40, auditExportAndVerify: 15, doctor: 30, workflowQueueCron: 20, console: 300 } as const;
+export const REQUESTS_WORST_DAY = { seed: 33, authzProd: 170, prodEval: 1160, executorYml: 40, auditExportAndVerify: 15, doctor: 30, workflowQueueCron: 20, console: 300, driftEval: 125 } as const;
 
 /** D1 rows a console session reads on that day: a full chain check (each event once), report, request and audit pages. */
 export const CONSOLE_D1_ROWS_READ = 10_000;
@@ -92,7 +92,7 @@ export function worstCaseDay(c: Caps): BudgetRow[] {
   const monthlyDeletions = 30 * d;
   return [
     row("Workflow steps", "day", 3000, d * STEPS.completedDeletion + STEPS.sweepWorstCase, `${d} completed deletions x ${STEPS.completedDeletion} steps + a ${STEPS.sweepWorstCase}-step sweep`),
-    row("Workers requests", "day", 100_000, Object.values(REQUESTS_WORST_DAY).reduce((a, b) => a + b, 0), "seed, authz:prod, production eval, executor.yml, audit export and windows, doctor, Workflow, queue and cron invocations, 300 console API calls (static assets do not invoke the Worker)"),
+    row("Workers requests", "day", 100_000, Object.values(REQUESTS_WORST_DAY).reduce((a, b) => a + b, 0), "seed, authz:prod, production eval, executor.yml, audit export and windows, doctor, Workflow, queue and cron invocations, 300 console API calls (static assets do not invoke the Worker), a day of the drift eval"),
     row("D1 rows read", "day", 5_000_000, d * PER_DELETION.d1RowsRead + 35_000 + 10_000 + 6000 + 5000 + 1200 + 3000 + CONSOLE_D1_ROWS_READ, `${d} x ${PER_DELETION.d1RowsRead} + oracle, seed checks, status polls, doctor, sweep, routes and appends, console`),
     row("D1 rows written", "day", 100_000, 9000 + d * PER_DELETION.d1RowsWritten + 1000 * 3 + 512 + 200, `seed 9,000 + ${d} x ${PER_DELETION.d1RowsWritten} + 1,000 audit events x 3 + residual and task updates`),
     row("KV reads", "day", 100_000, d * PER_DELETION.kvReads + 300 + 100, `${d} x ${PER_DELETION.kvReads} + route gets + oracle`),
@@ -108,7 +108,7 @@ export function worstCaseDay(c: Caps): BudgetRow[] {
     row("R2 Class B operations", "month", 10_000_000, monthlyDeletions * PER_DELETION.r2ClassB, `${monthlyDeletions} deletions x ${PER_DELETION.r2ClassB}`),
     row("R2 storage MB", "month", 10_000, 50, "exports 9.7 MB, extracts 1.3 MB, lake and audit copy under 40 MB"),
     row("Basin Catalog operations", "month", 1_000_000, monthlyDeletions * PER_DELETION.basinOps + 1400, `${monthlyDeletions} deletions x ${PER_DELETION.basinOps} + exports and doctor`),
-    row("Workers AI neurons (P1)", "day", 10_000, c.aiDailyNeurons, "the AI_DAILY_NEURONS cap"),
+    row("Workers AI neurons (P1)", "day", 10_000, c.aiDailyNeurons, "the AI_DAILY_NEURONS cap, enforced by the D1 neuron meter before every call"),
     row("AI Gateways (P1)", "account", 10, 1, "one gateway, no stored logs"),
     row("Access seats", "account", 50, 5, "owner and 4 persona plus-addresses"),
     row("Access service tokens", "account", 50, 5, "pv-executor and 4 persona tokens"),

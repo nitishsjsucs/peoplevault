@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "policyHash": "69d831a729cb10670343527e3a764c2513c0316840c06472f1137c983ff17609",
+  "policyHash": "d003e6a9fd90d9ceb8a226cff58a863756bda463c6d6a96f26c412259d6490c6",
   "personas": {
     "hr_partner": {
       "label": "HR Business Partner",
@@ -54,7 +54,8 @@
           "read_assets",
           "read_report",
           "read_audit",
-          "run_retention"
+          "run_retention",
+          "triage_schema_drift"
         ],
         "legal_hold_management": [
           "identity_lookup",

@@ -1,5 +1,5 @@
 // Pins the Workers Free configuration (SPEC.md sections 18.5 and 30.3.5) so a later change cannot drift back into
-// Workers Paid territory: no `limits`, no `pipelines`, no Durable Objects, one Cron Trigger, the five Free vars with
+// Workers Paid territory: no `limits`, no `pipelines`, no Durable Objects, Workers AI capped, one Cron Trigger, the five Free vars with
 // their exact production values, the 64-variable limit, 3-day instance retention and 7-day D1 Time Travel.
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -38,8 +38,16 @@ function days(duration: string): number {
 
 describe("production template on Workers Free", () => {
   it("has no Paid-only or Durable Object blocks", () => {
-    for (const key of ["limits", "pipelines", "durable_objects", "migrations", "ai", "containers"]) expect(template, key).not.toHaveProperty(key);
+    for (const key of ["limits", "pipelines", "durable_objects", "migrations", "containers"]) expect(template, key).not.toHaveProperty(key);
     expect(JSON.stringify(template)).not.toMatch(/cpu_ms|AUDIT_STREAM"|"stream"/);
+  });
+
+  it("Workers AI (P1, Free: 10,000 neurons a day per account, F17) is capped at 2,000 a day through the gateway, in production only", () => {
+    expect(template.ai).toEqual({ binding: "AI" });
+    expect(local).not.toHaveProperty("ai");
+    expect(template.vars).toMatchObject({ AI_MODE: "workers-ai", AI_GATEWAY_ID: "peoplevault", AI_DAILY_NEURONS: "2000", LLM_URL: "" });
+    expect(Number(template.vars.AI_DAILY_NEURONS)).toBeLessThanOrEqual(10_000 * 0.25 * 0.8);
+    expect(local.vars).toMatchObject({ AI_MODE: "stub", AI_GATEWAY_ID: "", AI_DAILY_NEURONS: "", LLM_URL: "http://127.0.0.1:8170" });
   });
 
   it("declares exactly one Cron Trigger (the account allows 5, shared by four repos)", () => {

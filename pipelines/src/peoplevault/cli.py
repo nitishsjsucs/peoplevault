@@ -281,6 +281,51 @@ def eval_deletion(profile: str, no_seed: bool) -> None:
         raise SystemExit(1)
 
 
+@eval_group.command("drift")
+@click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
+@click.option("--start", is_flag=True, help="local only: start llama-server (with --ai-mode llama-server) and wrangler dev for the run, then stop them")
+@click.option("--ai-mode", type=click.Choice(["llama-server", "stub"]), default="llama-server", show_default=True, help="local only, with --start: the Worker's AI_MODE")
+def eval_drift(target: str, start: bool, ai_mode: str) -> None:
+    """Schema-drift triage over 120 labeled columns (resumable; writes evals/results/drift-<target>-<date>.json when complete)."""
+    from peoplevault.evals.drift import EvalStopped, HttpDriftClient, run
+
+    if target == "prod":
+        if start:
+            raise click.ClickException("--start applies to the local target only")
+        from peoplevault import config
+        from peoplevault.evals.client import ProdClient
+
+        http = ProdClient(config.prod_env())
+    else:
+        from peoplevault.evals.client import LocalClient
+        from peoplevault.evals.warmup import load_truth
+
+        http = LocalClient(load_truth("principals.json"))
+    if start:
+        from peoplevault.evals.deletion import _node
+
+        if ai_mode == "llama-server":
+            _node(["scripts/llm-serve.ts", "--detach"])
+        _node(["scripts/dev.ts", "--detach", "--no-executor", "--ai-mode", ai_mode])
+    command = f"uv run --project pipelines pv eval drift --target {target}" + (f" --start --ai-mode {ai_mode}" if start else "")
+    try:
+        out = run(HttpDriftClient(http), target, command=command)
+    except EvalStopped as e:
+        raise click.ClickException(str(e)) from e
+    finally:
+        if start:
+            from peoplevault.evals.deletion import _node
+
+            _node(["scripts/stop-local.ts"], check=False)
+    if not out["complete"]:
+        click.echo(f"drift ({target}, {out['model']}): {out['done']} of {out['done'] + out['remaining']} columns; stopped: {out['stopped']}. {out['resume']}")
+        return
+    sc = out["result"]["scores"]
+    click.echo(f"drift ({target}, {out['model']}): sensitive_recall {sc['sensitive_recall']} (rules {sc['rule_sensitive_recall']}, suggestions {sc['suggested_sensitive_recall']}), "
+               f"class accuracy {sc['model_class_accuracy']}, {out['result']['neurons_total']} neurons over {out['result']['days']} day(s)")
+    click.echo(f"wrote {out['written']}" if out.get("written") else f"not recorded: {out.get('note', 'write disabled')}")
+
+
 @main.command()
 @click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
 @click.option("--with-extracts", is_flag=True, help="also create the 6 analytics extracts as analyst-01")

@@ -36,6 +36,8 @@
     { "binding": "DERIVED", "bucket_name": "pv-derived" }
   ],
   "kv_namespaces": [{ "binding": "CACHE", "id": "__KV_ID__" }],
+  // Workers AI for the P1 schema-drift triage. Production only: a local AI binding would always call Cloudflare.
+  "ai": { "binding": "AI" },
   // The only Cron Trigger: reconcile deferred or orphaned requests, then the retention sweep when RETENTION_CRON=on.
   "triggers": { "crons": ["0 3 * * *"] },
   "vars": {
@@ -52,6 +54,12 @@
     // Decoded R2 bytes per Workflow step (SPEC.md section 30.3.1): erase 4 MiB, probe 2 MiB.
     "R2_ERASE_STEP_BYTES": "4194304",
     "R2_PROBE_STEP_BYTES": "2097152",
+    // Schema-drift triage (SPEC.md section 30.3.6): Workers AI through the AI Gateway "peoplevault" (no stored logs, no
+    // cache), at most 2,000 neurons per UTC day (80% of this repo's 25% share of Free's 10,000).
+    "AI_MODE": "workers-ai",
+    "AI_GATEWAY_ID": "peoplevault",
+    "AI_DAILY_NEURONS": "2000",
+    "LLM_URL": "",
     "RETENTION_AS_OF": "",
     "DEV_ACCESS_ISSUER": "",
     "DEV_ACCESS_AUD": "",

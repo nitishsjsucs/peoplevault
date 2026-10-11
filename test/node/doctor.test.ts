@@ -3,8 +3,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { CF_API } from "../../scripts/lib/cf-api.ts";
-import { auditCopyCheck, exitCode, freePlanUsage, githubChecks, localChecks, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
+import { CF_API, CfApi } from "../../scripts/lib/cf-api.ts";
+import { aiGatewayCheck, auditCopyCheck, exitCode, freePlanUsage, githubChecks, localChecks, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
 import { GITHUB_SECRETS, readGithubState, type GithubState } from "../../scripts/lib/github.ts";
 import { REPO_ROOT, type RunResult } from "../../scripts/lib/run.ts";
 
@@ -22,12 +22,14 @@ function deps(over: Partial<DoctorDeps> & { files?: Record<string, string>; comm
     ".dev.vars": "DEV_ACCESS_JWKS=a\nDEV_ACCESS_PRIVATE_JWK=b\nPV_PSEUDONYM_MASTER_KEY=c\nWAREHOUSE_SHIM_TOKEN=d\nGCP_GATEWAY_SA_KEY=\n",
     "pipelines/.data/warehouse.duckdb": "",
     "pipelines/.data/lake/catalog.db": "",
+    "~/Developer/projects/_models/Qwen3-1.7B-Q4_0-rtn.gguf": "",
     ...over.files,
   };
   const commands: Record<string, RunResult> = {
     "uv --version": ok("uv 0.12.17"),
     "uv sync --project pipelines --locked --check": ok(""),
     "uv python find 3.12": ok("/usr/bin/python3.12"),
+    "llama-server --version": ok("version: 0.5.0 (build 11146, commit 7fe450e19)"),
     "wrangler d1 execute pv-control --local --json --command SELECT COUNT(*) AS n FROM identity_map": ok(JSON.stringify([{ results: [{ n: 1200 }] }])),
     "wrangler whoami --json": ok(JSON.stringify({ loggedIn: false })),
     "uv run --project pipelines pv doctor gcp --json": ok(JSON.stringify([{ group: "Google Cloud", name: "gcloud", status: "missing", detail: "not installed", fix: "brew install --cask gcloud-cli" }])),
@@ -65,6 +67,16 @@ describe("doctor (local)", () => {
     const r = await localChecks(deps());
     expect(r.filter((x) => x.status !== "ok")).toEqual([]);
     expect(exitCode(r)).toBe(0);
+  });
+
+  it("llama-server and the Qwen3 model are optional (P1 local eval only): warnings, never missing", async () => {
+    const r = await localChecks(deps({ commands: { "llama-server --version": fail }, files: {}, env: { PV_LLM_MODEL: "/nowhere/model.gguf" } }));
+    const by = Object.fromEntries(r.map((x) => [x.name, x]));
+    expect(by["llama-server"]).toMatchObject({ status: "warn", fix: "brew install llama.cpp" });
+    expect(by["Qwen3 model file"]).toMatchObject({ status: "warn", detail: "/nowhere/model.gguf not found (needed only for the local schema-drift eval)" });
+    expect(exitCode(r)).toBe(0);
+    const okR = Object.fromEntries((await localChecks(deps())).map((x) => [x.name, x]));
+    expect(okR["llama-server"]).toMatchObject({ status: "ok", detail: "version: 0.5.0 (build 11146, commit 7fe450e19)" });
   });
 
   it("warns on Node 25 and busy ports, and is missing an unseeded store, with fixes", async () => {
@@ -267,8 +279,28 @@ describe("doctor --prod: Cloudflare name conflicts on the shared account", () =>
   });
 });
 
+describe("doctor --prod: the AI Gateway", () => {
+  const api = (route: string | Response) =>
+    new CfApi("acct", "t", (async () => {
+      if (route instanceof Response) return route;
+      const f = fixture(route);
+      return new Response(JSON.stringify(f.body), { status: f.status });
+    }) as unknown as typeof fetch);
+
+  it("ok with no stored logs, no cache and the rate limit; missing when absent, drifted or unreadable", async () => {
+    expect(await aiGatewayCheck(api("ai_gateway"))).toMatchObject({ status: "ok", detail: "peoplevault: no stored logs, no cache, 10 requests per 60 s" });
+    expect(await aiGatewayCheck(api("ai_gateway_missing"))).toMatchObject({ status: "missing", detail: "peoplevault not found", fix: "npm run setup:prod -- --only cloudflare" });
+    const drifted = new Response(JSON.stringify({ success: true, errors: [], result: { id: "peoplevault", collect_logs: true, cache_ttl: 60, rate_limiting_interval: 60, rate_limiting_limit: 10 } }), { status: 200 });
+    const d = await aiGatewayCheck(api(drifted));
+    expect(d.status).toBe("missing");
+    expect(d.detail).toBe("collect_logs is on (the gateway would store prompts and answers); cache_ttl is 60 (answers would be cached)");
+    const denied = new Response(JSON.stringify({ success: false, errors: [{ code: 10000, message: "Authentication error" }], result: null }), { status: 403 });
+    expect(await aiGatewayCheck(api(denied))).toMatchObject({ status: "missing", fix: "add AI Gateway Edit to PV_CF_API_TOKEN (docs/PRODUCTION.md step 7)" });
+  });
+});
+
 describe("doctor --prod: Free plan usage lines", () => {
-  const config = (cron: string) => `{ "vars": { "DAILY_DELETION_STARTS": "16", "RETENTION_CRON": "${cron}" } }`;
+  const config = (cron: string, ai = "") => `{ "vars": { "DAILY_DELETION_STARTS": "16", "RETENTION_CRON": "${cron}"${ai ? `, "AI_DAILY_NEURONS": "${ai}"` : ""} } }`;
   const d1 = (sql: string) => `wrangler d1 execute pv-control --remote -c infra/cloudflare/wrangler.production.jsonc --json --command ${sql}`;
   const NOW = new Date("2026-10-11T12:00:00Z");
   const commands = (admitted: number, rows: number) => ({
@@ -298,5 +330,15 @@ describe("doctor --prod: Free plan usage lines", () => {
     expect(by["D1 rows per probe"]!.status).toBe("warn");
     expect(by["CPU p99"]).toMatchObject({ status: "warn" });
     expect(by["CPU p99"]!.detail).toContain("8.20 ms");
+  });
+
+  it("reports today's Workers AI neurons against AI_DAILY_NEURONS, and warns when one more call could pass it", async () => {
+    const ai = (n: number) => ({ [d1("SELECT COALESCE(SUM(neurons), 0) AS n, COALESCE(SUM(calls), 0) AS c FROM ai_usage WHERE day = '2026-10-11'")]: ok(JSON.stringify([{ results: [{ n, c: 7 }] }])) });
+    const low = Object.fromEntries((await freePlanUsage(deps({ commands: { ...commands(3, 2900), ...ai(120.456) } }), config("on", "2000"), {}, "acct", NOW)).map((x) => [x.name, x]));
+    expect(low["Workers AI neurons today"]).toMatchObject({ status: "ok", detail: "120.46 of 2000 neurons used today (UTC) in 7 call(s)" });
+    const high = Object.fromEntries((await freePlanUsage(deps({ commands: { ...commands(3, 2900), ...ai(1990) } }), config("on", "2000"), {}, "acct", NOW)).map((x) => [x.name, x]));
+    expect(high["Workers AI neurons today"]!.status).toBe("warn");
+    const none = (await freePlanUsage(deps({ commands: commands(3, 2900) }), config("on"), {}, "acct", NOW)).map((x) => x.name);
+    expect(none).not.toContain("Workers AI neurons today");
   });
 });

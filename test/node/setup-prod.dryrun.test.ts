@@ -27,7 +27,7 @@ const ENV_FULL: Record<string, string> = {
 function empty(): SetupState {
   return {
     accountId: null, loggedIn: false, teamDomain: null, subdomain: null, buckets: [], d1: [], kv: [], queues: [], catalogEnabled: false, workerId: null,
-    workerSecrets: [], accessApp: null, serviceTokens: [], resources: {}, workerSecretsFile: [], renderedText: null,
+    workerSecrets: [], accessApp: null, serviceTokens: [], aiGateway: null, resources: {}, workerSecretsFile: [], renderedText: null,
     gcpMissing: [{ name: "gcloud", fix: "brew install --cask gcloud-cli" }], dataLoaded: false, github: NO_GITHUB,
   };
 }
@@ -51,9 +51,10 @@ function complete(): SetupState {
     queues: ["pv-retention-sweep", "pv-retention-dlq"], catalogEnabled: true, workerId: "w-1",
     workerSecrets: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"],
     accessApp: { id: "app-1", aud: "aud-123" }, serviceTokens: tokens,
+    aiGateway: { id: "peoplevault", collect_logs: false, cache_ttl: 0, rate_limiting_interval: 60, rate_limiting_limit: 10, rate_limiting_technique: "fixed" },
     resources: {
       d1_id: "11111111-2222-3333-4444-555555555555", kv_id: "0123456789abcdef0123456789abcdef", policy_tags: TAGS, audit_copy_table: true, audit_copy_expiration: true,
-      created_buckets: ["pv-source-exports", "pv-derived", "pv-lake"], created_queues: ["pv-retention-sweep", "pv-retention-dlq"], worker_deployed: true,
+      created_buckets: ["pv-source-exports", "pv-derived", "pv-lake"], created_queues: ["pv-retention-sweep", "pv-retention-dlq"], worker_deployed: true, ai_gateway_created: true,
     },
     workerSecretsFile: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"], renderedText: null, gcpMissing: [], dataLoaded: true,
     github: { authed: true, repo: REPO, secrets: [...GITHUB_SECRETS], variables: { PV_PROD_ENABLED: "true" }, workflowState: "active", lastSuccess: "2026-10-10T03:07:00Z" },
@@ -157,6 +158,20 @@ describe("setup:prod --dry-run", () => {
     expect(preflight(s, completeEnv())[0]!.fix).toContain("record it in .secrets/prod-resources.json");
     expect(preflight(complete(), completeEnv())).toEqual([]);
     expect(planSetup(complete(), completeEnv(), null).map((x) => x.id)).not.toContain("cloudflare:record");
+  });
+
+  it("the AI Gateway: created with no logs and no cache, repaired when its settings drift, never adopted without a record", () => {
+    const text = plan(partial(), { ...ENV_FULL });
+    expect(text).toContain('POST /client/v4/accounts/acct-0123/ai-gateway/gateways {"id":"peoplevault","cache_ttl":0,"cache_invalidate_on_update":false,"collect_logs":false,"rate_limiting_interval":60,"rate_limiting_limit":10,"rate_limiting_technique":"fixed"}');
+    const drifted = complete();
+    drifted.aiGateway = { ...drifted.aiGateway!, collect_logs: true, cache_ttl: 300 };
+    const steps = planSetup(drifted, completeEnv(), null).filter((x) => x.id.startsWith("ai-gateway"));
+    expect(steps.map((x) => x.id)).toEqual(["ai-gateway:update"]);
+    expect(steps[0]!.display).toContain("collect_logs is on");
+    expect(steps[0]!.display).toContain("cache_ttl is 300");
+    const unrecorded = complete();
+    unrecorded.resources = { ...unrecorded.resources, ai_gateway_created: false };
+    expect(preflight(unrecorded, completeEnv()).map((m) => m.item)).toEqual(["conflict: AI Gateway peoplevault exists but this repo has no record of creating it"]);
   });
 
   it("Workers Free: no plan creates Basin Pipelines resources or checks a Workers Paid plan", () => {

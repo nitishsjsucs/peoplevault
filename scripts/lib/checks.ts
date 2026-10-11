@@ -1,7 +1,8 @@
 // Doctor checks (SPEC.md section 22.1): one line per check, [ok], [warn] or [missing], and for every non-ok line the
 // exact command or console path that fixes it. Every dependency (commands, environment, files, HTTP, ports) is injected
 // so tests drive each check with a fake runner and recorded API responses.
-import { CfApi } from "./cf-api.ts";
+import { AI_GATEWAY_ID, gatewayDrift } from "./ai-gateway.ts";
+import { CfApi, CfApiError } from "./cf-api.ts";
 import { nameConflicts, type AccountResources } from "./conflicts.ts";
 import { FACTS, PER_INVOCATION, SHARE, projectedD1RowsRead } from "./free-budget.ts";
 import { EXECUTOR_WORKFLOW, GITHUB_SECRETS, MAX_RUN_AGE_HOURS, readGithubState, type GithubState } from "./github.ts";
@@ -78,6 +79,12 @@ export async function localChecks(d: DoctorDeps): Promise<CheckResult[]> {
     const py = await d.run("uv", ["python", "find", "3.12"]);
     out.push(py.code === 0 ? ok(G, "python 3.12", py.stdout.trim()) : missing(G, "python 3.12", "not available to uv", "uv python install 3.12"));
   }
+  // P1 schema-drift triage: only the local eval needs these (the Worker's default AI_MODE is the stub)
+  const llama = await d.run("llama-server", ["--version"]);
+  const llamaVersion = `${llama.stdout}\n${llama.stderr}`.match(/version: [^\n]+/)?.[0];
+  out.push(llama.code === 0 ? ok(G, "llama-server", llamaVersion ?? "found") : warn(G, "llama-server", "not found (needed only for the local schema-drift eval)", "brew install llama.cpp"));
+  const model = d.env.PV_LLM_MODEL ?? `${d.env.HOME ?? "~"}/Developer/projects/_models/Qwen3-1.7B-Q4_0-rtn.gguf`;
+  out.push(d.exists(model) ? ok(G, "Qwen3 model file", model) : warn(G, "Qwen3 model file", `${model} not found (needed only for the local schema-drift eval)`, "set PV_LLM_MODEL to the Qwen3-1.7B Q4_0 GGUF file"));
   const L = "Local data";
   if (!d.exists(".dev.vars")) out.push(missing(L, ".dev.vars", "missing", "npm run dev:keys"));
   else {
@@ -160,6 +167,8 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     const have = new Set(tokens.map((t) => t.name));
     const absent = PERSONA_TOKENS.filter((t) => !have.has(t));
     out.push(absent.length ? missing(X, "service tokens", `missing: ${absent.join(", ")}`, "npm run setup:prod") : ok(X, "service tokens", "5 of 5"));
+    // the AI Gateway, only when the production template binds Workers AI (SPEC.md section 16.3)
+    if (d.exists(TEMPLATE_PATH) && /"ai"\s*:\s*\{\s*"binding"/.test(d.readFile(TEMPLATE_PATH))) out.push(await aiGatewayCheck(api));
   }
   const R = "Cloudflare resources";
   const seen: AccountResources = { buckets: [], d1: [], kv: [], queues: [], workerId: null };
@@ -269,6 +278,22 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
   return out;
 }
 
+const TEMPLATE_PATH = "infra/cloudflare/wrangler.production.template.jsonc";
+
+/** The AI Gateway `peoplevault` exists with no stored logs, no cache and its rate limit (SPEC.md section 30.3.6). */
+export async function aiGatewayCheck(api: CfApi): Promise<CheckResult> {
+  const G = "Workers AI";
+  try {
+    const g = await api.aiGateway(AI_GATEWAY_ID);
+    if (!g) return missing(G, "AI Gateway", `${AI_GATEWAY_ID} not found`, "npm run setup:prod -- --only cloudflare");
+    const drift = gatewayDrift(g);
+    return drift.length ? missing(G, "AI Gateway", drift.join("; "), "npm run setup:prod -- --only cloudflare") : ok(G, "AI Gateway", `${AI_GATEWAY_ID}: no stored logs, no cache, 10 requests per 60 s`);
+  } catch (e) {
+    const scope = e instanceof CfApiError && e.status === 403;
+    return missing(G, "AI Gateway", scope ? "PV_CF_API_TOKEN cannot read AI Gateway" : "could not read the gateway", scope ? "add AI Gateway Edit to PV_CF_API_TOKEN (docs/PRODUCTION.md step 7)" : "npm run doctor -- --prod again later");
+  }
+}
+
 /** A var of the rendered production config ("" when absent). */
 export function configVar(text: string, name: string): string {
   return new RegExp(`"${name}"\\s*:\\s*"([^"]*)"`).exec(text)?.[1] ?? "";
@@ -307,6 +332,17 @@ export async function freePlanUsage(d: DoctorDeps, config: string, env: Record<s
     out.push(projected <= share ? ok(G, "D1 rows per probe", detail) : warn(G, "D1 rows per probe", detail, "archive old audit events and results, or lower DAILY_DELETION_STARTS"));
   } catch {
     out.push(warn(G, "D1 rows per probe", "could not count the probed tables", "npm run setup:prod"));
+  }
+  const aiCap = Number(configVar(config, "AI_DAILY_NEURONS")) || null;
+  if (aiCap !== null) {
+    try {
+      const r = (await d1(`SELECT COALESCE(SUM(neurons), 0) AS n, COALESCE(SUM(calls), 0) AS c FROM ai_usage WHERE day = '${now.toISOString().slice(0, 10)}'`))[0]!.results[0]!;
+      const n = Math.round(Number(r.n) * 100) / 100;
+      const detail = `${n} of ${aiCap} neurons used today (UTC) in ${Number(r.c)} call(s)`;
+      out.push(n + 25.83 > aiCap ? warn(G, "Workers AI neurons today", `${detail}: triage falls back to the rule class until 00:00 UTC`, "wait for the next UTC day") : ok(G, "Workers AI neurons today", detail));
+    } catch {
+      out.push(warn(G, "Workers AI neurons today", "could not read ai_usage", "npx wrangler d1 migrations apply pv-control --remote -c infra/cloudflare/wrangler.production.jsonc"));
+    }
   }
   out.push(await cpuP99(d, env, accountId, now));
   return out;

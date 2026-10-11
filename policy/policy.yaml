@@ -30,7 +30,7 @@ personas:
     label: Privacy Officer
     grants:
       privacy_compliance:
-        [identity_lookup, create_deletion_request, read_deletion_request, read_assets, read_report, read_audit, run_retention]
+        [identity_lookup, create_deletion_request, read_deletion_request, read_assets, read_report, read_audit, run_retention, triage_schema_drift]
       legal_hold_management: [identity_lookup, place_legal_hold, release_legal_hold, read_legal_holds]
 
 # System principals are not personas. They may call only these actions, and humans may never call them.

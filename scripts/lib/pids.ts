@@ -49,10 +49,12 @@ function alive(pgid: number): boolean {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** SIGTERM, then SIGKILL after a grace period, for every recorded process group; removes the pidfiles. */
-export async function stopAll(graceMs = 5000): Promise<string[]> {
+/** SIGTERM, then SIGKILL after a grace period, for every recorded process group (or only the named ones); removes
+ * their pidfiles. */
+export async function stopAll(graceMs = 5000, only: string[] | null = null): Promise<string[]> {
   const stopped: string[] = [];
   for (const p of readPidFiles()) {
+    if (only && !only.includes(p.name)) continue;
     if (alive(p.pgid)) {
       try {
         process.kill(-p.pgid, "SIGTERM");

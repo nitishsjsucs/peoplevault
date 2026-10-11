@@ -33,6 +33,8 @@ export interface Config {
   dev: { issuer: string; aud: string; jwks: string; privateJwk: string | null } | null;
   shim: { url: string; token: string } | null;
   bigquery: { projectId: string; location: string; gatewaySaEmail: string; gatewayKeyJson: string; purposeSa: PurposeSaMap } | null;
+  /** Schema-drift triage model (SPEC.md sections 16.3 and 30.3.6). dailyNeurons null means unlimited (local). */
+  ai: { mode: "workers-ai" | "llama-server" | "stub"; gatewayId: string | null; dailyNeurons: number | null; llmUrl: string | null };
 }
 
 export class ConfigError extends Error {
@@ -148,6 +150,20 @@ export function loadConfig(envIn: Env | Record<string, unknown>): Config {
     shim = { url: req(env, "WAREHOUSE_SHIM_URL", "WAREHOUSE_MODE=local-shim"), token: req(env, "WAREHOUSE_SHIM_TOKEN", "WAREHOUSE_MODE=local-shim") };
   }
 
+  // Schema-drift triage: Workers AI through the AI Gateway in production (with a daily neuron cap), llama-server or a
+  // deterministic stub locally. A missing AI_MODE (tests that bind a partial environment) is the stub.
+  const aiMode = z.enum(["workers-ai", "llama-server", "stub"]).safeParse(opt(env.AI_MODE) ?? "stub");
+  if (!aiMode.success) throw new ConfigError("AI_MODE must be workers-ai, llama-server or stub");
+  const ai: Config["ai"] = { mode: aiMode.data, gatewayId: opt(env.AI_GATEWAY_ID), dailyNeurons: positiveInt(env, "AI_DAILY_NEURONS"), llmUrl: opt(env.LLM_URL) };
+  if (ai.mode === "workers-ai") {
+    req(env, "AI_GATEWAY_ID", "AI_MODE=workers-ai");
+    req(env, "AI_DAILY_NEURONS", "AI_MODE=workers-ai");
+  }
+  if (ai.mode === "llama-server") {
+    if (pvEnv.data !== "local") throw new ConfigError("AI_MODE=llama-server requires PV_ENV=local");
+    req(env, "LLM_URL", "AI_MODE=llama-server");
+  }
+
   return {
     env: pvEnv.data,
     authMode: authMode.data,
@@ -165,5 +181,6 @@ export function loadConfig(envIn: Env | Record<string, unknown>): Config {
     dev,
     shim,
     bigquery,
+    ai,
   };
 }

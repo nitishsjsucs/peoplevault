@@ -36,6 +36,12 @@ describe("D1 control-plane schema", () => {
     expect(idx).toEqual({ name: "deletion_requests_admitted" });
   });
 
+  it("migration 0006 adds the Workers AI neuron meter ai_usage (day, model, neurons, calls)", async () => {
+    const cols = (await env.DB.prepare("PRAGMA table_info(ai_usage)").all<{ name: string; pk: number }>()).results;
+    expect(cols.map((c) => c.name)).toEqual(["day", "model", "neurons", "calls"]);
+    expect(cols.filter((c) => c.pk > 0).map((c) => c.name)).toEqual(["day", "model"]);
+  });
+
   it("allows only one active request per subject (unique partial index)", async () => {
     await insertRequest("r1", "sr_subject_one", "running");
     await expect(insertRequest("r2", "sr_subject_one", "received")).rejects.toThrow(/UNIQUE/);

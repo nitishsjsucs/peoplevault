@@ -76,6 +76,25 @@ describe("readme:results", () => {
     expect(text).toContain("Largest step-sized path: 1.8 ms (fastest warm run; largest median 1.8 ms) on this machine; at 3 times (edge cores and cold isolates) 5.40 ms against Free's 10 ms (within the design target of 2.5 ms here");
   });
 
+  it("renders the schema-drift triage with the model that produced every number, and its neurons and days", () => {
+    const f: ResultFile = {
+      name: "drift-local-2026-10-11.json",
+      data: {
+        ...header, kind: "drift", target: "local", date: "2026-10-11", command: "uv run --project pipelines pv eval drift --target local --start --ai-mode llama-server",
+        environment: "local (Miniflare, llama-server/Qwen3-1.7B-Q4_0 on port 8170)", model: "llama-server/Qwen3-1.7B-Q4_0", neurons_total: 0, calls: 120, days: 1, rates_checked: "2026-10-10", daily_cap: null,
+        scores: { columns: 120, sensitive_columns: 84, sensitive_recall: 0.9048, sensitive_recall_opaque_names: 0.8333, rule_sensitive_recall: 0.5595, suggested_sensitive_recall: 0.9524, model_class_accuracy: 0.725, suggested_false_sensitive_rate: 0.1389, invalid_outputs: 0 },
+      },
+    };
+    const text = renderResults([deletionFile(), f]);
+    expect(text).toContain("All results below are local (Miniflare, DuckDB, pyiceberg SqlCatalog, llama-server)");
+    expect(text).toContain("**Schema-drift triage, local** (`uv run --project pipelines pv eval drift --target local --start --ai-mode llama-server`, 2026-10-11; local (Miniflare, llama-server/Qwen3-1.7B-Q4_0 on port 8170))");
+    expect(text).toContain("- Model: `llama-server/Qwen3-1.7B-Q4_0`; every number below comes from this model only");
+    expect(text).toContain("- Sensitive recall: 90.5% of 84 labeled sensitive columns put in a sensitive class (83.3% where the name is opaque); rule classes alone 56.0%, suggestions max_severity(rule, model) 95.2%");
+    expect(text).toContain("- Cost: 0 neurons in 120 calls over 1 day(s) (rates of 2026-10-10, no cap locally)");
+    expect(text.indexOf("Schema-drift")).toBeGreaterThan(text.indexOf("Deletion eval"));
+    expect(renderResults([deletionFile()])).not.toContain("llama-server");
+  });
+
   it("refuses files with a missing header field or from a dirty tree", () => {
     for (const k of ["command", "date", "git_sha", "git_dirty", "environment"]) {
       const f = deletionFile();

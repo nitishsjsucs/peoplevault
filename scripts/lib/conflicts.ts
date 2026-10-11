@@ -1,5 +1,5 @@
 // Same-named Cloudflare resources this repo has no record of (SPEC.md section 30.3.9). The Cloudflare account is shared
-// with three other repos, so setup:prod never adopts a bucket, database, namespace, queue or Worker with one of this
+// with three other repos, so setup:prod never adopts a bucket, database, namespace, queue, Worker or AI Gateway with one of this
 // repo's names unless .secrets/prod-resources.json records that this repo created it; it stops and names the conflict.
 import type { ProdResources } from "./prod-files.ts";
 
@@ -15,6 +15,8 @@ export interface AccountResources {
   kv: { id: string; title: string }[];
   queues: string[];
   workerId: string | null;
+  /** an AI Gateway named peoplevault exists (P1 schema-drift triage) */
+  aiGateway?: boolean;
 }
 
 export interface Conflict {
@@ -36,5 +38,6 @@ export function nameConflicts(a: AccountResources, r: ProdResources): Conflict[]
   const createdQueues = new Set(r.created_queues ?? []);
   for (const q of QUEUES) if (a.queues.includes(q) && !createdQueues.has(q)) out.push({ item: `Queue ${q} exists but this repo has no record of creating it`, fix: record(`"created_queues": [..., "${q}"]`) });
   if (a.workerId && !r.worker_deployed) out.push({ item: `Worker ${WORKER_NAME} exists but this repo has no record of deploying it`, fix: record(`"worker_deployed": true`) });
+  if (a.aiGateway && !r.ai_gateway_created) out.push({ item: `AI Gateway ${WORKER_NAME} exists but this repo has no record of creating it`, fix: record(`"ai_gateway_created": true`) });
   return out;
 }

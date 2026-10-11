@@ -7,7 +7,8 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
-import { CfApi } from "./lib/cf-api.ts";
+import { AI_GATEWAY_ID, AI_GATEWAY_SETTINGS, gatewayDrift } from "./lib/ai-gateway.ts";
+import { CfApi, type AiGateway } from "./lib/cf-api.ts";
 import { PERSONA_ENV, PERSONA_TOKENS } from "./lib/checks.ts";
 import { EXECUTOR_KEY_SECRET, EXECUTOR_WORKFLOW, GITHUB_SECRET_SOURCES, readGithubState, sha256, type GithubState } from "./lib/github.ts";
 import {
@@ -49,6 +50,8 @@ export interface SetupState {
   workerSecrets: string[];
   accessApp: { id: string; aud: string } | null;
   serviceTokens: { id: string; name: string; client_id: string }[];
+  /** the AI Gateway `peoplevault` (P1 schema-drift triage), or null when absent or unreadable */
+  aiGateway: AiGateway | null;
   resources: ProdResources;
   /** names present in .secrets/worker-secrets.env */
   workerSecretsFile: string[];
@@ -92,7 +95,7 @@ export function preflight(s: SetupState, env: Record<string, string>): Missing[]
     out.push({ item: "workers.dev subdomain", fix: `https://dash.cloudflare.com/${acct(s)}/workers/onboarding, or set PV_WORKERS_SUBDOMAIN in .secrets/prod.env` });
   for (const g of s.gcpMissing) out.push({ item: `Google Cloud: ${g.name}`, fix: g.fix });
   // shared Cloudflare account (SPEC.md section 30.3.9): never adopt a same-named resource this repo has no record of
-  for (const c of nameConflicts(s, s.resources)) out.push({ item: `conflict: ${c.item}`, fix: c.fix });
+  for (const c of nameConflicts({ ...s, aiGateway: s.aiGateway !== null }, s.resources)) out.push({ item: `conflict: ${c.item}`, fix: c.fix });
   return out;
 }
 
@@ -125,6 +128,9 @@ export function planSetup(s: SetupState, env: Record<string, string>, render: st
   for (const q of QUEUES) if (!s.queues.includes(q)) add("cloudflare", `queue:${q}`, `${W} queues create ${q}`);
   if (!s.catalogEnabled) add("cloudflare", "catalog:enable", `${W} basin catalog enable pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE in .secrets/prod.env)`);
   else if (!env.PV_CATALOG_URI || !env.PV_CATALOG_WAREHOUSE) add("cloudflare", "catalog:record", `GET /client/v4/accounts/${acct(s)}/r2-catalog/pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE)`);
+  // the AI Gateway of the P1 schema-drift triage: no stored logs, no cache, 10 requests a minute (SPEC.md 30.3.6)
+  if (!s.aiGateway) add("cloudflare", "ai-gateway:create", `POST /client/v4/accounts/${acct(s)}/ai-gateway/gateways ${JSON.stringify(AI_GATEWAY_SETTINGS)}`);
+  else if (gatewayDrift(s.aiGateway).length) add("cloudflare", "ai-gateway:update", `PUT /client/v4/accounts/${acct(s)}/ai-gateway/gateways/${AI_GATEWAY_ID} (${gatewayDrift(s.aiGateway).join("; ")})`);
   // gcp
   add("gcp", "gcp:setup", "uv run --project pipelines pv setup gcp (idempotent; its own plan: uv run --project pipelines pv setup gcp --dry-run)");
   // worker
@@ -235,6 +241,7 @@ export async function gatherState(d: SetupDeps, env: Record<string, string>): Pr
     workerSecrets: [],
     accessApp: null,
     serviceTokens: [],
+    aiGateway: null,
     resources: readResources(),
     workerSecretsFile: Object.keys(readEnvFile(WORKER_SECRETS)).filter((k) => readEnvFile(WORKER_SECRETS)[k]),
     renderedText: existsSync(RENDERED) ? readFileSync(RENDERED, "utf8") : null,
@@ -250,6 +257,7 @@ export async function gatherState(d: SetupDeps, env: Record<string, string>): Pr
     const app = (await api.accessApps().catch(() => [])).find((a) => a.name === "PeopleVault");
     s.accessApp = app ? { id: app.id, aud: app.aud } : null;
     s.workerId = (await api.workers().catch(() => [])).find((w) => w.name === "peoplevault")?.id ?? null;
+    s.aiGateway = await api.aiGateway(AI_GATEWAY_ID).catch(() => null);
   }
   if (accountId && s.loggedIn) {
     const oauth = tryJson<{ token?: string }>((await d.run(d.wrangler, ["auth", "token", "--json"])).stdout, {}).token;
@@ -338,6 +346,15 @@ async function applyStep(st: Step, s: SetupState, env: Record<string, string>): 
       if (!c.uri || !c.warehouse) throw new Error("could not read the Catalog URI and Warehouse; copy them from the dashboard (R2, pv-lake, Settings) into .secrets/prod.env as PV_CATALOG_URI and PV_CATALOG_WAREHOUSE");
       upsertEnvFile(PROD_ENV, { PV_CATALOG_URI: c.uri, PV_CATALOG_WAREHOUSE: c.warehouse });
       writeResources({ catalog_uri: c.uri, catalog_warehouse: c.warehouse });
+      return;
+    }
+    case "ai-gateway:create":
+      await api().createAiGateway(AI_GATEWAY_SETTINGS);
+      writeResources({ ai_gateway_created: true });
+      return;
+    case "ai-gateway:update": {
+      const { id: _id, ...settings } = AI_GATEWAY_SETTINGS;
+      await api().updateAiGateway(AI_GATEWAY_ID, settings);
       return;
     }
     case "gcp:setup": {

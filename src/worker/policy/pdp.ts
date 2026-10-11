@@ -19,6 +19,7 @@ export type Action =
   | "read_report"
   | "read_audit"
   | "run_retention"
+  | "triage_schema_drift"
   | "executor_claim"
   | "executor_complete"
   | "executor_suppression"

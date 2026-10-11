@@ -1,0 +1,11 @@
+{
+  "_comment": "Workers AI rates in neurons per million tokens (SPEC.md section 30.1, F17), read on 2026-10-10 from the source below. The Worker meters neurons with these rates and `pv eval drift` sums the same numbers. Local models are not billed.",
+  "source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+  "checked": "2026-10-10",
+  "models": {
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast": { "input": 26668, "output": 204805, "billed": true },
+    "@cf/meta/llama-3.1-8b-instruct-fp8": { "input": 13778, "output": 26128, "billed": true },
+    "llama-server/Qwen3-1.7B-Q4_0": { "input": 0, "output": 0, "billed": false },
+    "stub": { "input": 0, "output": 0, "billed": false }
+  }
+}

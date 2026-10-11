@@ -24,7 +24,7 @@ CATEGORIES: tuple[str, ...] = ("source_exports", "warehouse_tables", "historical
 HUMAN_ACTIONS: tuple[str, ...] = (
     "list_employees", "read_profile", "read_dataset", "create_extract", "identity_lookup",
     "create_deletion_request", "read_deletion_request", "place_legal_hold", "release_legal_hold", "read_legal_holds",
-    "read_assets", "read_report", "read_audit", "run_retention",
+    "read_assets", "read_report", "read_audit", "run_retention", "triage_schema_drift",
 )
 SYSTEM_ACTIONS: tuple[str, ...] = ("executor_claim", "executor_complete", "executor_suppression", "executor_audit_export")
 PROFILE_BASE_SOURCES = ("profile_base", "attrition_features", "headcount_monthly")

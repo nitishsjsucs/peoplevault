@@ -32,7 +32,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the audit copy when due and the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
 | The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built; the local rehearsal ran (Results); the production run is written, not yet executed |
 | Privacy console (React SPA in `src/web`, deployed with the Worker as Workers static assets: sign-in, purpose-scoped employee browser with masked columns labeled, deletion requests with identity lookup by POST, request detail with receipt and retry, legal holds, coverage report, audit log with the windowed chain check) | built, tested (happy-dom against a mocked API, plus a contract test of every route it reads); used locally against `wrangler dev`; not yet deployed |
-| P1 Workers AI schema-drift triage | not built yet |
+| Schema-drift triage (P1): rule classes plus a model's class for a column of a quarantined export, suggestion max_severity(rule, model), never a policy change; Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` through the AI Gateway (no stored logs, no cache) with a D1 neuron meter capped at 2,000 a day; Qwen3-1.7B on llama-server or a stub locally; resumable eval over 120 labeled columns | built, tested (Worker, scripts and pytest), used locally against llama-server; the eval result is recorded from a clean tree in the next commit; the Workers AI path is written, not yet executed |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service. Until the production runs in [docs/PRODUCTION.md](docs/PRODUCTION.md) pass, the honest wording for the BigQuery and Cloudflare parts is "designed for" them and "verified against local stand-ins" (SPEC.md section 24).
 
@@ -65,6 +65,7 @@ flowchart LR
   R2D[("R2 pv-derived<br/>analytics extracts")]
   KV[("KV pv-cache<br/>profile cards, team rosters")]
   Q[["Queue pv-retention-sweep<br/>+ pv-retention-dlq (24 h retention on Free)"]]
+  LLM["Schema-drift triage model (P1)<br/>production: Workers AI via AI Gateway, 2,000 neurons a day<br/>local: llama-server Qwen3-1.7B :8170 or stub"]
   subgraph Python["Python (uv): executor, loaders, verifiers"]
     EXE["Executor loop<br/>claims tasks over HTTPS"]
     AEX["pv audit export<br/>seq cursor in the Iceberg snapshot summary"]
@@ -87,6 +88,7 @@ flowchart LR
   API -->|"production: BigQuery REST as purpose identity"| BQ
   API -->|"local: named query"| SHIM --> DUCK
   API --> KV
+  API -->|"schema-drift suggest (classes only)"| LLM
   API --> AUDIT --> D1
   API -->|"create when admitted"| ADM --> WF1
   CRON --> ADM
@@ -156,6 +158,7 @@ Cloudflare Access authenticates; the Worker verifies the Access JWT itself and i
 | Recovery windows | modeled from the 48 h setting (labeled modeled) | observed with time travel queries; fail-safe modeled |
 | Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake` (R2 subscription, Free plan), managed snapshot expiration |
 | Audit copy | `pv audit export --target local` into the SqlCatalog table `governance.audit_events` | the same command into the Basin Catalog table `governance.audit_events` (exactly once, cursor in the snapshot summary), from `executor.yml` or the production eval; no Basin Pipelines (Workers Paid only) |
+| Schema-drift triage model | deterministic stub by default; Qwen3-1.7B Q4_0 on llama-server (port 8170, `npm run llm:serve`) for the local eval; no cap | Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` through AI Gateway `peoplevault` (no stored logs, no cache), at most 2,000 neurons per UTC day (the triage falls back to the rule class above it) |
 | Executor | `pv serve` thread (0.5 s poll) | `pv executor run --target prod` from the owner's Mac (5 s poll), impersonating `peoplevault-executor`; hourly in `executor.yml` |
 | Production API calls | recorded-response contract tests and `--dry-run` golden plans only | live, after setup; each path labeled "written, not yet executed" above until it has run |
 
@@ -185,6 +188,7 @@ npm run test:py             # pytest (the live BigQuery suite and the end-to-end
 npm run eval:authz          # the 100 authorization cases at the decision point and the 48 warehouse cases on DuckDB
 npm run eval:deletion:ci    # the ci deletion eval and its gate (CI runs it); npm run eval:deletion runs the full profile
 npm run bench:cpu           # CPU of the Worker's hot paths over the generated population (local)
+uv run --project pipelines pv eval drift --target local --start --ai-mode llama-server   # schema-drift triage over 120 labeled columns (starts llama-server and the Worker, stops both)
 ```
 
 ## Production setup
@@ -281,6 +285,7 @@ About the two applicability disagreements in the full profile: a team roster is 
 - `subject_ref` and opaque principal ids are kept in the audit log by design (ADR 0005).
 - The 20 planted residues of the full eval are of the types the probes are designed to find; detecting them shows the probes reach every store, not that they would find any possible copy.
 - The CPU sizing rests on measurements on the owner's Mac times 3; the canary deletion and the doctor's CPU p99 line check it in production, and the byte caps are Worker vars.
+- The schema-drift triage suggests a class; it never releases a quarantined export (only an edit of `policy.yaml` does). Sample values of a quarantined export go to the model (in production through an AI Gateway that stores nothing) and are never stored, logged or returned. The local recall comes from a 1.7B model and says nothing about the production model's.
 - The privacy console is tested with happy-dom against a mocked API and a Worker contract test of the routes it reads; there is no automated browser test against a running Worker.
 - The audit copy lags D1 by up to a day in production (exported when 1,000 events wait or the last copy is a day old).
 

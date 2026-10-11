@@ -1,11 +1,12 @@
 Preflight: ok
-cloudflare: 6 step(s)
+cloudflare: 7 step(s)
   PUT /client/v4/accounts/acct-0123/workers/subdomain {"subdomain":"nitish-pv"} (asks first)
   npx wrangler r2 bucket create pv-derived
   npx wrangler r2 bucket create pv-lake
   npx wrangler kv namespace create pv-cache (records id)
   npx wrangler queues create pv-retention-dlq
   npx wrangler basin catalog enable pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE in .secrets/prod.env)
+  POST /client/v4/accounts/acct-0123/ai-gateway/gateways {"id":"peoplevault","cache_ttl":0,"cache_invalidate_on_update":false,"collect_logs":false,"rate_limiting_interval":60,"rate_limiting_limit":10,"rate_limiting_technique":"fixed"}
 gcp: 1 step(s)
   uv run --project pipelines pv setup gcp (idempotent; its own plan: uv run --project pipelines pv setup gcp --dry-run)
 worker: 5 step(s)

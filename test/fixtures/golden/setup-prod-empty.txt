@@ -15,7 +15,7 @@ Preflight: missing (only you can do these; docs/PRODUCTION.md)
       fix: add email=principalId pairs to .secrets/prod.env (docs/PRODUCTION.md step 15)
   [missing] Google Cloud: gcloud
       fix: brew install --cask gcloud-cli
-cloudflare: 8 step(s)
+cloudflare: 9 step(s)
   npx wrangler r2 bucket create pv-source-exports
   npx wrangler r2 bucket create pv-derived
   npx wrangler r2 bucket create pv-lake
@@ -24,6 +24,7 @@ cloudflare: 8 step(s)
   npx wrangler queues create pv-retention-sweep
   npx wrangler queues create pv-retention-dlq
   npx wrangler basin catalog enable pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE in .secrets/prod.env)
+  POST /client/v4/accounts/<ACCOUNT_ID>/ai-gateway/gateways {"id":"peoplevault","cache_ttl":0,"cache_invalidate_on_update":false,"collect_logs":false,"rate_limiting_interval":60,"rate_limiting_limit":10,"rate_limiting_technique":"fixed"}
 gcp: 1 step(s)
   uv run --project pipelines pv setup gcp (idempotent; its own plan: uv run --project pipelines pv setup gcp --dry-run)
 worker: 4 step(s)

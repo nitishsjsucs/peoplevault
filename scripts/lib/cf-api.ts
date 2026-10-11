@@ -1,5 +1,5 @@
 // Cloudflare REST client for setup:prod and doctor. Two credentials, never printed: PV_CF_API_TOKEN (Access, Workers
-// subdomain, Workers scripts) and wrangler's OAuth token (R2, KV, Queues, Basin listings), read into memory with
+// subdomain, Workers scripts, AI Gateway) and wrangler's OAuth token (R2, KV, Queues, Basin listings), read into memory with
 // `wrangler auth token --json`. The fetch implementation is injectable so recorded responses test every call.
 export const CF_API = "https://api.cloudflare.com/client/v4";
 
@@ -26,6 +26,15 @@ export interface AccessApp {
   aud: string;
   type: string;
   destinations?: { type: string; worker_id?: string; uri?: string }[];
+}
+export interface AiGateway {
+  id: string;
+  collect_logs: boolean;
+  cache_ttl: number | null;
+  cache_invalidate_on_update?: boolean;
+  rate_limiting_interval: number | null;
+  rate_limiting_limit: number | null;
+  rate_limiting_technique?: string;
 }
 export interface ServiceToken {
   id: string;
@@ -108,6 +117,21 @@ export class CfApi {
   }
   queues(): Promise<{ queue_id: string; queue_name: string }[]> {
     return this.call("GET", this.acct("/queues"));
+  }
+  /** One AI Gateway, or null when the account has none with this id (404). */
+  async aiGateway(id: string): Promise<AiGateway | null> {
+    try {
+      return await this.call<AiGateway>("GET", this.acct(`/ai-gateway/gateways/${id}`));
+    } catch (e) {
+      if (e instanceof CfApiError && e.status === 404) return null;
+      throw e;
+    }
+  }
+  createAiGateway(body: unknown): Promise<AiGateway> {
+    return this.call("POST", this.acct("/ai-gateway/gateways"), body);
+  }
+  updateAiGateway(id: string, body: unknown): Promise<AiGateway> {
+    return this.call("PUT", this.acct(`/ai-gateway/gateways/${id}`), body);
   }
   /** Basin Catalog (formerly R2 Data Catalog) status of a bucket; endpoint shape unverified (SPEC.md section 27). */
   catalog(bucket: string): Promise<{ status?: string; name?: string }> {

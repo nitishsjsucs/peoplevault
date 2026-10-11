@@ -26,3 +26,7 @@ export const ReportQuery = z
   .strict();
 /** GET /api/v1/executor/audit-export?after_seq&limit (SPEC.md section 30.3.3) */
 export const AuditExportQuery = z.object({ after_seq: z.coerce.number().int().min(0), limit: z.coerce.number().int().min(1).max(500) }).strict();
+/** Schema-drift triage (SPEC.md sections 16.3 and 30.3.6): a column name and at most 5 sample values. */
+const columnName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_ .-]{0,63}$/);
+export const DriftClassifyBody = z.object({ column: columnName, samples: z.array(z.string().max(200)).max(5) }).strict();
+export const DriftSuggestBody = z.object({ column: columnName }).strict();

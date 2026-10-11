@@ -1,0 +1,2 @@
+{ "_note": "Constructed from the Cloudflare API reference on 2026-10-11; the error code of a missing gateway is unverified (the doctor and setup only read the HTTP status 404).", "_source": "https://developers.cloudflare.com/api/resources/ai_gateway/methods/get/",
+  "status": 404, "body": { "success": false, "errors": [ { "code": 7002, "message": "Not Found" } ], "messages": [], "result": null } }

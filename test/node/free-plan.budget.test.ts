@@ -21,7 +21,7 @@ const caps: Caps = {
   retentionDailyMax: Number(template.vars.RETENTION_DAILY_MAX),
   queueMaxRetries: template.queues.consumers[0]!.max_retries,
   cronTriggers: template.triggers.crons.length,
-  aiDailyNeurons: 2000,
+  aiDailyNeurons: Number(template.vars.AI_DAILY_NEURONS),
 };
 
 describe("Workers Free budget: the worst-case day within a 25% share of every per-account allowance", () => {

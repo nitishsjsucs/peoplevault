@@ -46,6 +46,11 @@
     // Decoded R2 bytes per Workflow step, the same caps as production (SPEC.md section 30.3.1).
     "R2_ERASE_STEP_BYTES": "4194304",
     "R2_PROBE_STEP_BYTES": "2097152",
+    // Schema-drift triage (SPEC.md section 30.3.6): "stub" or "llama-server" (npm run llm:serve) locally, no cap.
+    "AI_MODE": "stub",
+    "AI_GATEWAY_ID": "",
+    "AI_DAILY_NEURONS": "",
+    "LLM_URL": "http://127.0.0.1:8170",
     "RETENTION_AS_OF": "2026-09-30",
     "DEV_ACCESS_ISSUER": "https://dev.peoplevault.test",
     "DEV_ACCESS_AUD": "peoplevault-local",
