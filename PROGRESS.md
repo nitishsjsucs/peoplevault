@@ -4,7 +4,7 @@ Tracks the build against the commit plan in SPEC.md section 26. Updated in every
 
 ## Position
 
-Commit 15 done: `feat(api): privacy, legal hold and executor routes with the 100-case authorization harness`. Commits are numbered in the order made.
+Commit 16 done (spec item 15): `test(authz): warehouse-layer cases on DuckDB`. Commits are numbered in the order made.
 
 ## Done
 
@@ -25,14 +25,15 @@ Commit 15 done: `feat(api): privacy, legal hold and executor routes with the 100
 | 13 | `feat(shim): local warehouse shim and Worker warehouse clients` | Python shim (`POST /v1/query`, token required, only compiled query ids, typed params, purpose-to-schema allowlist emulating dataset IAM) and `pv serve` (shim only for now; the executor loop joins it in the executor commit); Worker `WarehouseClient` with the shim client, the BigQuery REST client (named params, `useQueryCache: false`, purpose labels, `jobComplete: false` polling, `pageToken` paging, f/v normalization incl. REPEATED and RECORD, error classification) and the gateway token source (RS256 JWT bearer grant, `generateAccessToken` lifetime 300 s, 4-minute purpose token cache); recorded-response contract fixtures (constructed from the API references, labeled as such) and contract tests |
 | 14 | `feat(api): purpose data routes with suppression-aware KV cache and hash-chained audit` | list (100-row pages, unknown query parameters rejected), profile (ref kind check, D1 identity and suppression check, KV cache with row-scope re-check on hits, never caches a suppressed subject), team roster (`team:{manager_ref}`, suppressed manager neither served nor cached), analyst datasets and R2 extracts (custom metadata, extract columns only), POST-only identity lookup; every allow and deny audited; hash-chained audit log with head-guarded inserts (concurrent appends retry, never fork) and verification; fixture-backed FakeWarehouse and D1 seed helpers; route, suppression and audit chain tests |
 | 15 | `feat(api): privacy, legal hold and executor routes with the 100-case authorization harness` | DSR create (202, workflow instance named after the request, 409 `active_request_exists`), list, detail, receipt, retry (`<id>-r<n>`); legal holds place, release (resubmits held requests when no other hold remains) and list; asset inventory with live counts and R2 key listing; audit list and verify; executor claim (exclusive leases, expired leases reclaimed), complete (lease owner only, zod result schema that rejects identifier-like strings, `sendEvent` to the instance), suppression list and residual routes; `test/worker/authz.cases.test.ts` runs all 100 cases through `buildApp` (100 passing); holds routes moved earlier than spec item 19 because cases F05 to F09 need them |
+| 16 | `test(authz): warehouse-layer cases on DuckDB` | `pv authz warehouse --target local [--write-results --pdp-report]`: the 48 warehouse-layer cases (C 30, D 15, E 3) against the purpose views and table macros of a DuckDB built from world.yaml through the shim query function; a non-vacuity test (a leaky view fails); `npm run eval:authz` writes `evals/results/authz-local-<date>.json` with per-layer and per-category counts (vitest JSON report for the pdp layer) |
 
 ## Next
 
-16. `test(authz): warehouse-layer cases on DuckDB` (spec item 15), then 17. `feat(deletion): subject deletion workflow, conditional R2 rewrites and executor task protocol`
+17. `feat(deletion): subject deletion workflow, conditional R2 rewrites and executor task protocol`
 
 ## Check status
 
-At commit 15: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 210 passed, 0 failed (incl. the 100 authorization cases; the placeholder deletion workflow logs an expected uncaught error when F01 starts an instance, until the workflow commit); `npm run test:py` 130 passed, 0 failed; `pv fixtures check` clean; `ruff check pipelines` clean; `pv policy check` clean.
+At commit 16: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 210 passed, 0 failed (incl. the 100 authorization cases; the placeholder deletion workflow logs an expected uncaught error when F01 starts an instance, until the workflow commit); `npm run test:py` 132 passed, 0 failed; `pv fixtures check` clean; `npm run eval:authz` pdp 100/100, warehouse 48/48; `ruff check pipelines` clean; `pv policy check` clean.
 
 ## Deviations from SPEC.md
 

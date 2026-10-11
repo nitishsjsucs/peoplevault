@@ -103,6 +103,51 @@ def serve(port: int | None) -> None:
 
 
 @main.group()
+def authz() -> None:
+    """Authorization cases at the warehouse layer."""
+
+
+@authz.command("warehouse")
+@click.option("--target", type=click.Choice(["local", "bigquery"]), default="local", show_default=True)
+@click.option("--write-results", is_flag=True, help="write evals/results/authz-local-<date>.json")
+@click.option("--pdp-report", type=click.Path(exists=True, dir_okay=False), default=None, help="vitest JSON report of the 100 pdp cases")
+@click.option("--ceiling-probes", is_flag=True, help="BigQuery only: the 37 ceiling probes (section 15.8)")
+def authz_warehouse(target: str, write_results: bool, pdp_report: str | None, ceiling_probes: bool) -> None:
+    """Runs the 48 warehouse-layer cases (DuckDB from world.yaml locally; BigQuery as each purpose SA in production)."""
+    import tempfile
+    from pathlib import Path
+
+    from peoplevault.authz.warehouse_runner import run_all
+
+    if target == "bigquery":
+        raise click.ClickException("the BigQuery authorization suite lands with the production commit (see PROGRESS.md)")
+    if ceiling_probes:
+        raise click.ClickException("ceiling probes run only against BigQuery (--target bigquery)")
+    from peoplevault.fixtures.world import build_warehouse, load_world
+    from peoplevault.shim.queries import run_named
+    from peoplevault.warehouse.duck import DuckWarehouse
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "world.duckdb"
+        build_warehouse(load_world(), path)
+        wh = DuckWarehouse.open(path)
+        report = run_all(lambda purpose, qid, params: run_named(wh, purpose, qid, params))
+        wh.close()
+    click.echo(f"warehouse layer: {report.passed}/{len(report.results)} passed {report.by_category()}")
+    for r in report.results:
+        if not r.passed:
+            click.echo(f"FAIL {r.id}: {r.detail}", err=True)
+    if write_results:
+        from peoplevault.authz.results import pdp_results, summarize, write
+
+        pdp = pdp_results(Path(pdp_report)) if pdp_report else {}
+        path = write(summarize(pdp, report, "npm run eval:authz"))
+        click.echo(f"wrote {path}")
+    if report.passed != len(report.results):
+        raise SystemExit(1)
+
+
+@main.group()
 def fixtures() -> None:
     """Committed Worker test fixtures built from data/fixtures/world.yaml."""
 

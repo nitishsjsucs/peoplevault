@@ -23,7 +23,7 @@
     "seed:local": "node scripts/seed-local.ts",
     "eval:deletion": "uv run --project pipelines pv eval deletion --profile full",
     "eval:deletion:ci": "uv run --project pipelines pv eval deletion --profile ci",
-    "eval:authz": "vitest run --project worker test/worker/authz.cases.test.ts && uv run --project pipelines pv authz warehouse --target local --write-results",
+    "eval:authz": "vitest run --project worker test/worker/authz.cases.test.ts --reporter=default --reporter=json --outputFile.json=.dev/authz-pdp.json && uv run --project pipelines pv authz warehouse --target local --write-results --pdp-report .dev/authz-pdp.json",
     "readme:results": "node scripts/update-readme.ts",
     "doctor": "node scripts/doctor.ts",
     "setup:prod": "node scripts/setup-prod.ts",
