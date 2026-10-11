@@ -1,0 +1,89 @@
+{
+  "description": "PeopleVault pseudonym test vectors. The master key is a published TEST key (bytes 0x00..0x1f); production refuses it.",
+  "master_key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "master_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "salt": "peoplevault/v1",
+  "info_prefix": "pv-pseudonym:",
+  "message_prefix": "v1|",
+  "length": 26,
+  "vectors": [
+    {
+      "employee_id": "E00001",
+      "kind": "warehouse_key",
+      "pseudonym": "wk_46l2xjthep4klkw5djxmlpmq32"
+    },
+    {
+      "employee_id": "E00001",
+      "kind": "employee_ref",
+      "pseudonym": "er_y3fou2ukhyacrxya2ct5q7iztt"
+    },
+    {
+      "employee_id": "E00001",
+      "kind": "analytics_id",
+      "pseudonym": "an_mv2pqkmavaasne53a4njbcri3v"
+    },
+    {
+      "employee_id": "E00001",
+      "kind": "subject_ref",
+      "pseudonym": "sr_765kbt6iaa4luodwi2rstuaxcf"
+    },
+    {
+      "employee_id": "E00042",
+      "kind": "warehouse_key",
+      "pseudonym": "wk_crt3gfystkj7rvwlqacqujogbm"
+    },
+    {
+      "employee_id": "E00042",
+      "kind": "employee_ref",
+      "pseudonym": "er_5xcfsugo7465yljgyxqfrj3pby"
+    },
+    {
+      "employee_id": "E00042",
+      "kind": "analytics_id",
+      "pseudonym": "an_65hvzcdzrliov3avlh3zk6jm47"
+    },
+    {
+      "employee_id": "E00042",
+      "kind": "subject_ref",
+      "pseudonym": "sr_57sp7g6xuazh5zv255cw4fww7b"
+    },
+    {
+      "employee_id": "E01200",
+      "kind": "warehouse_key",
+      "pseudonym": "wk_uhon3ekaflhqifla7za25sw3qi"
+    },
+    {
+      "employee_id": "E01200",
+      "kind": "employee_ref",
+      "pseudonym": "er_2sel5kqsyz4msy4lfjgteayal6"
+    },
+    {
+      "employee_id": "E01200",
+      "kind": "analytics_id",
+      "pseudonym": "an_3mwkv3tazyj3ipqrvexjoj2eta"
+    },
+    {
+      "employee_id": "E01200",
+      "kind": "subject_ref",
+      "pseudonym": "sr_quwxobm7ev5nhrnecudi4ght2e"
+    }
+  ],
+  "hkdf_rfc5869": [
+    {
+      "case": "RFC 5869 A.1",
+      "ikm_hex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "salt_hex": "000102030405060708090a0b0c",
+      "info_hex": "f0f1f2f3f4f5f6f7f8f9",
+      "length": 42,
+      "okm_hex": "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
+    },
+    {
+      "case": "RFC 5869 A.3",
+      "ikm_hex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "salt_hex": "",
+      "info_hex": "",
+      "length": 42,
+      "okm_hex": "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"
+    }
+  ]
+}

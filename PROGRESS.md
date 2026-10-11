@@ -4,7 +4,7 @@ Tracks the build against the commit plan in SPEC.md section 26. Updated in every
 
 ## Position
 
-Commit 5 of 25 (P0) done: `feat(policy): policy file, model and compiler with drift check`.
+Commit 6 of 25 (P0) done: `feat(pseudo): HKDF and HMAC pseudonyms in TypeScript and Python`.
 
 ## Done
 
@@ -15,14 +15,15 @@ Commit 5 of 25 (P0) done: `feat(policy): policy file, model and compiler with dr
 | 3 | `chore: scaffold Worker toolchain` | exact npm pins, tsconfigs (TypeScript 7.0.2), wrangler.jsonc (`peoplevault-local`, `secrets.required`, invocation logs off), env-extra.d.ts, generated worker-configuration.d.ts, vitest projects `worker` and `node`, config validation (env.ts), `/api/health` with tests; Workflow classes are placeholders that throw until commits 16 and 20 |
 | 4 | `chore: scaffold uv project and dbt skeleton` | pyproject.toml (exact pins, Python 3.12), committed uv.lock (129 packages), `pv` CLI with `pv dbt`, config.py (paths, `.dev.vars` and `wrangler.jsonc` readers), redacting logger, dbt project and profiles (`local` DuckDB, `bigquery` impersonating pv-executor, `bigquery_actions` (P1), `bigquery_ci` parse only), policy tag vars, `dbtrun.py` refusing `--full-refresh` on BigQuery; pytest smoke, redaction, dbt runner and dbt parse tests |
 | 5 | `feat(policy): policy file, model and compiler with drift check` | policy/policy.yaml (4 personas, 5 purposes, 9 classes, 5x6 matrix, purpose views, named queries with structured filters, 13 assets in 6 categories, retention, verification, pseudonym parameters); pydantic model with fail-closed validation; `pv policy compile` and `pv policy check`; policy/compiled/policy.json; TS types, compiled view and registry; pytest and vitest registry tests |
+| 6 | `feat(pseudo): HKDF and HMAC pseudonyms in TypeScript and Python` | `src/worker/pseudo/hmac.ts` (WebCrypto), `peoplevault/pseudo.py` (stdlib RFC 5869), `policy/test-vectors/pseudonyms.json` (12 vectors + 2 RFC 5869 vectors), both test suites assert the same vectors plus determinism, kind separation, prefix and length, no raw id substring, no collisions over 1,200 ids |
 
 ## Next
 
-6. `feat(pseudo): HKDF and HMAC pseudonyms in TypeScript and Python`
+7. `feat(synth): deterministic generator with exact and golden counts`
 
 ## Check status
 
-At commit 5: `npm run typecheck` passes; `npm run types:check` passes; `npm test` 7 passed, 0 failed; `npm run test:py` 39 passed, 0 failed; `ruff check pipelines` clean; `pv policy check` clean.
+At commit 6: `npm run typecheck` passes; `npm run types:check` passes; `npm test` 26 passed, 0 failed; `npm run test:py` 57 passed, 0 failed; `ruff check pipelines` clean; `pv policy check` clean.
 
 ## Deviations from SPEC.md
 
