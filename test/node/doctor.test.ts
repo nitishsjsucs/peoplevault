@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CF_API, CfApi } from "../../scripts/lib/cf-api.ts";
-import { LOCAL_SEED_SQL, aiGatewayCheck, auditCopyCheck, exitCode, freePlanUsage, githubChecks, localChecks, localSeedCheck, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
+import { AUDIT_STATUS_ARGS, LOCAL_SEED_SQL, aiGatewayCheck, auditCopyCheck, exitCode, freePlanUsage, githubChecks, localChecks, localSeedCheck, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
 import { GITHUB_SECRETS, readGithubState, type GithubState } from "../../scripts/lib/github.ts";
 import { REPO_ROOT, type RunResult } from "../../scripts/lib/run.ts";
 
@@ -291,6 +291,33 @@ describe("doctor --prod: the scheduled executor on GitHub", () => {
   it("the full production run includes the GitHub group", async () => {
     const r = await prodChecks(deps());
     expect(r.find((x) => x.group === "GitHub")).toMatchObject({ name: "gh login", status: "missing" });
+  });
+});
+
+describe("doctor --prod is read-only", () => {
+  it("reads the audit chain head from D1, never through the executor's audited export route, and calls the Cloudflare API with GET only", async () => {
+    const ran: string[] = [];
+    const methods: string[] = [];
+    const base = deps({
+      env: { CLOUDFLARE_ACCOUNT_ID: "acct", PV_R2_CATALOG_TOKEN: "t", PV_BASE_URL: "https://peoplevault.example.workers.dev", PV_CF_API_TOKEN: "api" },
+      commands: {
+        "wrangler whoami --json": ok(JSON.stringify({ loggedIn: true, accounts: [{ id: "acct", name: "a" }] })),
+        "wrangler auth token --json": ok(JSON.stringify({ token: "oauth" })),
+        "wrangler d1 list --json": ok(JSON.stringify([{ name: "pv-control", uuid: "u" }])),
+      },
+    });
+    await prodChecks({
+      ...base,
+      run: (cmd, args) => (ran.push([cmd, ...args].join(" ")), base.run(cmd, args)),
+      fetchImpl: ((input: string | URL | Request, init?: RequestInit) => (methods.push(init?.method ?? "GET"), base.fetchImpl(input, init))) as typeof fetch,
+    });
+    expect(ran).toContain(["uv", ...AUDIT_STATUS_ARGS].join(" "));
+    expect(AUDIT_STATUS_ARGS.join(" ")).toContain("--head-from d1");
+    expect(ran.filter((c) => /pv audit (export|status)/.test(c) && !c.includes("--head-from d1"))).toEqual([]);
+    // every wrangler D1 command is a read (a SELECT or a listing)
+    for (const c of ran.filter((x) => x.includes("d1 execute"))) expect(c, c).toMatch(/--command SELECT /i);
+    expect(methods.length).toBeGreaterThan(0);
+    expect(methods.filter((m) => m !== "GET")).toEqual([]);
   });
 });
 

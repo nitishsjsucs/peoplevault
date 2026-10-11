@@ -220,6 +220,19 @@ def copy_status(cat, page: PageFn, *, table: str = TABLE, now_ms: int | None = N
                       None if committed is None else (now_ms - committed) / 3_600_000, d1_hash)
 
 
+def d1_page(query: Callable[[str], list[dict]]) -> PageFn:
+    """A read-only page function over D1 itself (SELECT through `wrangler d1 execute`), for status checks only: the
+    Worker's export route appends an audit event on every call (reads of the chain are audited), so a status check
+    through it would write to the production chain each time the doctor runs. Returns seq and hash only."""
+
+    def page(after_seq: int, limit: int) -> dict:
+        rows = query(f"SELECT seq, hash FROM audit_events WHERE seq > {int(after_seq)} ORDER BY seq LIMIT {int(limit)}")
+        head = query("SELECT COALESCE(MAX(seq), 0) AS head FROM audit_events")
+        return {"rows": rows, "headSeq": int(head[0]["head"]) if head else 0}
+
+    return page
+
+
 def due(status: CopyStatus) -> bool:
     """executor.yml's rule: export when 1,000 events wait or the last commit is more than 24 hours old."""
     if not status.exists:

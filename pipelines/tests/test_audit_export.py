@@ -143,3 +143,30 @@ def test_rows_must_have_exactly_the_schema_fields(cat):
     rows[1]["detail_json"] = "{}"
     with pytest.raises(ValueError):
         ax.export_audit(cat, FakeRoute(rows))
+
+
+def test_status_from_a_d1_select_matches_the_route_and_never_calls_it(cat):
+    """`pv audit status --head-from d1` (the doctor's read): the same status as through the executor's export route,
+    from SELECTs only, so a status check appends nothing to the production chain."""
+    import re
+
+    rows = make_chain(150)
+    route = FakeRoute(rows[:120])
+    ax.export_audit(cat, route)
+    route.rows = rows
+    statements: list[str] = []
+
+    def query(sql: str) -> list[dict]:
+        statements.append(sql)
+        if sql.startswith("SELECT COALESCE(MAX(seq), 0) AS head"):
+            return [{"head": rows[-1]["seq"]}]
+        m = re.fullmatch(r"SELECT seq, hash FROM audit_events WHERE seq > (\d+) ORDER BY seq LIMIT (\d+)", sql)
+        assert m, sql
+        return [{"seq": r["seq"], "hash": r["hash"]} for r in rows if r["seq"] > int(m[1])][: int(m[2])]
+
+    calls_before = route.calls
+    via_d1 = ax.copy_status(cat, ax.d1_page(query), count_rows=False)
+    assert route.calls == calls_before
+    via_route = ax.copy_status(cat, route, count_rows=False)
+    assert (via_d1.exists, via_d1.last_seq, via_d1.head_seq, via_d1.lag, via_d1.last_hash_matches) == (via_route.exists, via_route.last_seq, via_route.head_seq, via_route.lag, via_route.last_hash_matches) == (True, 120, 150, 30, True)
+    assert statements and all(s.startswith("SELECT ") for s in statements)

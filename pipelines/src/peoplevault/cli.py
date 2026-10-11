@@ -428,14 +428,25 @@ def audit_export_cmd(target: str, rebuild: bool, if_due: bool) -> None:
 
 @audit.command("status")
 @click.option("--target", type=click.Choice(["local", "prod"]), default="prod", show_default=True)
+@click.option("--head-from", type=click.Choice(["d1", "worker"]), default="d1", show_default=True,
+              help="d1: read the chain head with a SELECT through wrangler (read-only); worker: the executor's export route, which audits each call")
 @click.option("--json", "as_json", is_flag=True)
-def audit_status_cmd(target: str, as_json: bool) -> None:
+def audit_status_cmd(target: str, head_from: str, as_json: bool) -> None:
     import json as _json
 
     from peoplevault.lake import audit_export as ax
+    from peoplevault.lake.catalog import open_catalog
 
-    cat, api = _audit_target(target)
-    st = ax.copy_status(cat, api.audit_export, count_rows=False)
+    if head_from == "d1":
+        if target == "prod":
+            from peoplevault.evals.prod_stores import d1_query
+        else:
+            from peoplevault.evals.oracle import d1_query
+        cat, page = open_catalog(target), ax.d1_page(d1_query)
+    else:
+        cat, api = _audit_target(target)
+        page = api.audit_export
+    st = ax.copy_status(cat, page, count_rows=False)
     out = {"exists": st.exists, "last_seq": st.last_seq, "head_seq": st.head_seq, "lag": st.lag, "last_commit_age_hours": st.last_commit_age_hours, "last_hash_matches": st.last_hash_matches}
     click.echo(_json.dumps(out) if as_json else f"audit copy: lag {st.lag} events, last commit {st.last_commit_age_hours} h ago, last hash matches D1: {st.last_hash_matches}")
 

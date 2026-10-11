@@ -255,7 +255,8 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     out.push(conflicts.length ? missing(R, "name conflicts", conflicts.map((c) => c.item).join("; "), conflicts[0]!.fix) : ok(R, "name conflicts", "every resource with this repo's names is recorded as this repo's"));
   }
   out.push(env.PV_R2_CATALOG_TOKEN ? ok(R, "PV_R2_CATALOG_TOKEN", "set (checked by the Google Cloud group's lake check)") : missing(R, "PV_R2_CATALOG_TOKEN", "not set", "create an R2 API token (docs/PRODUCTION.md step 8) and add it to .secrets/prod.env"));
-  if (env.PV_R2_CATALOG_TOKEN && env.PV_BASE_URL) out.push(auditCopyCheck(await d.run("uv", ["run", "--project", "pipelines", "pv", "audit", "status", "--target", "prod", "--json"])));
+  // read-only: the chain head comes from a D1 SELECT, never from the executor's export route (which audits every call)
+  if (env.PV_R2_CATALOG_TOKEN && env.PV_BASE_URL) out.push(auditCopyCheck(await d.run("uv", AUDIT_STATUS_ARGS)));
   const W = "Worker";
   if (!d.exists(PROD_CONFIG)) out.push(missing(W, "production config", `${PROD_CONFIG} not rendered`, "npm run setup:prod"));
   else {
@@ -421,6 +422,8 @@ async function cpuP99(d: DoctorDeps, env: Record<string, string | undefined>, ac
 }
 
 /** The audit copy in the Basin Catalog (SPEC.md section 30.3.3): lag and the age of the last export commit. */
+export const AUDIT_STATUS_ARGS = ["run", "--project", "pipelines", "pv", "audit", "status", "--target", "prod", "--head-from", "d1", "--json"];
+
 export function auditCopyCheck(res: RunResult): CheckResult {
   const G = "Cloudflare resources";
   const fix = "uv run --project pipelines pv audit export --target prod";
