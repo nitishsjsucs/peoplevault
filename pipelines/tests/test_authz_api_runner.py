@@ -121,6 +121,18 @@ def test_executor_claim_case_leases_at_most_one_retention_task_briefly(pop):
     assert seen == [("executor", "/api/v1/executor/tasks/claim", {"phases": ["retention"], "max": 1, "lease_seconds": 30})]
 
 
+def test_write_bodies_pass_the_api_schemas(pop):
+    import re
+
+    runner = ar.Runner(fake_env(lambda *a: FakeResponse(200)), ar.Resolver(pop, ar.LiveState({})), allow_writes=True)
+    subject = ar.Resolver(pop, ar.LiveState({})).scope("*", "active", pick=True)[4]
+    _, _, hold = runner.build({"action": "place_legal_hold", "purpose": "legal_hold_management"}, subject)
+    assert re.fullmatch(r"[A-Z]{2}-\d{4}-\d{3}", hold["matter_id"])  # src/shared/api-schemas.ts LegalHoldBody
+    assert re.fullmatch(r"er_[a-z2-7]{26}", hold["employee_ref"]) and 3 <= len(hold["reason"]) <= 200
+    _, _, dsr = runner.build({"action": "create_deletion_request", "purpose": "privacy_compliance"}, subject)
+    assert set(dsr) == {"employee_ref", "reason"}
+
+
 @pytest.mark.e2e
 def test_authz_api_local_stack():
     """Against the seeded local stack (npm run seed:local): every runnable case passes."""

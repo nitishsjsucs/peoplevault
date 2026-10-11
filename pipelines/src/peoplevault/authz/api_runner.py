@@ -42,6 +42,8 @@ REPRESENTATIVE = {"direct_identifier": "full_name", "date_of_birth": "birth_date
 RAW_ID = re.compile(r"\bE\d{5}\b")
 SUPPRESSED = {"running", "completed", "completed_with_residuals", "failed"}
 MAX_PAGES = 40
+# matter ids are two letters, a year and three digits (LegalHoldBody); 900 and above are never seeded
+AUTHZ_MATTER = "LH-2026-900"
 
 
 class Skip(Exception):
@@ -372,7 +374,7 @@ class Runner:
         if a == "create_deletion_request":
             return "POST", "/api/v1/privacy/deletion-requests", {"employee_ref": s.refs["employee_ref"], "reason": "authorization case"}
         if a == "place_legal_hold":
-            return "POST", "/api/v1/privacy/legal-holds", {"matter_id": "LH-2026-AUTHZ", "employee_ref": s.refs["employee_ref"], "reason": "authorization case"}
+            return "POST", "/api/v1/privacy/legal-holds", {"matter_id": AUTHZ_MATTER, "employee_ref": s.refs["employee_ref"], "reason": "authorization case"}
         if a == "release_legal_hold":
             if not self.placed_hold:
                 raise Skip("no hold placed by this run to release (F05 did not run)")
