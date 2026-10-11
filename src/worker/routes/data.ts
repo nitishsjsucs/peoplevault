@@ -11,6 +11,7 @@ import { identityByRef, isSubjectSuppressed, suppressedRefs, type RefKind } from
 import { POLICY, queryFor } from "../policy/compiled.ts";
 import { columnsFor, decide, filterColumns, type Action, type Decision } from "../policy/pdp.ts";
 import { WarehouseError, type QueryParams } from "../warehouse/client.ts";
+import { CLIENT_HEADER, CONSOLE_CLIENT } from "../../shared/limits.ts";
 
 export const data = new Hono<AppEnv>();
 
@@ -72,6 +73,11 @@ async function runAll(c: Context<AppEnv>, q: QueryDef, purpose: Purpose, base: Q
     cursor = String(res.rows[res.rows.length - 1]![q.pagedBy]);
   }
   return out;
+}
+
+/** Reads from the privacy console never fill the KV cache (see CLIENT_HEADER). */
+function fillsCache(c: Context<AppEnv>): boolean {
+  return c.req.header(CLIENT_HEADER) !== CONSOLE_CLIENT;
 }
 
 function rejectUnknownParams(c: Context<AppEnv>, allowed: string[]): string | null {
@@ -152,8 +158,9 @@ data.get(R.profile, async (c) => {
   if (out.length !== 1) return denyAfter(c, purpose, "read_profile", R.profile, 404, "not_found");
   const [profile] = filterColumns(out, columnsFor(q));
   const scope = d.rowScope.kind === "org_units" ? { org_unit: String(out[0]!.org_unit) } : d.rowScope.kind === "direct_reports" && ownRef ? { manager_ref: ownRef } : {};
-  // A deletion may have started while the warehouse was read: never cache a suppressed subject.
-  if (!(await isSubjectSuppressed(c.env.DB, ident.subjectRef))) await putProfile(c.env.CACHE, purpose, ref, { v: 1, profile: profile!, scope });
+  // A deletion may have started while the warehouse was read: never cache a suppressed subject. Console reads never
+  // fill the cache (KV writes are the scarcest Free allowance).
+  if (fillsCache(c) && !(await isSubjectSuppressed(c.env.DB, ident.subjectRef))) await putProfile(c.env.CACHE, purpose, ref, { v: 1, profile: profile!, scope });
   await audit(c, { purpose, action: "read_profile", route: R.profile, subjectRef: ident.subjectRef, decision: "allow", reason: "ok", rowCount: 1, detail: { cache: "miss" } });
   return c.json({ profile, columns: columnsFor(q) });
 });
@@ -181,7 +188,7 @@ data.get(R.team, async (c) => {
     roster = filterColumns(rows, columnsFor(q))
       .filter((r) => !hidden.has(String(r.employee_ref)))
       .map((r) => ({ employee_ref: String(r.employee_ref), full_name: String(r.full_name), job_title: String(r.job_title) }));
-    await putRoster(c.env.CACHE, managerRef, roster);
+    if (fillsCache(c)) await putRoster(c.env.CACHE, managerRef, roster);
   }
   const visible: RosterEntry[] = roster.filter((r) => !hidden.has(r.employee_ref));
   await audit(c, { purpose: "team_management", action: "list_employees", route: R.team, decision: "allow", reason: "ok", rowCount: visible.length, detail: { cache } });

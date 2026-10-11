@@ -13,6 +13,8 @@ describe("api client", () => {
     expect(calls[0]!.headers["X-PV-Requested-With"]).toBeUndefined();
     expect(calls[1]).toMatchObject({ method: "POST", body: { employee_ref: REF, reason: "employee asked" } });
     expect(calls[1]!.headers).toMatchObject({ "X-PV-Requested-With": "peoplevault", "Content-Type": "application/json" });
+    // every call says it comes from the console, so the Worker never fills the KV cache for it
+    expect(calls.map((c) => c.headers["X-PV-Client"])).toEqual(["console", "console"]);
     const init = (fetch as unknown as { mock: { calls: [unknown, RequestInit][] } }).mock.calls[0]![1];
     expect(init.credentials).toBe("same-origin");
   });

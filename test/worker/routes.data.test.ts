@@ -59,6 +59,18 @@ describe("purpose data routes", () => {
     expect((await call(app, "hrbp-02", "GET", path)).status).toBe(404);
   });
 
+  it("console reads are served but never fill the KV cache", async () => {
+    const { app } = worldApp();
+    const s = subject("hrbp-01", "in_unit", 2);
+    const path = `/api/v1/purposes/employee_relations/employees/${s.employee_ref}`;
+    const key = `profile:employee_relations:${s.employee_ref}`;
+    await env.CACHE.delete(key);
+    expect((await call(app, "hrbp-01", "GET", path, undefined, { "X-PV-Client": "console" })).status).toBe(200);
+    expect(await env.CACHE.get(key)).toBeNull();
+    expect((await call(app, "hrbp-01", "GET", path)).status).toBe(200);
+    expect(await env.CACHE.get(key)).not.toBeNull();
+  });
+
   it("a manager principal without an employee link never reads a cached team profile", async () => {
     const { app } = worldApp();
     const s = subject("mgr-001", "direct_report", 0);

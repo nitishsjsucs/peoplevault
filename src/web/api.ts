@@ -1,7 +1,7 @@
 // Same-origin JSON client for the Worker API (SPEC.md sections 11.5 and 13). The console holds no token: the browser
 // sends the CF_Authorization cookie (set by Cloudflare Access, or by /dev/login locally). Every mutating call and the
 // identity lookup send the CSRF header, and lookups are POST bodies, so names and email prefixes never reach a URL.
-import { AUDIT_VERIFY_WINDOW } from "../shared/limits.ts";
+import { AUDIT_VERIFY_WINDOW, CLIENT_HEADER, CONSOLE_CLIENT } from "../shared/limits.ts";
 
 export const CSRF_HEADER = "X-PV-Requested-With";
 export const CSRF_VALUE = "peoplevault";
@@ -26,7 +26,7 @@ type Json = Record<string, unknown>;
 
 export async function api<T>(path: string, init: { method?: "GET" | "POST"; body?: unknown } = {}): Promise<T> {
   const method = init.method ?? "GET";
-  const headers: Record<string, string> = { Accept: "application/json" };
+  const headers: Record<string, string> = { Accept: "application/json", [CLIENT_HEADER]: CONSOLE_CLIENT };
   if (method !== "GET") {
     headers[CSRF_HEADER] = CSRF_VALUE;
     headers["Content-Type"] = "application/json";

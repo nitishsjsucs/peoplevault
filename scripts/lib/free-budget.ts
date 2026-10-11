@@ -85,6 +85,10 @@ export const REQUESTS_WORST_DAY = { seed: 33, authzProd: 170, prodEval: 1160, ex
 
 /** D1 rows a console session reads on that day: a full chain check (each event once), report, request and audit pages. */
 export const CONSOLE_D1_ROWS_READ = 10_000;
+/** KV reads of that session: at most one cache get per console API call (profile and roster pages). */
+export const CONSOLE_KV_READS = REQUESTS_WORST_DAY.console;
+/** KV writes of that session: none, because console reads never fill the cache (src/shared/limits.ts CLIENT_HEADER). */
+export const CONSOLE_KV_WRITES = 0;
 
 export function worstCaseDay(c: Caps): BudgetRow[] {
   const d = c.dailyDeletionStarts;
@@ -95,8 +99,8 @@ export function worstCaseDay(c: Caps): BudgetRow[] {
     row("Workers requests", "day", 100_000, Object.values(REQUESTS_WORST_DAY).reduce((a, b) => a + b, 0), "seed, authz:prod, production eval, executor.yml, audit export and windows, doctor, Workflow, queue and cron invocations, 300 console API calls (static assets do not invoke the Worker), a day of the drift eval"),
     row("D1 rows read", "day", 5_000_000, d * PER_DELETION.d1RowsRead + 35_000 + 10_000 + 6000 + 5000 + 1200 + 3000 + CONSOLE_D1_ROWS_READ, `${d} x ${PER_DELETION.d1RowsRead} + oracle, seed checks, status polls, doctor, sweep, routes and appends, console`),
     row("D1 rows written", "day", 100_000, 9000 + d * PER_DELETION.d1RowsWritten + 1000 * 3 + 512 + 200, `seed 9,000 + ${d} x ${PER_DELETION.d1RowsWritten} + 1,000 audit events x 3 + residual and task updates`),
-    row("KV reads", "day", 100_000, d * PER_DELETION.kvReads + 300 + 100, `${d} x ${PER_DELETION.kvReads} + route gets + oracle`),
-    row("KV writes", "day", 1000, 23 + 23 + 60 + 3, "two warm-ups of 23 entries, authz:prod cache fills, planted faults"),
+    row("KV reads", "day", 100_000, d * PER_DELETION.kvReads + 300 + 100 + CONSOLE_KV_READS, `${d} x ${PER_DELETION.kvReads} + route gets + oracle + ${CONSOLE_KV_READS} console cache gets`),
+    row("KV writes", "day", 1000, 23 + 23 + 60 + 3 + CONSOLE_KV_WRITES, "two warm-ups of 23 entries, authz:prod cache fills, planted faults; the console fills no cache entry"),
     row("KV deletes", "day", 1000, d * PER_DELETION.kvDeletes + 3, `${d} x ${PER_DELETION.kvDeletes} + fault cleanups`),
     row("KV lists", "day", 1000, d * PER_DELETION.kvLists + 10, `${d} x ${PER_DELETION.kvLists} + assets route, doctor, oracle`),
     row("Queue operations", "day", 10_000, (c.retentionDailyMax + d) * queueOpsPerMessage(c.queueMaxRetries), `(${c.retentionDailyMax} retention messages + up to ${d} reconcile re-sends) x ${queueOpsPerMessage(c.queueMaxRetries)} operations`),

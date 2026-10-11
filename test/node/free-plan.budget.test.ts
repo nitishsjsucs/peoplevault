@@ -4,7 +4,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { FACTS, PER_DELETION, PER_INVOCATION, SHARE, STEPS, projectedD1RowsRead, queueOpsPerMessage, worstCaseDay, type Caps } from "../../scripts/lib/free-budget.ts";
+import { CONSOLE_KV_READS, CONSOLE_KV_WRITES, FACTS, PER_DELETION, PER_INVOCATION, SHARE, STEPS, projectedD1RowsRead, queueOpsPerMessage, worstCaseDay, type Caps } from "../../scripts/lib/free-budget.ts";
 import { TEMPLATE } from "../../scripts/lib/prod-files.ts";
 import { REPO_ROOT } from "../../scripts/lib/run.ts";
 import { AUDIT_VERIFY_WINDOW } from "../../src/shared/limits.ts";
@@ -49,6 +49,14 @@ describe("Workers Free budget: the worst-case day within a 25% share of every pe
   it("queue operations: (RETENTION_DAILY_MAX + DAILY_DELETION_STARTS) x 7 within 2,500, with the consumer's 3 retries counted", () => {
     expect(queueOpsPerMessage(caps.queueMaxRetries)).toBe(7);
     expect((caps.retentionDailyMax + caps.dailyDeletionStarts) * queueOpsPerMessage(caps.queueMaxRetries)).toBeLessThanOrEqual(2500);
+  });
+
+  it("counts the console session's KV use: reads per call, no writes (console reads never fill the cache)", () => {
+    const day = worstCaseDay(caps);
+    expect(CONSOLE_KV_WRITES).toBe(0);
+    expect(CONSOLE_KV_READS).toBe(300);
+    const writes = day.find((r) => r.resource === "KV writes")!;
+    expect(writes.usage).toBeLessThanOrEqual(writes.share);
   });
 
   it("raising a cap past the share fails: 26 starts a day would exceed the step share", () => {
