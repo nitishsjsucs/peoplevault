@@ -1,7 +1,7 @@
 {
   "command": "npm run eval:deletion:ci",
   "date": "2026-10-11",
-  "git_sha": "71d649e599536f6eb4b5d47937e7b35955d0be3a",
+  "git_sha": "9e38ca65c5039fa0e16134896bc97bba3d6110bb",
   "git_dirty": false,
   "environment": "local (Miniflare, DuckDB, pyiceberg SqlCatalog)",
   "versions": {
@@ -77,7 +77,8 @@
         "clean_pairs": 20
       }
     },
-    "scope": "R and D requests that were not held; system verdicts"
+    "requests": 16,
+    "scope": "retention requests and DSRs of cohorts R and D that were not held; the planted-fault requests (cohort F) are scored under fault detection; system verdicts"
   },
   "oracle": {
     "oracle_coverage": {
@@ -108,10 +109,12 @@
   "holds": {
     "held_requests": 4,
     "held_subjects": 4,
-    "held_data_intact": 4
+    "held_data_intact": 4,
+    "expected_held_subjects": 4
   },
   "faults": {
     "scenarios": 5,
+    "planned": 5,
     "detected": 5,
     "by_store": {
       "r2": {
@@ -228,7 +231,7 @@
         "cleared/modeled": 16
       }
     },
-    "lake_expire": "lake expire: snapshots 7 -> 1, orphan files removed 30",
+    "lake_expire": "lake expire: snapshots 8 -> 1, orphan files removed 39",
     "residual_check": "residuals check: {'pending_before': 32, 'updated': 32, 'cleared': 32, 'errors': 0}"
   },
   "warmup": {
@@ -240,15 +243,16 @@
   },
   "audit_chain": {
     "ok": true,
-    "length": 962,
-    "windows": 10
+    "length": 980,
+    "windows": 20,
+    "window": 50
   },
   "audit_copy": {
     "table": "governance.audit_events",
-    "rows": 964,
-    "copied_this_run": 964,
-    "last_seq": 964,
-    "chain_length": 962,
+    "rows": 982,
+    "copied_this_run": 982,
+    "last_seq": 982,
+    "chain_length": 980,
     "last_hash_matches": true,
     "lag_after_export": 1
   },
@@ -269,15 +273,16 @@
     }
   },
   "timing_ms": {
-    "workflow_p50": 5848.0,
-    "workflow_p95": 10100.0,
-    "total_run": 165352
+    "workflow_p50": 13350.0,
+    "workflow_p95": 23303.0,
+    "total_run": 199652
   },
   "gate": {
     "passed": true,
     "checks": {
       "false_clean_zero": true,
       "all_faults_detected": true,
+      "holds_respected": true,
       "held_data_intact": true,
       "coverage_100": true,
       "every_category_applicable": true
