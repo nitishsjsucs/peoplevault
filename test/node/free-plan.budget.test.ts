@@ -1,10 +1,13 @@
 // The Workers Free usage budget (SPEC.md sections 18.5 and 30.4): with the caps of the production template, the
 // worst-case day stays within this repo's 25% share of every per-account allowance, so raising a cap past the share
 // fails here. The step counts are the Workflow's own (test/worker/ops.budget.test.ts asserts the same numbers).
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { FACTS, PER_DELETION, PER_INVOCATION, SHARE, STEPS, projectedD1RowsRead, queueOpsPerMessage, worstCaseDay, type Caps } from "../../scripts/lib/free-budget.ts";
 import { TEMPLATE } from "../../scripts/lib/prod-files.ts";
+import { REPO_ROOT } from "../../scripts/lib/run.ts";
+import { AUDIT_VERIFY_WINDOW } from "../../src/shared/limits.ts";
 
 function stripJsonc(text: string): string {
   return text.replace(/^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1");
@@ -53,8 +56,13 @@ describe("Workers Free budget: the worst-case day within a 25% share of every pe
     expect(over.usage).toBeGreaterThan(over.share);
   });
 
-  it("per invocation: CPU at 3 times the Mac measurement under 7.5 ms, at most 40 of 50 D1 queries, 34 of 50 external fetches, 900 of 1,000 calls", () => {
-    expect(PER_INVOCATION.largestStepCpuMsOnMac * PER_INVOCATION.edgeFactor).toBeLessThanOrEqual(PER_INVOCATION.cpuTargetMs);
+  it("per invocation: CPU at 3 times the newest measured largest median under 7.5 ms, at most 40 of 50 D1 queries, 34 of 50 external fetches, 900 of 1,000 calls", () => {
+    const results = path.join(REPO_ROOT, "evals", "results");
+    const newest = readdirSync(results).filter((n) => /^cpu-\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort().at(-1);
+    expect(newest, "a committed npm run bench:cpu result").toBeDefined();
+    const bench = JSON.parse(readFileSync(path.join(results, newest!), "utf8")) as { largest_step_median_ms: number; measurements_ms: Record<string, unknown> };
+    expect(Object.keys(bench.measurements_ms)).toContain(`audit_verify_window_${AUDIT_VERIFY_WINDOW}`);
+    expect(bench.largest_step_median_ms * PER_INVOCATION.edgeFactor).toBeLessThanOrEqual(PER_INVOCATION.cpuTargetMs);
     expect(PER_INVOCATION.cpuTargetMs).toBeLessThan(FACTS.F2.value);
     expect(PER_INVOCATION.d1StatementsPerStep).toBeLessThan(FACTS.F12.value[2]);
     expect(PER_INVOCATION.externalFetchesPerDataRequest).toBeLessThanOrEqual(FACTS.F4.value[0]);

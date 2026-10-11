@@ -45,9 +45,9 @@ export const PER_DELETION = {
   cloudflareCalls: 394, // KV, R2 and D1 calls per instance (design budget 900; Free allows 1,000)
 } as const;
 
-/** Per-invocation ceilings of the redesign (SPEC.md sections 30.3.1 and 30.3.2). */
+/** Per-invocation ceilings of the redesign (SPEC.md sections 30.3.1 and 30.3.2). The CPU of the largest step-sized path
+ * is not a constant here: the budget test reads it from the newest `npm run bench:cpu` result (evals/results/cpu-*.json). */
 export const PER_INVOCATION = {
-  largestStepCpuMsOnMac: 1.83, // erase step at the 4 MiB cap, measured by `npm run bench:cpu`
   edgeFactor: 3,
   cpuTargetMs: 7.5, // 25% under the 10 ms limit
   d1StatementsPerStep: 40,
