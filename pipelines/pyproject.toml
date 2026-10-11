@@ -1,0 +1,55 @@
+[project]
+name = "peoplevault"
+version = "0.1.0"
+description = "PeopleVault pipelines: policy compiler, synthetic data, loaders, dbt, executor, verifiers and evals"
+license = "MIT"
+requires-python = "==3.12.*"
+dependencies = [
+  "dbt-core==1.12.5",
+  "dbt-duckdb==1.11.0",
+  "dbt-bigquery==1.12.1",
+  "duckdb==1.5.6",
+  "pyarrow==26.0.0",
+  "pyiceberg[sql-sqlite,pyarrow]==0.12.0",
+  "google-cloud-bigquery==3.46.1",
+  "google-cloud-datacatalog==3.32.0",
+  "google-cloud-bigquery-datapolicies==0.10.1",
+  "google-auth==2.61.0",
+  "click==8.5.0",
+  "pydantic==2.14.0",
+  "pyyaml==6.0.3",
+  "httpx==0.28.1",
+  "pyjwt[crypto]==2.15.1",
+]
+
+[project.scripts]
+pv = "peoplevault.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+  "pytest-timeout==2.4.0",
+  "ruff==0.17.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not bigquery and not e2e' -ra"
+markers = [
+  "bigquery: live BigQuery suite (needs production setup; run by the owner)",
+  "e2e: end-to-end runs that start wrangler dev and pv serve",
+]
+timeout = 600
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["dbt"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]

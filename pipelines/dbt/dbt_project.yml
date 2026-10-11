@@ -1,0 +1,31 @@
+name: peoplevault
+version: "0.1.0"
+config-version: 2
+profile: peoplevault
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target"]
+
+vars:
+  # Full policy tag resource names, keyed by data class. `pv dbt --target bigquery` overrides this map with
+  # the names recorded by `pv setup gcp` in .secrets/prod-resources.json. These placeholders are only for
+  # `dbt parse --target bigquery_ci`; target local ignores policy tags.
+  pv_policy_tags:
+    direct_identifier: projects/ci/locations/us/taxonomies/0/policyTags/direct_identifier
+    date_of_birth: projects/ci/locations/us/taxonomies/0/policyTags/date_of_birth
+    compensation: projects/ci/locations/us/taxonomies/0/policyTags/compensation
+    performance: projects/ci/locations/us/taxonomies/0/policyTags/performance
+    health_leave: projects/ci/locations/us/taxonomies/0/policyTags/health_leave
+    protected_attribute: projects/ci/locations/us/taxonomies/0/policyTags/protected_attribute
+  # GCP project used to build service account emails in row access policies (BigQuery only).
+  pv_gcp_project: "{{ env_var('PV_GCP_PROJECT', 'ci-parse-only') }}"
+
+models:
+  peoplevault:
+    +persist_docs:
+      relation: true
+      columns: true
