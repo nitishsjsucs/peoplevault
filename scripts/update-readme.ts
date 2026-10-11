@@ -36,7 +36,7 @@ export function latest(files: ResultFile[]): ResultFile[] {
 }
 
 function order(name: string): number {
-  return name.startsWith("deletion-full") ? 0 : name.startsWith("deletion-ci") ? 1 : name.startsWith("deletion") ? 2 : name.startsWith("authz-local") ? 3 : name.startsWith("authz-api") ? 4 : 5;
+  return name.startsWith("deletion-full") ? 0 : name.startsWith("deletion-ci") ? 1 : name.startsWith("deletion") ? 2 : name.startsWith("authz-local") ? 3 : name.startsWith("authz-api") ? 4 : name.startsWith("cpu") ? 6 : 5;
 }
 
 const pct = (c: { display: string; applicable_pairs: number }) => (c.applicable_pairs ? `${c.display} of ${c.applicable_pairs} applicable pairs` : "n/a (0 applicable pairs)");
@@ -86,6 +86,21 @@ function authz(f: ResultFile): string[] {
   return lines;
 }
 
+function cpu(f: ResultFile): string[] {
+  const d = f.data;
+  const m = d.measurements_ms as Record<string, { warm_median_ms: number; warm_min_ms?: number; objects?: number; mib?: number; per_mib?: number }>;
+  const v = (k: string) => `${m[k]!.warm_median_ms} ms` + (m[k]!.warm_min_ms !== undefined ? ` (fastest run ${m[k]!.warm_min_ms} ms)` : "");
+  return [
+    `**CPU of the Worker's hot paths** (\`${d.command}\`, ${d.date}; ${d.environment}; ${d.machine.cpus} cores, 1-minute load average ${d.machine.load_average_1m} at the start)`,
+    "",
+    `- Prefiltered transform byte-identical to the unfiltered one: ${d.prefilter_identical.comparisons} comparisons over all ${d.prefilter_identical.objects} generated export objects`,
+    `- Erase step at the 4 MiB cap (${m.erase_step_at_cap!.objects} HRIS objects, ${m.erase_step_at_cap!.mib} MiB): ${v("erase_step_at_cap")}; the revision 2 HRIS step that parsed every line of ${m.revision2_hris_erase_every_line_parsed!.objects} objects: ${v("revision2_hris_erase_every_line_parsed")}`,
+    `- Probe step at the 2 MiB cap (${m.probe_step_at_cap_clean!.mib} MiB): ${v("probe_step_at_cap_clean")} after a clean erasure, ${v("probe_step_at_cap_every_line")} when every line must be matched`,
+    `- Audit verification window of 100 events: ${v("audit_verify_window_100")}; audit export page of 500 rows: ${v("audit_export_page_500")}; KV probe over 420 values: ${v("kv_probe_420_values")}`,
+    `- Largest median ${d.largest_step_ms} ms against the design target of ${d.design.target_ms_here} ms on this machine (${d.design.edge_factor} times that must stay under Free's ${d.design.free_cpu_limit_ms} ms): ${d.within_target ? "within target" : "OVER the target"}. Miniflare enforces no CPU limit; production readings come from the canary deletion and the doctor's CPU p99 line`,
+  ];
+}
+
 export function renderResults(files: ResultFile[]): string {
   if (files.length === 0) return "No results yet.";
   files.forEach(validate);
@@ -98,7 +113,7 @@ export function renderResults(files: ResultFile[]): string {
     "",
   );
   for (const f of latest(files)) {
-    out.push(...(f.data.kind === "deletion" ? deletion(f) : authz(f)), "");
+    out.push(...(f.data.kind === "deletion" ? deletion(f) : f.data.kind === "cpu" ? cpu(f) : authz(f)), "");
   }
   return out.join("\n").trimEnd();
 }

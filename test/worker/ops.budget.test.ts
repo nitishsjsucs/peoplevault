@@ -7,6 +7,7 @@
 import { introspectWorkflowInstance } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it } from "vitest";
+import { STEPS } from "../../scripts/lib/free-budget.ts";
 import { eraseKvCaches } from "../../src/worker/erase/kv-cache.ts";
 import { INSTANCE_BUDGET, STEP_BUDGET, STEP_D1_STATEMENTS } from "../../src/worker/storage/op-budget.ts";
 import { probeKv } from "../../src/worker/verify/kv-probe.ts";
@@ -108,6 +109,7 @@ describe("Workers Free budgets at the full population's sizes", () => {
     const { steps, status, instance } = await run("req-budget", s.employee_ref, true);
     expect(status).toMatch(/^completed/);
     expect(steps).toBe(30);
+    expect(steps).toBe(STEPS.completedDeletion); // the budget model's number (scripts/lib/free-budget.ts)
     const erase = await cursorSteps(instance, "erase-r2");
     const probe = await cursorSteps(instance, "verify-r2");
     expect([erase.length, probe.length]).toEqual([3, 6]);
@@ -144,6 +146,7 @@ describe("Workers Free budgets at the full population's sizes", () => {
     const { steps, status, instance } = await run("req-budget-fail", s.employee_ref, true);
     expect(status).toBe("failed");
     expect(steps).toBe(23);
+    expect(steps).toBe(STEPS.failedVerification);
     await instance.dispose();
     await env.EXPORTS.delete("notes/budget-residue.txt");
   });
@@ -151,6 +154,7 @@ describe("Workers Free budgets at the full population's sizes", () => {
   it("a held request: 3 steps", async () => {
     const { steps, status, instance } = await run("req-budget-held", subject("*", "held", 0).employee_ref, false);
     expect([status, steps]).toEqual(["held", 3]);
+    expect(steps).toBe(STEPS.held);
     await instance.dispose();
   });
 

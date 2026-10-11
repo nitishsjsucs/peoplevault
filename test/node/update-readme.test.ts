@@ -56,6 +56,27 @@ describe("readme:results", () => {
     expect(text).toContain("Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 970 rows, 970 copied by this run; last hash equals D1's at seq 970");
   });
 
+  it("renders the CPU benchmark with its machine and load, and says whether the largest step is within the target", () => {
+    const m = (x: number) => ({ warm_median_ms: x, warm_min_ms: x / 2, cold_ms: x });
+    const f: ResultFile = {
+      name: "cpu-2026-10-11.json",
+      data: {
+        ...header, kind: "cpu", command: "npm run bench:cpu", environment: "local (Node v25.9.0 on darwin arm64, Apple M3)", machine: { cpus: 8, load_average_1m: 2.5, total_memory_gib: 16 },
+        prefilter_identical: { objects: 41, subjects: 3, comparisons: 123 },
+        measurements_ms: {
+          erase_step_at_cap: { ...m(1.8), objects: 6, mib: 3.62 }, revision2_hris_erase_every_line_parsed: { ...m(13.9), objects: 13 }, probe_step_at_cap_clean: { ...m(0.9), mib: 1.81 },
+          probe_step_at_cap_every_line: m(1.7), audit_verify_window_100: m(1.5), audit_export_page_500: m(0.6), kv_probe_420_values: m(0.3), erase_all_exports_prefiltered: m(4.2),
+        },
+        design: { target_ms_here: 2.5, edge_factor: 3, free_cpu_limit_ms: 10 }, largest_step_ms: 1.8, within_target: true,
+      },
+    };
+    const text = renderResults([f]);
+    expect(text).toContain("**CPU of the Worker's hot paths** (`npm run bench:cpu`, 2026-10-10; local (Node v25.9.0 on darwin arm64, Apple M3); 8 cores, 1-minute load average 2.5 at the start)");
+    expect(text).toContain("123 comparisons over all 41 generated export objects");
+    expect(text).toContain("Largest median 1.8 ms against the design target of 2.5 ms on this machine");
+    expect(text).toContain("within target");
+  });
+
   it("refuses files with a missing header field or from a dirty tree", () => {
     for (const k of ["command", "date", "git_sha", "git_dirty", "environment"]) {
       const f = deletionFile();

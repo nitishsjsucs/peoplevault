@@ -3,6 +3,7 @@
 // so tests drive each check with a fake runner and recorded API responses.
 import { CfApi } from "./cf-api.ts";
 import { nameConflicts, type AccountResources } from "./conflicts.ts";
+import { FACTS, PER_INVOCATION, SHARE, projectedD1RowsRead } from "./free-budget.ts";
 import { EXECUTOR_WORKFLOW, GITHUB_SECRETS, MAX_RUN_AGE_HOURS, readGithubState, type GithubState } from "./github.ts";
 import type { RunResult } from "./run.ts";
 
@@ -221,6 +222,7 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     }
     const needS = ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"].filter((s) => !names.includes(s));
     out.push(needS.length ? missing(W, "Worker secrets", `missing: ${needS.join(", ")}`, "npm run deploy") : ok(W, "Worker secrets", "2 of 2"));
+    if (!placeholders.length && loggedIn) out.push(...(await freePlanUsage(d, text, env, accountId ?? null)));
   }
   const V = "Live checks";
   if (subdomain) {
@@ -258,6 +260,73 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
   }
   out.push(...githubChecks(await readGithubState(d.run, env), (d.now ?? Date.now)()));
   return out;
+}
+
+/** A var of the rendered production config ("" when absent). */
+export function configVar(text: string, name: string): string {
+  return new RegExp(`"${name}"\\s*:\\s*"([^"]*)"`).exec(text)?.[1] ?? "";
+}
+
+/**
+ * Workers Free usage (SPEC.md sections 22.1 and 30.4), read-only: the retention cron switch, today's admissions
+ * against DAILY_DELETION_STARTS, the D1 rows one deletion's three probes read projected at the cap against this
+ * repo's 25% share of 5M rows a day, and (optional) the Worker's CPU p99 from Workers analytics.
+ */
+export async function freePlanUsage(d: DoctorDeps, config: string, env: Record<string, string | undefined>, accountId: string | null, now = new Date()): Promise<CheckResult[]> {
+  const G = "Free plan usage";
+  const out: CheckResult[] = [];
+  const cron = configVar(config, "RETENTION_CRON");
+  out.push(
+    cron === "on"
+      ? ok(G, "retention cron", "on")
+      : warn(G, "retention cron", "off: the daily cron only re-admits deferred and orphaned requests (turn it on after the production eval result is committed)", "npm run setup:prod -- --only worker --retention-cron on"),
+  );
+  const cap = Number(configVar(config, "DAILY_DELETION_STARTS")) || null;
+  const d1 = async (sql: string) => jsonFrom((await d.run(d.wrangler, ["d1", "execute", "pv-control", "--remote", "-c", PROD_CONFIG, "--json", "--command", sql])).stdout) as { results: Record<string, unknown>[] }[];
+  try {
+    const day = `${now.toISOString().slice(0, 10)}T00:00:00.000Z`;
+    const n = Number((await d1(`SELECT COUNT(*) AS n FROM deletion_requests WHERE admitted_at >= '${day}'`))[0]!.results[0]!.n);
+    const detail = `${n} of ${cap ?? "unlimited"} deletion starts admitted today (UTC)`;
+    out.push(cap !== null && n >= cap ? warn(G, "admissions today", `${detail}: further requests wait for tomorrow's cron`, "wait for 03:00 UTC, or check what started them") : ok(G, "admissions today", detail));
+  } catch {
+    out.push(warn(G, "admissions today", "could not read deletion_requests", "npm run setup:prod"));
+  }
+  try {
+    const tables = (await d1("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name <> 'd1_migrations'"))[0]!.results.map((r) => String(r.name)).filter((t) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(t));
+    const rows = tables.length ? Number((await d1(`SELECT ${tables.map((t) => `(SELECT COUNT(*) FROM ${t})`).join(" + ")} AS n`))[0]!.results[0]!.n) : 0;
+    const projected = projectedD1RowsRead(rows, cap ?? 16);
+    const share = FACTS.F12.value[0] * SHARE;
+    const detail = `${rows} rows in the probed tables; ${projected} D1 rows read projected on a capped day (share ${share})`;
+    out.push(projected <= share ? ok(G, "D1 rows per probe", detail) : warn(G, "D1 rows per probe", detail, "archive old audit events and results, or lower DAILY_DELETION_STARTS"));
+  } catch {
+    out.push(warn(G, "D1 rows per probe", "could not count the probed tables", "npm run setup:prod"));
+  }
+  out.push(await cpuP99(d, env, accountId, now));
+  return out;
+}
+
+/** Optional: CPU p99 per invocation of the Worker over the last 24 hours (Workers analytics GraphQL; the dataset and
+ * field names are unverified until the first production read; the token needs Account Analytics Read). */
+async function cpuP99(d: DoctorDeps, env: Record<string, string | undefined>, accountId: string | null, now: Date): Promise<CheckResult> {
+  const G = "Free plan usage";
+  const skipped = ok(G, "CPU p99", "not checked (optional: needs Account Analytics Read on PV_CF_API_TOKEN)");
+  if (!env.PV_CF_API_TOKEN || !accountId) return skipped;
+  const query = `query($a: string!, $since: Time!, $until: Time!) { viewer { accounts(filter: { accountTag: $a }) { workersInvocationsAdaptive(limit: 1, filter: { scriptName: "peoplevault", datetime_geq: $since, datetime_leq: $until }) { quantiles { cpuTimeP99 } } } } }`;
+  try {
+    const res = await d.fetchImpl("https://api.cloudflare.com/client/v4/graphql", {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.PV_CF_API_TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({ query, variables: { a: accountId, since: new Date(now.getTime() - 86_400_000).toISOString(), until: now.toISOString() } }),
+    });
+    const body = (await res.json()) as { data?: { viewer?: { accounts?: { workersInvocationsAdaptive?: { quantiles?: { cpuTimeP99?: number } }[] }[] } } };
+    const us = body.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive?.[0]?.quantiles?.cpuTimeP99;
+    if (!res.ok || typeof us !== "number") return skipped;
+    const ms = us / 1000;
+    const detail = `${ms.toFixed(2)} ms over the last 24 hours (limit ${FACTS.F2.value} ms, target ${PER_INVOCATION.cpuTargetMs} ms)`;
+    return ms <= PER_INVOCATION.cpuTargetMs ? ok(G, "CPU p99", detail) : warn(G, "CPU p99", detail, "lower R2_ERASE_STEP_BYTES and R2_PROBE_STEP_BYTES in the production template, then npm run setup:prod -- --only worker");
+  } catch {
+    return skipped;
+  }
 }
 
 /** The audit copy in the Basin Catalog (SPEC.md section 30.3.3): lag and the age of the last export commit. */

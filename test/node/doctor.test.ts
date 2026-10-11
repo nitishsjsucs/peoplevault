@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CF_API } from "../../scripts/lib/cf-api.ts";
-import { auditCopyCheck, exitCode, githubChecks, localChecks, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
+import { auditCopyCheck, exitCode, freePlanUsage, githubChecks, localChecks, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
 import { GITHUB_SECRETS, readGithubState, type GithubState } from "../../scripts/lib/github.ts";
 import { REPO_ROOT, type RunResult } from "../../scripts/lib/run.ts";
 
@@ -250,5 +250,39 @@ describe("doctor --prod: Cloudflare name conflicts on the shared account", () =>
     expect(line.fix).toContain("record it in .secrets/prod-resources.json");
     const recorded = (await run({ ".secrets/prod-resources.json": JSON.stringify({ created_buckets: ["pv-lake"] }) })).find((x) => x.name === "name conflicts")!;
     expect(recorded.status).toBe("ok");
+  });
+});
+
+describe("doctor --prod: Free plan usage lines", () => {
+  const config = (cron: string) => `{ "vars": { "DAILY_DELETION_STARTS": "16", "RETENTION_CRON": "${cron}" } }`;
+  const d1 = (sql: string) => `wrangler d1 execute pv-control --remote -c infra/cloudflare/wrangler.production.jsonc --json --command ${sql}`;
+  const NOW = new Date("2026-10-11T12:00:00Z");
+  const commands = (admitted: number, rows: number) => ({
+    [d1("SELECT COUNT(*) AS n FROM deletion_requests WHERE admitted_at >= '2026-10-11T00:00:00.000Z'")]: ok(JSON.stringify([{ results: [{ n: admitted }] }])),
+    [d1("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name <> 'd1_migrations'")]: ok(
+      JSON.stringify([{ results: [{ name: "audit_events" }, { name: "identity_map" }] }]),
+    ),
+    [d1("SELECT (SELECT COUNT(*) FROM audit_events) + (SELECT COUNT(*) FROM identity_map) AS n")]: ok(JSON.stringify([{ results: [{ n: rows }] }])),
+  });
+
+  it("warns while the retention cron is off, reports admissions and the projected D1 reads, skips CPU without the analytics scope", async () => {
+    const r = await freePlanUsage(deps({ commands: commands(3, 2900) }), config("off"), {}, "acct", NOW);
+    const by = Object.fromEntries(r.map((x) => [x.name, x]));
+    expect(by["retention cron"]).toMatchObject({ status: "warn", fix: "npm run setup:prod -- --only worker --retention-cron on" });
+    expect(by["admissions today"]).toMatchObject({ status: "ok", detail: "3 of 16 deletion starts admitted today (UTC)" });
+    expect(by["D1 rows per probe"]).toMatchObject({ status: "ok" });
+    expect(by["D1 rows per probe"]!.detail).toContain("2900 rows in the probed tables; 204200 D1 rows read projected");
+    expect(by["CPU p99"]).toMatchObject({ status: "ok", detail: "not checked (optional: needs Account Analytics Read on PV_CF_API_TOKEN)" });
+  });
+
+  it("warns at the admission cap, when the probed tables outgrow the share, and when CPU p99 passes 7.5 ms", async () => {
+    const graphql = new Response(JSON.stringify({ data: { viewer: { accounts: [{ workersInvocationsAdaptive: [{ quantiles: { cpuTimeP99: 8200 } }] }] } } }), { status: 200 });
+    const r = await freePlanUsage(deps({ commands: commands(16, 30_000), routes: { "https://api.cloudflare.com/client/v4/graphql": graphql } }), config("on"), { PV_CF_API_TOKEN: "t" }, "acct", NOW);
+    const by = Object.fromEntries(r.map((x) => [x.name, x]));
+    expect(by["retention cron"]!.status).toBe("ok");
+    expect(by["admissions today"]!.status).toBe("warn");
+    expect(by["D1 rows per probe"]!.status).toBe("warn");
+    expect(by["CPU p99"]).toMatchObject({ status: "warn" });
+    expect(by["CPU p99"]!.detail).toContain("8.20 ms");
   });
 });
