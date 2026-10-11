@@ -20,7 +20,7 @@ Under construction (2026-10-10). The design contract is [SPEC.md](SPEC.md); prog
 | Subject deletion Workflow, conditional R2 rewrites, Python executor, independent probes and scanners | built, tested locally (Miniflare, DuckDB, SqlCatalog) |
 | Legal holds, retention sweep Workflow, cron and queue consumer | built, tested locally |
 | Residual tracking (Iceberg, BigQuery, D1, KV) and the deletion eval with an independent oracle and fault injection | built, run locally; committed results follow from clean-tree runs |
-| CI | not built yet |
+| CI (GitHub Actions: worker, python and e2e jobs, no secrets) | workflow written; each job's commands pass locally and in a fresh clone; it has not run on GitHub because the repository has not been pushed |
 | `npm run doctor` and `npm run doctor -- --prod` | built; tested with fakes and recorded responses; on this Mac the production lines all report missing setup |
 | `npm run setup:prod`, `pv setup gcp`, `npm run deploy`, `npm run seed:prod` | written, not yet executed (dry-run plans golden-tested) |
 | BigQuery path (dbt build, protected-table controls, 48 cases as purpose service accounts, 37 ceiling probes, Worker REST client) | written, not yet executed |
