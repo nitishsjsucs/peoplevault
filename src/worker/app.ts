@@ -3,7 +3,7 @@ import type { VerifiedIdentity } from "./auth/access-verifier.ts";
 import { devRoutes } from "./auth/dev-login.ts";
 import { authenticate, requireCsrfHeader, withConfig } from "./auth/middleware.ts";
 import type { Principal } from "./auth/principals.ts";
-import type { AuditLog } from "./audit/audit-log.ts";
+import { AuditContention, type AuditLog } from "./audit/audit-log.ts";
 import { services } from "./context.ts";
 import { ConfigError, type Config } from "./env.ts";
 import type { Pseudonymizer } from "./pseudo/hmac.ts";
@@ -39,6 +39,10 @@ export function buildApp(opts: BuildAppOptions = {}): Hono<AppEnv> {
     if (err instanceof ConfigError) {
       console.error("config_error");
       return c.json({ error: "misconfigured" }, 500);
+    }
+    if (err instanceof AuditContention) {
+      console.warn("audit_contention");
+      return c.json({ error: "busy", code: "audit_contention" }, 503);
     }
     console.error("unhandled_error", err.name);
     return c.json({ error: "internal" }, 500);

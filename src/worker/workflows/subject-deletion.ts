@@ -26,10 +26,11 @@ import { POLICY } from "../policy/compiled.ts";
 import { addDays, D1_TIME_TRAVEL_DAYS, recordResiduals, type ResidualInput } from "../residuals/residuals.ts";
 import { newCounter, withOpBudget } from "../storage/op-budget.ts";
 import { probeD1, type D1Stage } from "../verify/d1-probe.ts";
+import type { TokenMatcher } from "../verify/tokens.ts";
 import { probeKv } from "../verify/kv-probe.ts";
 import { PROBE_START, probeR2Step, type ProbeCursor } from "../verify/r2-probe.ts";
 import { subjectMatchers } from "../verify/tokens.ts";
-import { readResults, recordProbe, toUpsert, unregisteredRow, upsertResults, WORKER_PROBED, type ProbeFindingState, type ResultUpsert } from "./results.ts";
+import { finishVerdicts, readResults, recordProbe, toUpsert, unregisteredRow, upsertResults, WORKER_PROBED, type ResultUpsert } from "./results.ts";
 
 export interface DeletionParams {
   requestId: string;
@@ -318,37 +319,31 @@ export class SubjectDeletionWorkflow extends WorkflowEntrypoint<Env, DeletionPar
           return { scanned: res.scanned, findings: res.findings.length, errors: rec.errors };
         }),
       );
-      await step.do("verify-d1", STEP_CONFIG, () =>
-        counted(async (e) => {
-          const { m } = await matchersFor(e);
-          const res = await probeD1(e.DB, m, "before_identity_erasure");
-          const rec = await recordProbe(e.DB, requestId, res.findings, res.errors);
-          return { scanned: res.scanned, findings: res.findings.length, errors: rec.errors };
-        }),
-      );
+      // D1 probe in SQLite (instr prefilter), one table range per step: `verify-d1`, then `verify-d1-2`, ...
+      const d1Probe = async (name: string, stage: D1Stage, last?: (e: Env, m: TokenMatcher[]) => Promise<Record<string, number>>) => {
+        let from = 0;
+        for (let n = 1; ; n++) {
+          if (n > MAX_CURSOR_STEPS) throw new Error("D1 probe did not finish");
+          const start = from;
+          const out = await step.do(n === 1 ? name : `${name}-${n}`, STEP_CONFIG, () =>
+            counted(async (e) => {
+              const { m } = await matchersFor(e);
+              const res = await probeD1(e.DB, m, stage, { from: start, ...(stage === "final" ? { skipRows: { executor_tasks: { column: "request_id", value: requestId } } } : {}) });
+              const rec = await recordProbe(e.DB, requestId, res.findings, res.errors);
+              const extra = res.next === null && last ? await last(e, m) : {};
+              return { next: res.next, tables: res.tables, scanned: res.scanned, findings: res.findings.length, errors: rec.errors, ...extra };
+            }),
+          );
+          if (out.next === null) return;
+          from = out.next;
+        }
+      };
+
+      await d1Probe("verify-d1", "before_identity_erasure");
 
       await step.do("combine-verdicts", STEP_CONFIG, () =>
         counted(async (e) => {
-          const current = await readResults(e.DB, requestId, WORKER_PROBED);
-          const rows: ResultUpsert[] = [];
-          let notClean = 0;
-          for (const id of WORKER_PROBED) {
-            const row = current.get(id);
-            if (!row) continue;
-            const finding = (row.finding_json ? JSON.parse(row.finding_json) : {}) as ProbeFindingState & Record<string, unknown>;
-            const found = Object.entries(finding.probe ?? {});
-            const status = found.length > 0 ? "residue" : Object.keys(finding.probe_errors ?? {}).length > 0 ? "error" : "clean";
-            if (status !== "clean") notClean++;
-            const { probe: _p, probe_errors: _e, ...rest } = finding;
-            rows.push(
-              toUpsert(row, {
-                verifyStatus: status,
-                verifyMatches: found.reduce((n, [, k]) => n + k, 0),
-                finding: { ...rest, findings: found.map(([loc, matches]) => ({ store: loc.slice(0, loc.indexOf(":")), location: loc.slice(loc.indexOf(":") + 1), matches })), ...(status === "error" ? { probe_errors: Object.keys(finding.probe_errors ?? {}).length } : {}) },
-              }),
-            );
-          }
-          await upsertResults(e.DB, requestId, rows);
+          const notClean = await finishVerdicts(e.DB, requestId, WORKER_PROBED);
           const unregistered = await e.DB.prepare("SELECT COUNT(*) AS n FROM deletion_asset_results WHERE request_id = ? AND applicability = 'unregistered'").bind(requestId).first<{ n: number }>();
           return { workerNotClean: notClean, unregistered: unregistered?.n ?? 0 };
         }),
@@ -372,7 +367,7 @@ export class SubjectDeletionWorkflow extends WorkflowEntrypoint<Env, DeletionPar
       if (decision.proceed) {
         await step.do("erase-identity-records", STEP_CONFIG, () =>
           counted(async (e) => {
-            const { s, m } = await matchersFor(e);
+            const s = await loadSubject(e.DB, requestId);
             const heldRefs = [...(await activeHeldRefs(e.DB))].sort();
             await createTaskStore(e.DB).create({
               id: `${instanceId}:identity`,
@@ -384,20 +379,14 @@ export class SubjectDeletionWorkflow extends WorkflowEntrypoint<Env, DeletionPar
               payload: { requestId, subject: s, assets: ["id.wh.identity_xref"], heldSubjectRefs: heldRefs },
             });
             const out = await eraseIdentityRecords(e.DB, s);
-            const probe = await probeD1(e.DB, m, "before_redaction");
-            const mine = probe.findings.filter((f) => f.assetId === "id.d1.identity_records");
-            await updateResult(e.DB, requestId, "id.d1.identity_records", {
-              rows_erased: out.rowsErased,
-              references_scrubbed: out.referencesScrubbed,
-              action_status: "erased",
-              verify_status: mine.length > 0 ? "residue" : "clean",
-              verify_matches: mine.reduce((n, f) => n + f.matches, 0),
-              finding_json: JSON.stringify({ findings: mine.map((f) => ({ store: f.store, location: f.location, matches: f.matches })) }),
-            });
-            await upsertResults(e.DB, requestId, [...probe.findings.filter((x) => x.assetId === null), ...probe.errors].map(unregisteredRow));
-            return { rowsErased: out.rowsErased, refsScrubbed: out.referencesScrubbed, residue: mine.length };
+            await updateResult(e.DB, requestId, "id.d1.identity_records", { rows_erased: out.rowsErased, references_scrubbed: out.referencesScrubbed, action_status: "erased", finding_json: JSON.stringify({}) });
+            return { rowsErased: out.rowsErased, refsScrubbed: out.referencesScrubbed };
           }),
         );
+
+        // The D1 probe again over every table, identity tables included (deletion_requests and executor_tasks are
+        // still excluded until redaction); the last step of the range sets the identity records' verdict.
+        await d1Probe("verify-d1-identity", "before_redaction", async (e) => ({ identityNotClean: await finishVerdicts(e.DB, requestId, ["id.d1.identity_records"]) }));
 
         const identityEvent = await step.waitForEvent<{ taskId: string; ok: boolean; result: ExecutorResultT }>("wait-executor-identity", {
           type: "executor_result_identity",
@@ -466,29 +455,40 @@ export class SubjectDeletionWorkflow extends WorkflowEntrypoint<Env, DeletionPar
           }),
         );
 
+        // Redaction: tokens may exist only in this request's employee_id and its own task payloads. Candidate rows are
+        // selected in SQLite (instr), the matchers decide; then employee_id is nulled. The payloads go in the last
+        // verify-d1-final step, after the final probe has used them for the tokens.
         await step.do("redact-request", STEP_CONFIG, () =>
           counted(async (e) => {
             const { m } = await matchersFor(e);
-            // tokens may exist only in this request's employee_id and its own task payloads
-            const reqRows = await e.DB.prepare("SELECT id, employee_id FROM deletion_requests").all<{ id: string; employee_id: string | null }>();
-            const taskRows = await e.DB.prepare("SELECT id, request_id, payload_json, result_json FROM executor_tasks").all<{ id: string; request_id: string | null; payload_json: string | null; result_json: string | null }>();
+            const tokens = [...new Set(m.map((x) => x.token))];
+            const any = (col: string, offset: number) => tokens.map((_, i) => `instr(${col}, ?${i + offset}) > 0`).join(" OR ");
+            const reqRows = await e.DB.prepare(`SELECT employee_id FROM deletion_requests WHERE id <> ?1 AND employee_id IS NOT NULL AND (${any("employee_id", 2)})`)
+              .bind(requestId, ...tokens)
+              .all<{ employee_id: string }>();
+            const taskRows = await e.DB.prepare(`SELECT request_id, payload_json, result_json FROM executor_tasks WHERE (${any("result_json", 2)}) OR (request_id IS NOT ?1 AND (${any("payload_json", 2)}))`)
+              .bind(requestId, ...tokens)
+              .all<{ request_id: string | null; payload_json: string | null; result_json: string | null }>();
             let stray = 0;
-            for (const r of reqRows.results) if (r.id !== requestId && r.employee_id && m.some((x) => x.test(r.employee_id!))) stray++;
+            for (const r of reqRows.results) if (m.some((x) => x.test(r.employee_id))) stray++;
             for (const t of taskRows.results) {
               if (t.result_json && m.some((x) => x.test(t.result_json!))) stray++;
               if (t.request_id !== requestId && t.payload_json && m.some((x) => x.test(t.payload_json!))) stray++;
             }
-            const res = await e.DB.batch([
-              e.DB.prepare("UPDATE deletion_requests SET employee_id = NULL WHERE id = ?").bind(requestId),
-              e.DB.prepare("UPDATE executor_tasks SET payload_json = NULL WHERE request_id = ?").bind(requestId),
-            ]);
-            const final = await probeD1(e.DB, m, "final" as D1Stage);
-            const rows = [...final.findings, ...final.errors].map(unregisteredRow);
-            if (stray > 0) rows.push(unregisteredRow({ store: "d1", location: "control_tables", assetId: null, matches: stray }));
-            await upsertResults(e.DB, requestId, rows);
-            return { requestRedacted: res[0]!.meta.changes, payloadsPurged: res[1]!.meta.changes, residue: rows.length };
+            const res = await e.DB.prepare("UPDATE deletion_requests SET employee_id = NULL WHERE id = ?").bind(requestId).run();
+            if (stray > 0) await upsertResults(e.DB, requestId, [unregisteredRow({ store: "d1", location: "control_tables", assetId: null, matches: stray })]);
+            return { requestRedacted: res.meta.changes, stray };
           }),
         );
+
+        // The final D1 probe over every table (this request's own task rows left out: their payloads are purged right
+        // after, and their results were checked above); the last step purges the payloads and proves none is left.
+        await d1Probe("verify-d1-final", "final", async (e) => {
+          const purged = await e.DB.prepare("UPDATE executor_tasks SET payload_json = NULL WHERE request_id = ? AND payload_json IS NOT NULL").bind(requestId).run();
+          const left = await e.DB.prepare("SELECT COUNT(*) AS n FROM executor_tasks WHERE request_id = ? AND payload_json IS NOT NULL").bind(requestId).first<{ n: number }>();
+          if ((left?.n ?? 0) > 0) await upsertResults(e.DB, requestId, [unregisteredRow({ store: "d1", location: "executor_tasks", assetId: null, error: "payload_not_purged" })]);
+          return { payloadsPurged: purged.meta.changes, payloadsLeft: left?.n ?? 0 };
+        });
       }
 
       const final = await step.do("finalize", STEP_CONFIG, () => counted(async (e) => this.finalize(e, requestId, startedAt, decision.proceed ? null : "verification_failed")));

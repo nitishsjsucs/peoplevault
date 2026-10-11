@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { GENESIS, canonicalJson, createAuditLog } from "../../src/worker/audit/audit-log.ts";
+import { AuditContention, GENESIS, MAX_APPEND_ATTEMPTS, canonicalJson, createAuditLog } from "../../src/worker/audit/audit-log.ts";
 
 describe("audit hash chain", () => {
   it("appends and verifies; genesis prev_hash is 64 zeros", async () => {
@@ -36,5 +36,31 @@ describe("audit hash chain", () => {
 
   it("canonical JSON sorts keys recursively and drops undefined", () => {
     expect(canonicalJson({ b: 1, a: { d: [2, { z: 1, y: null }], c: undefined } })).toBe('{"a":{"d":[2,{"y":null,"z":1}]},"b":1}');
+  });
+
+  it("an append gives up after 8 attempts (16 D1 statements) when the chain head keeps moving", async () => {
+    let statements = 0;
+    const db = new Proxy(env.DB, {
+      get(t, prop) {
+        if (prop !== "prepare") return Reflect.get(t, prop).bind(t);
+        return (sql: string) => {
+          const stmt = t.prepare(sql);
+          const wrap = (st: D1PreparedStatement): D1PreparedStatement =>
+            new Proxy(st, {
+              get(s2, p2) {
+                if (p2 === "bind") return (...a: unknown[]) => wrap(s2.bind(...a));
+                if (p2 === "first") return (...a: unknown[]) => (statements++, (s2.first as (...x: unknown[]) => unknown)(...a));
+                // the guarded insert never wins: another writer always moved the head first
+                if (p2 === "run") return async () => (statements++, { meta: { changes: 0 } });
+                return Reflect.get(s2, p2).bind(s2);
+              },
+            });
+          return wrap(stmt);
+        };
+      },
+    });
+    await expect(createAuditLog(db).append({ actor: "t", actorKind: "system", action: "x", decision: "info", reason: "y" })).rejects.toBeInstanceOf(AuditContention);
+    expect(MAX_APPEND_ATTEMPTS).toBe(8);
+    expect(statements).toBe(2 * MAX_APPEND_ATTEMPTS);
   });
 });

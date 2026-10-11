@@ -86,7 +86,13 @@ export async function chainHash(prev: string, fields: Record<string, unknown>): 
   return sha256Hex(`${prev}\n${canonicalJson(fields)}`);
 }
 
-const MAX_ATTEMPTS = 25;
+// Workers Free allows 50 D1 queries per invocation: an append tries at most 8 times (16 statements), then throws (a
+// Workflow step retries; a request answers 500) instead of spending the invocation's queries (SPEC.md 30.3.1).
+export const MAX_APPEND_ATTEMPTS = 8;
+
+export class AuditContention extends Error {
+  override name = "AuditContention";
+}
 
 export function createAuditLog(db: D1Database, now: () => Date = () => new Date()): AuditLog {
   return {
@@ -108,7 +114,7 @@ export function createAuditLog(db: D1Database, now: () => Date = () => new Date(
         row_count: e.rowCount ?? null,
         detail_json: e.detail ? canonicalJson(e.detail) : null,
       };
-      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      for (let attempt = 0; attempt < MAX_APPEND_ATTEMPTS; attempt++) {
         const head = await db.prepare("SELECT hash FROM audit_events ORDER BY seq DESC LIMIT 1").first<{ hash: string }>();
         const prev = head?.hash ?? GENESIS;
         const hash = await chainHash(prev, hashedFields(row));
@@ -126,7 +132,7 @@ export function createAuditLog(db: D1Database, now: () => Date = () => new Date(
         }
         await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 20) + 1));
       }
-      throw new Error("audit append contention");
+      throw new AuditContention("audit append contention");
     },
 
     async verify() {

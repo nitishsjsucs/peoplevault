@@ -103,11 +103,11 @@ describe("Workers Free budgets at the full population's sizes", () => {
     expect(extractList.objects.reduce((n, o) => n + o.size, 0) / 1_048_576).toBeCloseTo(1.21, 1);
   });
 
-  it("a completed deletion: 28 steps (3 erase and 6 probe cursor steps), every step within its caps, the instance within 900 calls", async () => {
+  it("a completed deletion: 30 steps (3 erase and 6 probe cursor steps), every step within its caps, the instance within 900 calls", async () => {
     const s = subject("hrbp-02", "in_unit", 0);
     const { steps, status, instance } = await run("req-budget", s.employee_ref, true);
     expect(status).toMatch(/^completed/);
-    expect(steps).toBe(28);
+    expect(steps).toBe(30);
     const erase = await cursorSteps(instance, "erase-r2");
     const probe = await cursorSteps(instance, "verify-r2");
     expect([erase.length, probe.length]).toEqual([3, 6]);
@@ -115,7 +115,8 @@ describe("Workers Free budgets at the full population's sizes", () => {
     for (const o of probe) expect(o.r2Bytes).toBeLessThanOrEqual(PROBE_CAP);
     const names = [
       "load-request", "check-legal-hold", "start-and-suppress", "discover-worker-assets", "erase-kv-caches", "enqueue-executor-erase", "record-executor-erase",
-      "verify-kv", "verify-d1", "combine-verdicts", "decide-identity-erasure", "erase-identity-records", "record-executor-identity", "record-residuals", "redact-request", "finalize",
+      "verify-kv", "verify-d1", "combine-verdicts", "decide-identity-erasure", "erase-identity-records", "verify-d1-identity", "record-executor-identity", "record-residuals",
+      "redact-request", "verify-d1-final", "finalize",
     ];
     let total = 0;
     for (const o of [...erase, ...probe]) {

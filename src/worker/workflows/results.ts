@@ -107,6 +107,8 @@ export function unregisteredRow(f: Finding | ProbeError): ResultUpsert {
 
 /** Worker-probed registered assets whose verdict combine-verdicts derives from the persisted probe findings. */
 export const WORKER_PROBED = ["src.r2.exports", "drv.r2.analytics_extracts", "cache.kv.profile_cards", "cache.kv.team_rosters"] as const;
+/** Registered assets whose probe findings are persisted by location (the identity records after identity erasure too). */
+const PERSISTED = new Set<string>([...WORKER_PROBED, "id.d1.identity_records"]);
 
 export interface ProbeFindingState {
   /** location -> matches, per registered asset (overwritten on a rescan of the same location) */
@@ -131,7 +133,7 @@ export async function recordProbe(db: D1Database, requestId: string, findings: F
   const byAsset = new Map<string, { probe: Record<string, number>; probe_errors: Record<string, number> }>();
   const slot = (id: string) => byAsset.get(id) ?? byAsset.set(id, { probe: {}, probe_errors: {} }).get(id)!;
   for (const f of findings) {
-    if (f.assetId && (WORKER_PROBED as readonly string[]).includes(f.assetId)) slot(f.assetId).probe[`${f.store}:${f.location}`] = f.matches;
+    if (f.assetId && PERSISTED.has(f.assetId)) slot(f.assetId).probe[`${f.store}:${f.location}`] = f.matches;
     else if (f.assetId === null) unregistered.push(unregisteredRow(f));
   }
   for (const e of errors) {
@@ -156,4 +158,38 @@ export async function recordProbe(db: D1Database, requestId: string, findings: F
   }
   await upsertResults(db, requestId, rows);
   return { registered: findings.length - unregistered.filter((u) => u.verifyStatus === "residue").length, unregistered: unregistered.length, errors: errors.length };
+}
+
+/**
+ * Turns the persisted probe findings of registered assets into verdicts: residue when any location matched, error
+ * when a read error could hide residue, clean otherwise. The findings list keeps locations and match counts only.
+ */
+export async function finishVerdicts(db: D1Database, requestId: string, assetIds: readonly string[], patch: Partial<ResultUpsert> = {}): Promise<number> {
+  const current = await readResults(db, requestId, assetIds);
+  const rows: ResultUpsert[] = [];
+  let notClean = 0;
+  for (const id of assetIds) {
+    const row = current.get(id);
+    if (!row) continue;
+    const finding = (row.finding_json ? JSON.parse(row.finding_json) : {}) as ProbeFindingState & Record<string, unknown>;
+    const found = Object.entries(finding.probe ?? {});
+    const errorCount = Object.keys(finding.probe_errors ?? {}).length;
+    const status = found.length > 0 ? "residue" : errorCount > 0 ? "error" : "clean";
+    if (status !== "clean") notClean++;
+    const { probe: _p, probe_errors: _e, ...rest } = finding;
+    rows.push(
+      toUpsert(row, {
+        ...patch,
+        verifyStatus: status,
+        verifyMatches: found.reduce((n, [, k]) => n + k, 0),
+        finding: {
+          ...rest,
+          findings: found.map(([loc, matches]) => ({ store: loc.slice(0, loc.indexOf(":")), location: loc.slice(loc.indexOf(":") + 1), matches })),
+          ...(status === "error" ? { probe_errors: errorCount } : {}),
+        },
+      }),
+    );
+  }
+  await upsertResults(db, requestId, rows);
+  return notClean;
 }

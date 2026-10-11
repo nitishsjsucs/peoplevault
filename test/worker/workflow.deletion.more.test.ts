@@ -22,8 +22,8 @@ const tokensOf = (i: WorldIdentity) => [i.employee_id, i.work_email, i.full_name
 // the fixture world's objects are small: one erase and one probe cursor step each
 const steps = [
   "load-request", "check-legal-hold", "start-and-suppress", "discover-worker-assets", "erase-r2-1", "erase-kv-caches", "enqueue-executor-erase", "record-executor-erase",
-  "verify-r2-1", "verify-kv", "verify-d1", "combine-verdicts", "decide-identity-erasure", "erase-identity-records", "record-executor-identity",
-  "record-residuals", "redact-request", "finalize",
+  "verify-r2-1", "verify-kv", "verify-d1", "combine-verdicts", "decide-identity-erasure", "erase-identity-records", "verify-d1-identity", "record-executor-identity",
+  "record-residuals", "redact-request", "verify-d1-final", "finalize",
 ];
 
 describe("held subject", () => {
