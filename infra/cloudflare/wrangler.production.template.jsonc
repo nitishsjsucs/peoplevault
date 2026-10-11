@@ -11,6 +11,9 @@
   // Invocation logs would record the method and URL of every request (3 days on Workers Free); console logs carry
   // no identifiers (test/worker/logging.test.ts).
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  // The privacy console (`npm run build:web`, which `npm run deploy` and `deploy:check` run first). Only /api/* and
+  // /dev/* invoke the Worker; requests for static assets are free and unlimited (SPEC.md section 30.1, F21).
+  "assets": { "directory": "../../dist/web", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/dev/*"] },
   // Production secrets only: every listed name becomes an inherit binding at deploy time, uploaded by
   // `wrangler deploy --secrets-file .secrets/worker-secrets.env`.
   "secrets": { "required": ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"] },

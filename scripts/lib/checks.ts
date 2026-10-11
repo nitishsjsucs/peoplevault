@@ -226,14 +226,21 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
   }
   const V = "Live checks";
   if (subdomain) {
-    const url = `https://peoplevault.${subdomain}.workers.dev/api/v1/me`;
-    try {
-      const res = await d.fetchImpl(url, { redirect: "manual" });
-      const loc = res.headers.get("location") ?? "";
-      const byAccess = (res.status >= 300 && res.status < 400 && loc.includes("cloudflareaccess.com")) || (res.status === 403 && !(res.headers.get("content-type") ?? "").includes("application/json"));
-      out.push(byAccess ? ok(V, "edge protection", "unauthenticated request answered by Access") : missing(V, "edge protection", `answered by the Worker or something else (HTTP ${res.status})`, "protect the Worker with the Access application (docs/PRODUCTION.md, Access)"));
-    } catch {
-      out.push(missing(V, "edge protection", "Worker unreachable", "npm run deploy"));
+    const origin = `https://peoplevault.${subdomain}.workers.dev`;
+    const url = `${origin}/api/v1/me`;
+    // the API and the privacy console (static assets, served without invoking the Worker) must both sit behind Access
+    for (const [name, target] of [
+      ["edge protection", url],
+      ["console protection", `${origin}/`],
+    ] as const) {
+      try {
+        const res = await d.fetchImpl(target, { redirect: "manual" });
+        const loc = res.headers.get("location") ?? "";
+        const byAccess = (res.status >= 300 && res.status < 400 && loc.includes("cloudflareaccess.com")) || (res.status === 403 && !(res.headers.get("content-type") ?? "").includes("application/json"));
+        out.push(byAccess ? ok(V, name, "unauthenticated request answered by Access") : missing(V, name, `answered by the Worker or something else (HTTP ${res.status})`, "protect the Worker with the Access application (docs/PRODUCTION.md, Access)"));
+      } catch {
+        out.push(missing(V, name, "Worker unreachable", "npm run deploy"));
+      }
     }
     for (const [token, persona] of Object.entries(PERSONA_PRINCIPAL)) {
       const id = env[`PV_CF_ACCESS_CLIENT_ID_${PERSONA_ENV[token]}`];

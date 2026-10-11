@@ -63,7 +63,7 @@ describe("Workers Free budget: the worst-case day within a 25% share of every pe
   });
 
   it("projects D1 rows read from the rows a probe scans (the doctor's line)", () => {
-    expect(projectedD1RowsRead(2900, 16)).toBe(16 * (3 * 2900 + 300) + 60_200);
+    expect(projectedD1RowsRead(2900, 16)).toBe(16 * (3 * 2900 + 300) + 60_200 + 10_000);
     expect(projectedD1RowsRead(2900, 16)).toBeLessThanOrEqual(FACTS.F12.value[0] * SHARE);
   });
 });

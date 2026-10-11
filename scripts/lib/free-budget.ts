@@ -1,10 +1,11 @@
 // The Workers Free usage budget (SPEC.md sections 30.1 and 30.4). One Cloudflare account and one Google Cloud project
 // serve four repos and every Free allowance is per account, so this repo plans for a 25% share of each allowance on
 // its worst-case day: the first setup:prod and seed:prod, authz:prod, the production eval plus 4 more completed
-// deletions to reach the daily cap, a retention sweep, 24 hourly executor runs, one audit export and three doctor
-// runs, all on one UTC day. Pure TypeScript (no Node imports): the budget test, the doctor and the worker tests read it.
+// deletions to reach the daily cap, a retention sweep, 24 hourly executor runs, one audit export, three doctor runs
+// and a privacy console session, all on one UTC day. Pure TypeScript (no Node imports): the budget test, the doctor and the worker tests read it.
 
-/** Verified Free plan facts (SPEC.md section 30.1), with the page each was read on (2026-10-10). */
+/** Verified Free plan facts (SPEC.md section 30.1), with the page each was read on (2026-10-10; F21 on 2026-10-11, and
+ * "Requests to static assets are free and unlimited" on https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/). */
 export const FACTS = {
   F1: { what: "Workers requests per day per account", value: 100_000, source: "https://developers.cloudflare.com/workers/platform/limits/" },
   F2: { what: "CPU ms per HTTP request, Cron Trigger and Workflow step", value: 10, source: "https://developers.cloudflare.com/workers/platform/limits/" },
@@ -23,6 +24,7 @@ export const FACTS = {
   F18: { what: "AI Gateways per account", value: 10, source: "https://developers.cloudflare.com/ai-gateway/reference/limits/" },
   F19: { what: "Zero Trust Free seats; service tokens", value: [50, 50], source: "https://developers.cloudflare.com/cloudflare-one/team-and-resources/users/seat-management/" },
   F20: { what: "BigQuery free tier: query TiB and storage GiB per month", value: [1, 10], source: "https://cloud.google.com/bigquery/pricing" },
+  F21: { what: "Static assets: files per Worker version on Free; MiB per file (asset requests are free and unlimited)", value: [20_000, 25], source: "https://developers.cloudflare.com/workers/platform/limits/" },
 } as const;
 
 export const SHARE = 0.25;
@@ -79,7 +81,10 @@ export interface BudgetRow {
 export const queueOpsPerMessage = (maxRetries: number) => 1 + (1 + maxRetries) + 1 + 1;
 
 /** Workers requests on the worst-case day (SPEC.md section 30.4, row by row). */
-export const REQUESTS_WORST_DAY = { seed: 33, authzProd: 170, prodEval: 1160, executorYml: 40, auditExportAndVerify: 15, doctor: 30, workflowQueueCron: 20 } as const;
+export const REQUESTS_WORST_DAY = { seed: 33, authzProd: 170, prodEval: 1160, executorYml: 40, auditExportAndVerify: 15, doctor: 30, workflowQueueCron: 20, console: 300 } as const;
+
+/** D1 rows a console session reads on that day: a full chain check (each event once), report, request and audit pages. */
+export const CONSOLE_D1_ROWS_READ = 10_000;
 
 export function worstCaseDay(c: Caps): BudgetRow[] {
   const d = c.dailyDeletionStarts;
@@ -87,8 +92,8 @@ export function worstCaseDay(c: Caps): BudgetRow[] {
   const monthlyDeletions = 30 * d;
   return [
     row("Workflow steps", "day", 3000, d * STEPS.completedDeletion + STEPS.sweepWorstCase, `${d} completed deletions x ${STEPS.completedDeletion} steps + a ${STEPS.sweepWorstCase}-step sweep`),
-    row("Workers requests", "day", 100_000, Object.values(REQUESTS_WORST_DAY).reduce((a, b) => a + b, 0), "seed, authz:prod, production eval, executor.yml, audit export and windows, doctor, Workflow, queue and cron invocations"),
-    row("D1 rows read", "day", 5_000_000, d * PER_DELETION.d1RowsRead + 35_000 + 10_000 + 6000 + 5000 + 1200 + 3000, `${d} x ${PER_DELETION.d1RowsRead} + oracle, seed checks, status polls, doctor, sweep, routes and appends`),
+    row("Workers requests", "day", 100_000, Object.values(REQUESTS_WORST_DAY).reduce((a, b) => a + b, 0), "seed, authz:prod, production eval, executor.yml, audit export and windows, doctor, Workflow, queue and cron invocations, 300 console API calls (static assets do not invoke the Worker)"),
+    row("D1 rows read", "day", 5_000_000, d * PER_DELETION.d1RowsRead + 35_000 + 10_000 + 6000 + 5000 + 1200 + 3000 + CONSOLE_D1_ROWS_READ, `${d} x ${PER_DELETION.d1RowsRead} + oracle, seed checks, status polls, doctor, sweep, routes and appends, console`),
     row("D1 rows written", "day", 100_000, 9000 + d * PER_DELETION.d1RowsWritten + 1000 * 3 + 512 + 200, `seed 9,000 + ${d} x ${PER_DELETION.d1RowsWritten} + 1,000 audit events x 3 + residual and task updates`),
     row("KV reads", "day", 100_000, d * PER_DELETION.kvReads + 300 + 100, `${d} x ${PER_DELETION.kvReads} + route gets + oracle`),
     row("KV writes", "day", 1000, 23 + 23 + 60 + 3, "two warm-ups of 23 entries, authz:prod cache fills, planted faults"),
@@ -114,5 +119,5 @@ export function worstCaseDay(c: Caps): BudgetRow[] {
 
 /** D1 rows read on a capped day when each completed deletion probes `scannedRows` rows three times. */
 export function projectedD1RowsRead(scannedRows: number, dailyDeletionStarts: number): number {
-  return dailyDeletionStarts * (3 * scannedRows + 300) + 35_000 + 10_000 + 6000 + 5000 + 1200 + 3000;
+  return dailyDeletionStarts * (3 * scannedRows + 300) + 35_000 + 10_000 + 6000 + 5000 + 1200 + 3000 + CONSOLE_D1_ROWS_READ;
 }

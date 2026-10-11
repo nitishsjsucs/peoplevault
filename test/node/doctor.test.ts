@@ -127,7 +127,7 @@ describe("doctor --prod", () => {
     expect(line.detail).toBe("no access to: service tokens, organizations, workers subdomain");
   });
 
-  it("edge protection: an Access redirect is ok, a Worker JSON 401 is missing", async () => {
+  it("edge and console protection: an Access redirect is ok, a Worker JSON 401 or the console's HTML is missing", async () => {
     const base = {
       env: { CLOUDFLARE_ACCOUNT_ID: "acct", PV_CF_API_TOKEN: "t" },
       routes: {
@@ -138,10 +138,24 @@ describe("doctor --prod", () => {
       } as Record<string, string | Response>,
     };
     const url = "https://peoplevault.nitish-pv.workers.dev/api/v1/me";
-    const redirected = await prodChecks(deps({ ...base, routes: { ...base.routes, [url]: new Response(null, { status: 302, headers: { location: "https://nitish-pv.cloudflareaccess.com/cdn-cgi/access/login" } }) } }));
+    const consoleUrl = "https://peoplevault.nitish-pv.workers.dev/";
+    const toAccess = () => new Response(null, { status: 302, headers: { location: "https://nitish-pv.cloudflareaccess.com/cdn-cgi/access/login" } });
+    const redirected = await prodChecks(deps({ ...base, routes: { ...base.routes, [url]: toAccess(), [consoleUrl]: toAccess() } }));
     expect(redirected.find((x) => x.name === "edge protection")!.status).toBe("ok");
-    const open = await prodChecks(deps({ ...base, routes: { ...base.routes, [url]: new Response(JSON.stringify({ error: "missing_token" }), { status: 401, headers: { "content-type": "application/json" } }) } }));
+    expect(redirected.find((x) => x.name === "console protection")!.status).toBe("ok");
+    const open = await prodChecks(
+      deps({
+        ...base,
+        routes: {
+          ...base.routes,
+          [url]: new Response(JSON.stringify({ error: "missing_token" }), { status: 401, headers: { "content-type": "application/json" } }),
+          [consoleUrl]: new Response("<!doctype html>", { status: 200, headers: { "content-type": "text/html" } }),
+        },
+      }),
+    );
     expect(open.find((x) => x.name === "edge protection")).toMatchObject({ status: "missing" });
+    // the console's index.html served to an unauthenticated browser means the static assets bypass Access
+    expect(open.find((x) => x.name === "console protection")).toMatchObject({ status: "missing", detail: "answered by the Worker or something else (HTTP 200)" });
   });
 });
 
@@ -271,7 +285,7 @@ describe("doctor --prod: Free plan usage lines", () => {
     expect(by["retention cron"]).toMatchObject({ status: "warn", fix: "npm run setup:prod -- --only worker --retention-cron on" });
     expect(by["admissions today"]).toMatchObject({ status: "ok", detail: "3 of 16 deletion starts admitted today (UTC)" });
     expect(by["D1 rows per probe"]).toMatchObject({ status: "ok" });
-    expect(by["D1 rows per probe"]!.detail).toContain("2900 rows in the probed tables; 204200 D1 rows read projected");
+    expect(by["D1 rows per probe"]!.detail).toContain("2900 rows in the probed tables; 214200 D1 rows read projected");
     expect(by["CPU p99"]).toMatchObject({ status: "ok", detail: "not checked (optional: needs Account Analytics Read on PV_CF_API_TOKEN)" });
   });
 

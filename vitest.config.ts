@@ -1,4 +1,5 @@
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import testKeys from "./test/fixtures/test-keys.json" with { type: "json" };
 
@@ -39,6 +40,16 @@ export default defineConfig(async () => {
             name: "node",
             include: ["test/node/**/*.test.ts"],
             environment: "node",
+          },
+        },
+        {
+          // the privacy console (src/web) against a mocked fetch; the Worker routes it calls are tested in "worker"
+          plugins: [react()],
+          test: {
+            name: "web",
+            include: ["test/web/**/*.test.{ts,tsx}"],
+            environment: "happy-dom",
+            setupFiles: ["test/web/setup.ts"],
           },
         },
       ],

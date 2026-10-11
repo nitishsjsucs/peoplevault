@@ -10,13 +10,14 @@
   },
   "scripts": {
     "dev": "node scripts/dev.ts",
-    "dev:worker": "wrangler dev --port 8793 --inspector-port 9243 --ip 127.0.0.1",
+    "dev:worker": "npm run build:web && wrangler dev --port 8793 --inspector-port 9243 --ip 127.0.0.1",
+    "build:web": "vite build --logLevel warn",
     "stop:local": "node scripts/stop-local.ts",
     "dev:keys": "node scripts/dev-keys.ts",
     "dev:token": "node scripts/dev-token.ts",
     "types": "wrangler types --strict-vars false",
     "types:check": "wrangler types --strict-vars false --check",
-    "typecheck": "tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json",
+    "typecheck": "tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
     "test": "vitest run",
     "test:py": "uv run --directory pipelines pytest",
     "policy:compile": "uv run --project pipelines pv policy compile",
@@ -29,7 +30,7 @@
     "doctor": "node scripts/doctor.ts",
     "setup:prod": "node scripts/setup-prod.ts",
     "seed:prod": "node scripts/seed-prod.ts",
-    "deploy:check": "wrangler deploy --dry-run -c infra/cloudflare/wrangler.production.template.jsonc",
+    "deploy:check": "npm run build:web && wrangler deploy --dry-run -c infra/cloudflare/wrangler.production.template.jsonc",
     "deploy": "node scripts/deploy-prod.ts",
     "authz:prod": "uv run --project pipelines pv authz api --target prod --write-results",
     "authz:api:local": "uv run --project pipelines pv authz api --target local --start --allow-writes --write-results"
@@ -37,12 +38,21 @@
   "dependencies": {
     "hono": "4.13.13",
     "jose": "6.2.12",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.4.0",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
     "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "happy-dom": "20.14.6",
     "typescript": "7.0.2",
+    "vite": "8.3.4",
     "vitest": "4.1.11",
     "wrangler": "4.149.0",
     "yaml": "2.9.1"

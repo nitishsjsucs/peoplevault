@@ -8,6 +8,9 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
+  // The privacy console (`npm run build:web`; `npm run dev` builds it when stale). Only /api/* and /dev/* invoke the
+  // Worker; every other path is a static asset or the console's index.html, served without invoking the Worker.
+  "assets": { "directory": "./dist/web", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/dev/*"] },
   "secrets": {
     "required": ["DEV_ACCESS_JWKS", "DEV_ACCESS_PRIVATE_JWK", "PV_PSEUDONYM_MASTER_KEY", "WAREHOUSE_SHIM_TOKEN", "GCP_GATEWAY_SA_KEY"]
   },

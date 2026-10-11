@@ -5,5 +5,5 @@
     "types": ["node"],
     "erasableSyntaxOnly": true
   },
-  "include": ["scripts/**/*.ts", "test/node/**/*.ts", "vitest.config.ts", "src/shared/**/*.ts"]
+  "include": ["scripts/**/*.ts", "test/node/**/*.ts", "vitest.config.ts", "vite.config.ts", "src/shared/**/*.ts"]
 }

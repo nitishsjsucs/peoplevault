@@ -1,13 +1,17 @@
-// npm run dev: starts wrangler dev (8793, inspector 9243) and pv serve (shim 8893 + executor loop) as detached process
-// groups with pidfiles, waits for both, and stops both on exit (Ctrl+C). Logs: .dev/logs/.
+// npm run dev: builds the privacy console when stale, starts wrangler dev (8793, inspector 9243) and pv serve (shim
+// 8893 + executor loop) as detached process groups with pidfiles, waits for both, and stops both on exit (Ctrl+C).
+// Logs: .dev/logs/.
 import path from "node:path";
 import { LOCAL_PORTS, portOpen, startGroup, stopAll, waitForHttp } from "./lib/pids.ts";
 import { REPO_ROOT, wranglerBin, wranglerEnv } from "./lib/run.ts";
+import { ensureWebBuild } from "./lib/web-build.ts";
 
 export async function startLocalStack(opts: { executor?: boolean } = {}): Promise<void> {
   for (const [name, port] of Object.entries({ worker: LOCAL_PORTS.worker, inspector: LOCAL_PORTS.inspector, shim: LOCAL_PORTS.shim })) {
     if (await portOpen(port)) throw new Error(`port ${port} (${name}) is already in use; run \`npm run stop:local\``);
   }
+  // wrangler dev serves the privacy console from dist/web and refuses to start without it
+  await ensureWebBuild();
   startGroup("wrangler-dev", wranglerBin(), ["dev", "--port", String(LOCAL_PORTS.worker), "--inspector-port", String(LOCAL_PORTS.inspector), "--ip", "127.0.0.1", "--show-interactive-dev-session=false"], {
     env: wranglerEnv(),
     port: LOCAL_PORTS.worker,
@@ -29,7 +33,7 @@ async function main(): Promise<void> {
     return;
   }
   await startLocalStack();
-  console.log(`[dev] Worker http://127.0.0.1:${LOCAL_PORTS.worker} (local dev login: /dev/login?principal=privacy-01), shim and executor on ${LOCAL_PORTS.shim}. Ctrl+C stops both.`);
+  console.log(`[dev] console and API http://127.0.0.1:${LOCAL_PORTS.worker} (local sign-in on the console's first page), shim and executor on ${LOCAL_PORTS.shim}. Ctrl+C stops both.`);
   const stop = async () => {
     await stopAll();
     process.exit(0);

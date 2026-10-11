@@ -1,0 +1,11 @@
+# Response headers for the privacy console's static assets (Workers static assets `_headers`). The console loads
+# only its own script and stylesheet and talks only to its own origin; no page may frame it, and no request carries a
+# Referer (console URLs hold pseudonymous refs and request ids, never raw identifiers, but they stay on this origin).
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

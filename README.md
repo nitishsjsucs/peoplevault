@@ -31,7 +31,8 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Production deletion eval profile (`pv eval deletion --profile prod`, canary deletion first) | written, not yet executed |
 | Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the audit copy when due and the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
 | The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built; the local rehearsal ran (Results); the production run is written, not yet executed |
-| P1 web console and Workers AI schema-drift triage | not built yet |
+| Privacy console (React SPA in `src/web`, deployed with the Worker as Workers static assets: sign-in, purpose-scoped employee browser with masked columns labeled, deletion requests with identity lookup by POST, request detail with receipt and retry, legal holds, coverage report, audit log with the windowed chain check) | built, tested (happy-dom against a mocked API, plus a contract test of every route it reads); used locally against `wrangler dev`; not yet deployed |
+| P1 Workers AI schema-drift triage | not built yet |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service. Until the production runs in [docs/PRODUCTION.md](docs/PRODUCTION.md) pass, the honest wording for the BigQuery and Cloudflare parts is "designed for" them and "verified against local stand-ins" (SPEC.md section 24).
 
@@ -39,7 +40,7 @@ Nothing in this repository has run against Cloudflare or Google Cloud. Local sta
 
 ```mermaid
 flowchart LR
-  subgraph Users["Personas (browser, curl, eval runner)"]
+  subgraph Users["Personas (privacy console in the browser, curl, eval runner)"]
     HR["hr_partner"]
     MG["manager"]
     AN["people_analyst"]
@@ -47,6 +48,7 @@ flowchart LR
   end
   ACCESS["Cloudflare Access (Zero Trust Free)<br/>adds Cf-Access-Jwt-Assertion<br/>(production only)"]
   subgraph Worker["Worker: peoplevault (Hono) on Workers Free"]
+    UI["Privacy console (React)<br/>static assets: served without<br/>invoking the Worker"]
     AUTH["Access JWT verify (jose RS256)<br/>principal from D1"]
     PDP["Policy decision point<br/>persona to purpose, columns, row scope"]
     API["Purpose data API<br/>privacy API, executor API<br/>(incl. audit-export route)"]
@@ -79,6 +81,7 @@ flowchart LR
     SQLCAT[("pyiceberg SqlCatalog + local files (local stand-in)")]
   end
   Users --> ACCESS --> AUTH
+  ACCESS --> UI
   Users -.->|"local: dev JWT from /dev/login"| AUTH
   AUTH --> PDP --> API
   API -->|"production: BigQuery REST as purpose identity"| BQ
@@ -141,7 +144,8 @@ Cloudflare Access authenticates; the Worker verifies the Access JWT itself and i
 
 | Concern | Local (works offline and in CI) | Production (after the setup in docs/PRODUCTION.md) |
 |---|---|---|
-| Identity | locally generated RS256 JWKS, `/dev/login` cookie (loopback only), executor dev JWT | Cloudflare Access, Zero Trust Free team `old-truth-a7dc` (5 of 50 seats), team JWKS, 5 service tokens |
+| Identity | locally generated RS256 JWKS, `/dev/login` cookie (loopback only; the console's local sign-in page lists the fixture principals), executor dev JWT | Cloudflare Access, Zero Trust Free team `old-truth-a7dc` (5 of 50 seats), team JWKS, 5 service tokens |
+| Privacy console | `dist/web` served by `wrangler dev` on 8793 (`npm run dev` builds it when stale) | the same build uploaded by `npm run deploy` as Workers static assets behind the same Access application; only `/api/*` and `/dev/*` invoke the Worker, and static asset requests are free and unlimited |
 | Worker, Workflows, Queues, Cron | Miniflare via `wrangler dev` on 8793, Worker `peoplevault-local` | Workers **Free** deployment `peoplevault` at `https://peoplevault.nitish-ratakonda.workers.dev`; no `limits` block |
 | CPU and per-invocation limits | not enforced by Miniflare; counted in tests (bytes, D1 statements, calls) | 10 ms per request and per Workflow step: byte-capped cursor steps (4 MiB erase, 2 MiB probe), D1 matching inside SQLite, at most 40 D1 statements per step, windowed audit verification |
 | Daily capacity | unlimited (`DAILY_DELETION_STARTS` and `RETENTION_DAILY_MAX` empty, `RETENTION_CRON` on) | at most 16 deletion starts per UTC day, 8 of them retention; deferred and orphaned requests re-admitted by the cron; retention cron off until the production eval is committed |
@@ -164,7 +168,8 @@ npm ci
 uv sync --project pipelines --locked
 npm run dev:keys                      # .dev.vars with local-only keys
 npm run seed:local                    # synthesize, migrate, load, warm caches, verify every count
-npm run dev                           # wrangler dev on 127.0.0.1:8793 and pv serve (shim and executor) on 8893
+npm run dev                           # builds the console if stale; wrangler dev on 127.0.0.1:8793 and pv serve (shim and executor) on 8893
+open http://127.0.0.1:8793/           # the privacy console: pick a fixture principal (for example privacy-01 or hrbp-01)
 npm run dev:token -- privacy-01       # a local Access-style JWT for a persona
 npm run eval:deletion:ci              # the ci deletion eval (seeds again, then oracle and gate)
 npm run authz:api:local               # the 100-case file through the local API against the full population
@@ -174,7 +179,8 @@ npm run stop:local
 ## Tests and evals
 
 ```bash
-npm test                    # vitest: the Worker project (Miniflare) and the node project (scripts, doctor, setup plans, budget model)
+npm test                    # vitest: the Worker project (Miniflare), the node project (scripts, doctor, setup plans, budget model, console build) and the web project (console pages, happy-dom)
+npm run build:web           # the privacy console into dist/web (npm run dev, deploy:check and deploy run it too)
 npm run test:py             # pytest (the live BigQuery suite and the end-to-end API run are opt-in markers)
 npm run eval:authz          # the 100 authorization cases at the decision point and the 48 warehouse cases on DuckDB
 npm run eval:deletion:ci    # the ci deletion eval and its gate (CI runs it); npm run eval:deletion runs the full profile
@@ -264,6 +270,7 @@ About the two applicability disagreements in the full profile: a team roster is 
 - Verification is independent of deletion (ADR 0003): probes scan whole stores with boundary-aware matching, and the eval oracle shares no code with them.
 - Protected BigQuery tables are merge-only (ADR 0006).
 - Residuals (Iceberg snapshots and orphan files, BigQuery time travel and fail-safe, D1 Time Travel, KV propagation) are tracked separately and never counted in coverage.
+- The privacy console holds no token and no policy: it reads `/api/v1/me`, shows the pages of the caller's purposes, and the Worker decides every call again. Identity lookups go out as POST bodies, so no name or email prefix reaches a URL; its static assets carry a same-origin Content-Security-Policy, deny framing and send no Referer.
 - Workers Free (ADR 0007): every Workflow step and request is sized for 10 ms of CPU and 40 D1 statements; a deletion's R2 work advances through cursor steps whose key-listing digest is re-checked, so no object is skipped; at most 16 deletions start per UTC day; the audit copy is pulled exactly once instead of streamed; a budget test keeps the worst-case day within a 25% share of every per-account allowance.
 
 ## Limitations and known gaps
@@ -274,6 +281,7 @@ About the two applicability disagreements in the full profile: a team roster is 
 - `subject_ref` and opaque principal ids are kept in the audit log by design (ADR 0005).
 - The 20 planted residues of the full eval are of the types the probes are designed to find; detecting them shows the probes reach every store, not that they would find any possible copy.
 - The CPU sizing rests on measurements on the owner's Mac times 3; the canary deletion and the doctor's CPU p99 line check it in production, and the byte caps are Worker vars.
+- The privacy console is tested with happy-dom against a mocked API and a Worker contract test of the routes it reads; there is no automated browser test against a running Worker.
 - The audit copy lags D1 by up to a day in production (exported when 1,000 events wait or the last copy is a day old).
 
 See [CONTEXT.md](CONTEXT.md) for the glossary and [docs/adr](docs/adr) for decisions.
