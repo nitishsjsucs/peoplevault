@@ -1,0 +1,87 @@
+{
+  "calls": 120,
+  "command": "uv run --project pipelines pv eval drift --target local --start --ai-mode llama-server",
+  "daily_cap": null,
+  "date": "2026-10-11",
+  "days": 1,
+  "environment": "local (Miniflare, llama-server/Qwen3-1.7B-Q4_0 on port 8170)",
+  "git_dirty": false,
+  "git_sha": "b85646b7d97993ba7741fb8254cbef246543311b",
+  "kind": "drift",
+  "model": "llama-server/Qwen3-1.7B-Q4_0",
+  "neurons_total": 0.0,
+  "rates_checked": "2026-10-10",
+  "scores": {
+    "by_label": {
+      "coarsened": {
+        "columns": 10,
+        "model_correct": 7
+      },
+      "compensation": {
+        "columns": 14,
+        "model_correct": 14
+      },
+      "date_of_birth": {
+        "columns": 8,
+        "model_correct": 8
+      },
+      "direct_identifier": {
+        "columns": 20,
+        "model_correct": 19
+      },
+      "health_leave": {
+        "columns": 14,
+        "model_correct": 5
+      },
+      "job": {
+        "columns": 16,
+        "model_correct": 13
+      },
+      "performance": {
+        "columns": 14,
+        "model_correct": 10
+      },
+      "protected_attribute": {
+        "columns": 14,
+        "model_correct": 14
+      },
+      "pseudonym": {
+        "columns": 10,
+        "model_correct": 5
+      }
+    },
+    "columns": 120,
+    "invalid_outputs": 0,
+    "model_class_accuracy": 0.7917,
+    "model_confusion": {
+      "coarsened->compensation": 2,
+      "coarsened->protected_attribute": 1,
+      "direct_identifier->coarsened": 1,
+      "health_leave->compensation": 1,
+      "health_leave->date_of_birth": 1,
+      "health_leave->direct_identifier": 5,
+      "health_leave->protected_attribute": 2,
+      "job->compensation": 1,
+      "job->date_of_birth": 1,
+      "job->protected_attribute": 1,
+      "performance->compensation": 1,
+      "performance->direct_identifier": 2,
+      "performance->pseudonym": 1,
+      "pseudonym->direct_identifier": 5
+    },
+    "rule_sensitive_recall": 0.5833,
+    "sensitive_columns": 84,
+    "sensitive_recall": 0.9762,
+    "sensitive_recall_opaque_names": 0.9737,
+    "suggested_false_sensitive_rate": 0.3333,
+    "suggested_sensitive_recall": 0.9881
+  },
+  "target": "local",
+  "versions": {
+    "dbt-core": "1.12.5",
+    "dbt-duckdb": "1.11.0",
+    "duckdb": "1.5.6",
+    "pyiceberg": "0.12.0",
+    "wrangler": "4.149.0"
+  }
+}
