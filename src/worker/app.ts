@@ -8,8 +8,10 @@ import { services } from "./context.ts";
 import { ConfigError, type Config } from "./env.ts";
 import type { Pseudonymizer } from "./pseudo/hmac.ts";
 import { data } from "./routes/data.ts";
+import { executor } from "./routes/executor.ts";
 import { health } from "./routes/health.ts";
 import { me } from "./routes/me.ts";
+import { privacy } from "./routes/privacy.ts";
 import type { WarehouseClient, WarehouseFactory } from "./warehouse/client.ts";
 
 export interface AppEnv {
@@ -46,6 +48,8 @@ export function buildApp(opts: BuildAppOptions = {}): Hono<AppEnv> {
   app.use("/api/v1/*", withConfig, authenticate(opts.accessFetch), requireCsrfHeader, services(opts));
   app.route("/", me);
   app.route("/", data);
+  app.route("/", privacy);
+  app.route("/", executor);
   app.notFound((c) => c.json({ error: "not_found" }, 404));
   return app;
 }
