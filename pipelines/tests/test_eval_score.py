@@ -1,0 +1,47 @@
+"""score() is shared by the local and production eval profiles; a tiny hand-made run checks its arithmetic: coverage
+over applicable pairs, oracle agreement, fault detection at the planted location, holds and a run without retention."""
+
+import time
+
+from peoplevault.evals.deletion import RunData, score
+from peoplevault.evals.faults import Planted
+from peoplevault.evals.oracle import OracleFindings, SubjectTokens
+
+
+def tok(e: str, n: str) -> SubjectTokens:
+    pad = n * 26
+    return SubjectTokens(e, f"a.{n}@peoplevault.test", f"Ann {n.upper()}x", f"er_{pad}", f"wk_{pad}", f"an_{pad}", f"sr_{pad}")
+
+
+def subject(e: str) -> dict:
+    return {"employee_id": e, "export_rows": {"exports/hris/employees/dt=2026-09-28/employees.jsonl": 1}, "export_refs": {}, "hold_matter": None, "lake_rows": 0,
+            "lake_ref_rows": 0, "lake_rows_after_retention_cutoff": 0, "lake_ref_rows_after_retention_cutoff": 0, "manager_id": None, "is_restricted": False,
+            "status": "active", "role": "staff"}
+
+
+def test_score_counts_pairs_faults_and_agreement_without_retention():
+    tokens = {"E1": tok("E1", "b"), "E2": tok("E2", "c")}
+    found = OracleFindings()
+    found.add("E2", "kv", f"tmp:{tokens['E2'].employee_ref}", None)
+    row = {"category": "source_exports", "action_status": "erased", "verify_matches": 0}
+    d = RunData(
+        profile="prod", run_header={"command": "x"}, t_start=time.time(), truth={"E1": subject("E1"), "E2": subject("E2")},
+        cohorts={"R": [], "D": ["E1"], "H": [], "F": [{"subject": "E2", "store": "kv", "scenario": "kv.tmp_employee_ref"}]}, tokens=tokens,
+        expected={"retention_expected": {"expired_export_keys": [], "minimized_export_keys": []}}, warmup=[], principal_of={},
+        planted=[Planted("E2", "kv", "kv.tmp_employee_ref", "tmp:[redacted]")], submitted={"r1": "E1", "r2": "E2"},
+        requests=[{"id": "r1", "kind": "dsr", "subject_ref": tokens["E1"].subject_ref, "status": "completed_with_residuals", "created_at": "2026-10-10T00:00:00Z", "completed_at": "2026-10-10T00:00:10Z"},
+                  {"id": "r2", "kind": "dsr", "subject_ref": tokens["E2"].subject_ref, "status": "failed", "created_at": "2026-10-10T00:00:00Z", "completed_at": "2026-10-10T00:00:20Z"}],
+        results=[{**row, "request_id": "r1", "asset_id": "src.r2.exports", "applicability": "present", "verify_status": "clean"},
+                 {**row, "request_id": "r2", "asset_id": "unregistered:kv:tmp:[redacted]", "applicability": "unregistered", "verify_status": "residue"}],
+        residual_rows=[{"request_id": "r1", "kind": "kv_propagation", "state": "cleared", "evidence": "modeled"}], found=found, retention_run=None,
+        report_before={}, report={}, audit_ok={"ok": True, "length": 3}, warmup_counts={}, expire_out="", check_out="",
+    )
+    r = score(d)
+    assert r["coverage"]["applicable_pairs"] == 1 and r["coverage"]["value"] == 1.0
+    assert r["coverage"]["by_category"]["application_caches"]["display"] == "n/a"
+    assert r["oracle"]["false_clean"] == 0 and r["oracle"]["agreement"] == 1.0
+    assert r["faults"]["detected"] == 1 and r["faults"]["by_store"] == {"kv": {"detected": 1, "scenarios": 1}}
+    assert r["retention"] == {"run": False}
+    assert r["applicability_agreement"] == {"value": 1.0, "pairs": 1, "agree": 1, "disagreements": []}
+    assert r["timing_ms"]["workflow_p50"] == 15000.0
+    assert r["gate"]["checks"]["every_category_applicable"] is False and r["gate"]["passed"] is False

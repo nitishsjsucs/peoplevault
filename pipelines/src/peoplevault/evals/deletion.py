@@ -317,9 +317,9 @@ def score(d: RunData) -> dict:
     detected = [f for f in designed if f["request_failed"] and f["finding_at_location"]]
     by_store = {}
     for f in designed:
-        d = by_store.setdefault(f["store"], {"detected": 0, "scenarios": 0})
-        d["scenarios"] += 1
-        d["detected"] += int(f["request_failed"] and f["finding_at_location"])
+        st = by_store.setdefault(f["store"], {"detected": 0, "scenarios": 0})
+        st["scenarios"] += 1
+        st["detected"] += int(f["request_failed"] and f["finding_at_location"])
 
     # retention vs golden (local profiles; production runs no sweep in the eval)
     retention_out: dict = {"run": False}
