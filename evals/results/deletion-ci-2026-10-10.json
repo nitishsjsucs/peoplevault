@@ -1,7 +1,7 @@
 {
   "command": "npm run eval:deletion:ci",
   "date": "2026-10-10",
-  "git_sha": "b5f8e58800531fa89f273f13047e6cca1b4e01d8",
+  "git_sha": "cb387dd8a8c3b2061afd9568469a185ab5ec9001",
   "git_dirty": false,
   "environment": "local (Miniflare, DuckDB, pyiceberg SqlCatalog)",
   "versions": {
@@ -228,7 +228,7 @@
         "cleared/modeled": 16
       }
     },
-    "lake_expire": "lake expire: snapshots 9 -> 1, orphan files removed 40",
+    "lake_expire": "lake expire: snapshots 8 -> 1, orphan files removed 39",
     "residual_check": "residuals check: {'pending_before': 32, 'updated': 32, 'cleared': 32, 'errors': 0}"
   },
   "warmup": {
@@ -240,7 +240,7 @@
   },
   "audit_chain": {
     "ok": true,
-    "length": 962
+    "length": 958
   },
   "report": {
     "coverage": {
@@ -259,9 +259,9 @@
     }
   },
   "timing_ms": {
-    "workflow_p50": 16277.999999999998,
-    "workflow_p95": 25290.0,
-    "total_run": 235663
+    "workflow_p50": 10953.0,
+    "workflow_p95": 18012.0,
+    "total_run": 209606
   },
   "gate": {
     "passed": true,

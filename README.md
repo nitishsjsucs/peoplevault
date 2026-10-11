@@ -163,8 +163,8 @@ All results below are local (Miniflare, DuckDB, pyiceberg SqlCatalog); nothing h
 - Legal holds: 4 held requests, held data intact for 4
 - Retention sweep: 10 retention requests (2 held), 3 export objects deleted and 5 minimized for holds, 3 extracts expired; every count equal to the golden counts
 - Applicability agreement with ground truth: 192 of 192 pairs
-- Audit hash chain: verified over 962 events
-- Workflow duration (create to terminal, local): p50 16.3 s, p95 25.3 s
+- Audit hash chain: verified over 958 events
+- Workflow duration (create to terminal, local): p50 11.0 s, p95 18.0 s
 - Gate: passed
 
 **Authorization cases** (`npm run eval:authz`, 2026-10-10; local (Miniflare, DuckDB, pyiceberg SqlCatalog))
