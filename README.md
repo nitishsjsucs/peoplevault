@@ -22,7 +22,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Residual tracking (Iceberg, BigQuery, D1 Time Travel 7 days on Free, KV) and the deletion eval with an independent oracle and fault injection | built, run locally (results below) |
 | Audit hash chain, windowed verification (50 events per request), the deletion report in SQL, and the exactly-once audit copy into the Iceberg table `governance.audit_events` (`pv audit export`, which replaces the Workers Paid Basin Pipelines stream) | built; the audit copy runs locally in the ci eval (pyiceberg SqlCatalog); the production export (Basin Catalog) is written, not yet executed |
 | Workers Free budget model (`scripts/lib/free-budget.ts`; the budget test fails if a cap pushes the worst-case day past the 25% share) and `npm run bench:cpu` | built, tested |
-| CI (GitHub Actions on ubuntu-latest: worker, python and e2e jobs, no secrets; the e2e job runs the ci deletion eval with its gate and the case file through the local API) | runs on every push; all three jobs passed on 2026-10-11 ([run 38128292785](https://github.com/nitishsjsucs/peoplevault/actions/runs/38128292785), [run 38130716213](https://github.com/nitishsjsucs/peoplevault/actions/runs/38130716213) for the end of builder 4's round, and [run 38165653478](https://github.com/nitishsjsucs/peoplevault/actions/runs/38165653478) part way through the review fixes of the same day); commits made after the last pushed one are covered by the next run, not by these |
+| CI (GitHub Actions on ubuntu-latest: worker, python and e2e jobs, no secrets; the e2e job runs the ci deletion eval with its gate and the case file through the local API) | runs on every push; all three jobs passed on 2026-10-11 ([run 38128292785](https://github.com/nitishsjsucs/peoplevault/actions/runs/38128292785), [run 38130716213](https://github.com/nitishsjsucs/peoplevault/actions/runs/38130716213) for the end of builder 4's round, then [run 38165653478](https://github.com/nitishsjsucs/peoplevault/actions/runs/38165653478) and [run 38176051447](https://github.com/nitishsjsucs/peoplevault/actions/runs/38176051447) during the review fixes of the same day, the second with every fix of that round up to the results rendering (PROGRESS.md commits 69 to 87)); later commits are covered by the next run, not by these |
 | `npm run doctor` and `npm run doctor -- --prod` (including the Workers Free usage lines) | built; tested with fakes and recorded responses; run read-only against the real logins on 2026-10-11, it lists 22 missing items, each with its fix ([docs/PRODUCTION.md](docs/PRODUCTION.md#doctor-run-of-2026-10-11-read-only)); the usage lines need a deployed Worker |
 | `npm run setup:prod` (with `--retention-cron on\|off`; refuses to adopt a same-named Cloudflare resource it did not create), `pv setup gcp`, `npm run deploy`, `npm run seed:prod` | written, not yet executed; dry-run plans golden-tested, and the dry runs read the real accounts on 2026-10-11 (`pv setup gcp --dry-run` plans 67 steps on the shared project, starting with the 4 APIs that are off there) |
 | BigQuery path (dbt build, protected-table controls, 48 cases as purpose service accounts, 37 ceiling probes, Worker REST client with 20 polls, 10 pages and a 100 MiB byte cap; every Python and dbt query capped at 1 GiB) | written, not yet executed |
@@ -204,42 +204,44 @@ All results below are local (Miniflare, DuckDB, pyiceberg SqlCatalog, llama-serv
 
 **Deletion eval, full profile** (`npm run eval:deletion`, 2026-10-11; local (Miniflare, DuckDB, pyiceberg SqlCatalog))
 
-- Requests: 136 (completed with residuals 110, failed 20, held 6)
-- Coverage (system verdicts, retention and DSR requests that were not held): 100.0% of 1055 applicable pairs
+- Requests: 136 (completed with residuals 110, failed 20 (the planted-fault requests, by design), held 6)
+- Coverage (system verdicts over the 110 retention and data subject requests of cohorts R and D that were not held; the 20 planted-fault requests fail by design and are scored under fault detection): 100.0% of 1055 applicable pairs
   - source exports: 100.0% of 110 applicable pairs
   - warehouse tables: 100.0% of 220 applicable pairs
   - historical snapshots: 100.0% of 216 applicable pairs
   - identity mappings: 100.0% of 220 applicable pairs
   - derived datasets: 100.0% of 169 applicable pairs
   - application caches: 100.0% of 120 applicable pairs
+- Deletion report (the product's own coverage, over every request): 95.4% of 1309 applicable pairs, lower because it includes the planted-fault requests
 - Independent oracle: coverage 100.0%, agreement 100.0%, false clean 0, false residue 0
 - Fault detection: 20 of 20 planted residues of designed types detected (r2 6/6, warehouse 5/5, iceberg 3/3, kv 3/3, d1 3/3); 3 out-of-design variants undetected by design
-- Legal holds: 6 held requests, held data intact for 6
-- Retention sweep: 70 retention requests (2 held), 3 export objects deleted and 5 minimized for holds, 3 extracts expired; every count equal to the golden counts
+- Legal holds: 6 held requests for 6 held subjects (4 DSR and 2 retention subjects under hold in the cohorts), held data intact for 6
+- Retention sweep: 70 retention requests not held plus 2 held (72 in all), 3 export objects deleted and 5 minimized for holds, 3 extracts expired; every count equal to the golden counts
 - Applicability agreement with ground truth: 1318 of 1320 pairs (cache.kv.team_rosters: system not_present, truth present; cache.kv.team_rosters: system not_present, truth present)
-- Audit hash chain: verified over 1398 events (14 windows of at most 100)
-- Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 1401 rows, 1401 copied by this run; last hash equals D1's at seq 1401
-- Workflow duration (create to terminal, local): p50 65.8 s, p95 110.0 s
+- Audit hash chain: verified over 1373 events (28 windows of at most 50 events)
+- Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 1376 rows, 1376 copied by this run; last hash equals D1's at seq 1376
+- Workflow duration (create to terminal, local): p50 25.6 s, p95 46.8 s
 - Gate: passed
 
 **Deletion eval, ci profile** (`npm run eval:deletion:ci`, 2026-10-11; local (Miniflare, DuckDB, pyiceberg SqlCatalog))
 
-- Requests: 25 (completed with residuals 16, failed 5, held 4)
-- Coverage (system verdicts, retention and DSR requests that were not held): 100.0% of 157 applicable pairs
+- Requests: 25 (completed with residuals 16, failed 5 (the planted-fault requests, by design), held 4)
+- Coverage (system verdicts over the 16 retention and data subject requests of cohorts R and D that were not held; the 5 planted-fault requests fail by design and are scored under fault detection): 100.0% of 157 applicable pairs
   - source exports: 100.0% of 16 applicable pairs
   - warehouse tables: 100.0% of 32 applicable pairs
   - historical snapshots: 100.0% of 32 applicable pairs
   - identity mappings: 100.0% of 32 applicable pairs
   - derived datasets: 100.0% of 25 applicable pairs
   - application caches: 100.0% of 20 applicable pairs
+- Deletion report (the product's own coverage, over every request): 93.2% of 222 applicable pairs, lower because it includes the planted-fault requests
 - Independent oracle: coverage 100.0%, agreement 100.0%, false clean 0, false residue 0
 - Fault detection: 5 of 5 planted residues of designed types detected (r2 1/1, warehouse 1/1, iceberg 1/1, kv 1/1, d1 1/1)
-- Legal holds: 4 held requests, held data intact for 4
-- Retention sweep: 10 retention requests (2 held), 3 export objects deleted and 5 minimized for holds, 3 extracts expired; every count equal to the golden counts
+- Legal holds: 4 held requests for 4 held subjects (2 DSR and 2 retention subjects under hold in the cohorts), held data intact for 4
+- Retention sweep: 10 retention requests not held plus 2 held (12 in all), 3 export objects deleted and 5 minimized for holds, 3 extracts expired; every count equal to the golden counts
 - Applicability agreement with ground truth: 192 of 192 pairs
-- Audit hash chain: verified over 962 events (10 windows of at most 100)
-- Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 964 rows, 964 copied by this run; last hash equals D1's at seq 964
-- Workflow duration (create to terminal, local): p50 5.8 s, p95 10.1 s
+- Audit hash chain: verified over 980 events (20 windows of at most 50 events)
+- Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 982 rows, 982 copied by this run; last hash equals D1's at seq 982
+- Workflow duration (create to terminal, local): p50 13.3 s, p95 23.3 s
 - Gate: passed
 
 **Authorization cases** (`npm run eval:authz`, 2026-10-11; local (Miniflare, DuckDB, pyiceberg SqlCatalog))
@@ -247,7 +249,7 @@ All results below are local (Miniflare, DuckDB, pyiceberg SqlCatalog, llama-serv
 - Decision point (Worker app, fixture world): 100 of 100 cases
 - Warehouse layer (DuckDB purpose views): 48 of 48 cases
 
-**Authorization cases** (`pv authz api --target local --allow-writes`, 2026-10-11; local (Miniflare, DuckDB, pyiceberg SqlCatalog))
+**Authorization cases** (`npm run authz:api:local`, 2026-10-11; local (Miniflare, DuckDB, pyiceberg SqlCatalog))
 
 - Through the API (local Worker, limited to the tokens production has, full synthetic population, one token per persona principal and the executor): 85 of 85 runnable cases passed; 15 of 100 not runnable there
   - 10 skipped: forged, missing or unmapped tokens cannot pass Cloudflare Access (the edge answers first)
@@ -256,13 +258,13 @@ All results below are local (Miniflare, DuckDB, pyiceberg SqlCatalog, llama-serv
   - 1 skipped: principal mgr-003 has no token in this environment (only the persona principals and the executor do)
   - 1 skipped: principal mgr-009 has no token in this environment (only the persona principals and the executor do)
 
-**CPU of the Worker's hot paths** (`npm run bench:cpu`, 2026-10-11; local (Node v25.9.0 on darwin arm64, Apple M5); 10 cores, 1-minute load average 6.53 at the start)
+**CPU of the Worker's hot paths** (`npm run bench:cpu`, 2026-10-11; local (Node v25.9.0 on darwin arm64, Apple M5); 10 cores, 1-minute load average 7.19 at the start)
 
 - Prefiltered transform byte-identical to the unfiltered one: 123 comparisons over all 41 generated export objects
-- Erase step at the 4 MiB cap (6 HRIS objects, 3.62 MiB): 2.084 ms (fastest run 1.734 ms); the revision 2 HRIS step that parsed every line of 13 objects: 22.688 ms (fastest run 19.539 ms)
-- Probe step at the 2 MiB cap (1.81 MiB): 2.263 ms (fastest run 2.196 ms) after a clean erasure, 2.094 ms (fastest run 1.957 ms) with the subject still in every object
-- Audit verification window of 100 events: 2.626 ms (fastest run 1.794 ms); audit export page of 500 rows: 0.79 ms (fastest run 0.556 ms); KV probe over 420 values: 0.217 ms (fastest run 0.188 ms)
-- Largest step-sized path: 2.196 ms (fastest warm run; largest median 2.626 ms) on this machine; at 3 times (edge cores and cold isolates) 6.59 ms against Free's 10 ms (within the design target of 2.5 ms here, which keeps a 25% margin). Miniflare enforces no CPU limit; production readings come from the canary deletion and the doctor's CPU p99 line
+- Erase step at the 4 MiB cap (6 HRIS objects, 3.62 MiB): 1.273 ms (fastest run 1.2 ms); the revision 2 HRIS step that parsed every line of 13 objects: 19.478 ms (fastest run 16.056 ms)
+- Probe step at the 2 MiB cap (1.81 MiB): 1.717 ms (fastest run 1.665 ms) after a clean erasure, 1.759 ms (fastest run 1.672 ms) with the subject still in every object
+- Audit verification window of 50 events: 1.789 ms (fastest run 0.967 ms); audit export page of 500 rows: 0.628 ms (fastest run 0.575 ms); KV probe over 420 values: 0.18 ms (fastest run 0.151 ms)
+- Largest step-sized path, judged on warm medians (SPEC.md section 30.2): 1.789 ms on this machine (largest fastest run 1.672 ms); at 3 times (edge cores and cold isolates) 5.37 ms against Free's 10 ms, within the design target of 2.5 ms here (7.5 ms at 3 times, a 25% margin). Miniflare enforces no CPU limit; production readings come from the canary deletion and the doctor's CPU p99 line
 
 **Schema-drift triage, local** (`uv run --project pipelines pv eval drift --target local --start --ai-mode llama-server`, 2026-10-11; local (Miniflare, llama-server/Qwen3-1.7B-Q4_0 on port 8170))
 
