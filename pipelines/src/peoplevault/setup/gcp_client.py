@@ -26,8 +26,10 @@ def is_service_disabled(e: BaseException) -> bool:
 
 
 def wait_for(ready: Callable[[], bool], what: str, *, timeout_s: float = 300, interval_s: float = 10,
-             sleep: Callable[[float], None] = time.sleep, clock: Callable[[], float] = time.monotonic) -> None:
+             sleep: Callable[[float], None] | None = None, clock: Callable[[], float] | None = None) -> None:
     """Polls `ready` until it returns True; TimeoutError after `timeout_s` (enabling an API takes up to a few minutes)."""
+    sleep = sleep or time.sleep
+    clock = clock or time.monotonic
     deadline = clock() + timeout_s
     while not ready():
         if clock() >= deadline:
@@ -105,7 +107,12 @@ class RealGcpClient:
         return {a["email"].split("@")[0] for a in d.get("accounts", [])}
 
     def create_service_account(self, account_id: str, display_name: str) -> None:
+        """Creates the account and waits until IAM returns it: IAM is eventually consistent, and the next steps put the
+        new account into IAM policies."""
         self._post(f"{IAM}/projects/{self.project}/serviceAccounts", {"accountId": account_id, "serviceAccount": {"displayName": display_name}})
+        email = f"{account_id}@{self.project}.iam.gserviceaccount.com"
+        wait_for(lambda: self.http.get(f"{IAM}/projects/{self.project}/serviceAccounts/{email}").status_code == 200, f"{email} to be readable",
+                 timeout_s=120, interval_s=5)
 
     def custom_roles(self) -> set[str]:
         d = self._get(f"{IAM}/projects/{self.project}/roles", pageSize=100)

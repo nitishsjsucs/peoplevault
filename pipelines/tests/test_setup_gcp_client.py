@@ -43,3 +43,28 @@ def test_wait_for_polls_until_ready_and_times_out():
     assert sleeps == [10, 10]
     with pytest.raises(TimeoutError, match="timed out waiting for the API"):
         wait_for(lambda: False, "the API", timeout_s=30, interval_s=10, sleep=sleep, clock=lambda: t["now"])
+
+
+def test_a_new_service_account_is_waited_for_until_iam_returns_it(monkeypatch):
+    from peoplevault.setup import gcp_client
+
+    class Http:
+        def __init__(self):
+            self.gets = 0
+            self.posts: list[str] = []
+
+        def post(self, url, json=None):
+            self.posts.append(url)
+            return type("R", (), {"content": b"{}", "raise_for_status": lambda self: None, "json": lambda self: {}})()
+
+        def get(self, url, params=None):
+            self.gets += 1
+            return type("R", (), {"status_code": 200 if self.gets >= 3 else 404})()
+
+    slept: list[float] = []
+    monkeypatch.setattr(gcp_client.time, "sleep", slept.append)
+    client = object.__new__(gcp_client.RealGcpClient)  # no credentials: only the HTTP session is used here
+    client.project, client.http = "p", Http()
+    client.create_service_account("peoplevault-executor", "PeopleVault executor")
+    assert client.http.posts == ["https://iam.googleapis.com/v1/projects/p/serviceAccounts"]
+    assert client.http.gets == 3 and slept == [5, 5]
