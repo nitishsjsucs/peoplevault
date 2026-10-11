@@ -2,7 +2,8 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["es2024", "esnext.disposable"],
-    "types": ["node"]
+    "types": ["node"],
+    "erasableSyntaxOnly": true
   },
   "include": ["scripts/**/*.ts", "test/node/**/*.ts", "vitest.config.ts", "src/shared/**/*.ts"]
 }
