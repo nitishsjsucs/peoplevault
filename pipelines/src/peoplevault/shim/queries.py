@@ -26,7 +26,9 @@ def compiled() -> dict:
     return json.loads((config.POLICY_DIR / "compiled" / "policy.json").read_text())
 
 
-_SCHEMA_REF = re.compile(r"\b(pv_[a-z_]+)\.")
+def _schema_refs(sql: str, prefix: str) -> list[str]:
+    """Every `<prefix>_*` dataset the SQL names (the prefix is the policy's naming prefix, `peoplevault`)."""
+    return re.findall(rf"\b({re.escape(prefix)}_[a-z0-9_]+)\.", sql)
 
 
 def resolve(purpose: str, query_id: str, params: dict) -> tuple[str, dict]:
@@ -40,7 +42,7 @@ def resolve(purpose: str, query_id: str, params: dict) -> tuple[str, dict]:
         raise ShimError(403, "purpose_dataset_denied")
     sql = q["sql"]["duckdb"]
     allowed = pol["purposes"][purpose]["dataset"]
-    for schema in _SCHEMA_REF.findall(sql):
+    for schema in _schema_refs(sql, pol["naming"]["prefix"]):
         if schema != allowed:
             raise ShimError(403, "purpose_dataset_denied")
     bound: dict[str, object] = {}

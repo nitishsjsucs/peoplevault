@@ -15,6 +15,30 @@ def test_purpose_cannot_read_another_purpose_schema():
     assert e.value.status == 403 and e.value.code == "purpose_dataset_denied"
 
 
+def test_a_query_naming_another_purpose_dataset_is_refused(monkeypatch):
+    """The schema scan on its own: the query's purpose matches, but its SQL reads another purpose's dataset."""
+    import copy
+
+    from peoplevault.shim import queries
+
+    pol = copy.deepcopy(queries.compiled())
+    q = pol["queries"]["workforce_analytics.headcount_monthly"]
+    q["sql"]["duckdb"] = q["sql"]["duckdb"] + " union all select * from peoplevault_purpose_employee_relations.employees"
+    monkeypatch.setattr(queries, "compiled", lambda: pol)
+    with pytest.raises(ShimError) as e:
+        resolve("workforce_analytics", "workforce_analytics.headcount_monthly", {})
+    assert e.value.status == 403 and e.value.code == "purpose_dataset_denied"
+
+
+def test_every_compiled_query_names_only_its_own_purpose_dataset():
+    from peoplevault.shim.queries import _schema_refs, compiled
+
+    pol = compiled()
+    for qid, q in pol["queries"].items():
+        refs = set(_schema_refs(q["sql"]["duckdb"], pol["naming"]["prefix"]))
+        assert refs == {pol["purposes"][q["purpose"]]["dataset"]}, qid
+
+
 def test_unknown_query_id_rejected():
     with pytest.raises(ShimError) as e:
         resolve("employee_relations", "employee_relations.everything", {})
