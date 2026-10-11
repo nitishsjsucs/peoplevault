@@ -1,7 +1,7 @@
 {
   "command": "npm run eval:deletion",
   "date": "2026-10-11",
-  "git_sha": "52a0aeb06a06546c35ab04174ed06e03e20e425f",
+  "git_sha": "943dd67196ca8ba6881f0c91e60da3cc062c79b5",
   "git_dirty": false,
   "environment": "local (Miniflare, DuckDB, pyiceberg SqlCatalog)",
   "versions": {
@@ -77,7 +77,8 @@
         "clean_pairs": 120
       }
     },
-    "scope": "R and D requests that were not held; system verdicts"
+    "requests": 110,
+    "scope": "retention requests and DSRs of cohorts R and D that were not held; the planted-fault requests (cohort F) are scored under fault detection; system verdicts"
   },
   "oracle": {
     "oracle_coverage": {
@@ -119,10 +120,12 @@
   "holds": {
     "held_requests": 6,
     "held_subjects": 6,
-    "held_data_intact": 6
+    "held_data_intact": 6,
+    "expected_held_subjects": 6
   },
   "faults": {
     "scenarios": 20,
+    "planned": 20,
     "detected": 20,
     "by_store": {
       "r2": {
@@ -252,7 +255,7 @@
         "cleared/modeled": 110
       }
     },
-    "lake_expire": "lake expire: snapshots 15 -> 1, orphan files removed 101",
+    "lake_expire": "lake expire: snapshots 13 -> 1, orphan files removed 80",
     "residual_check": "residuals check: {'pending_before': 212, 'updated': 212, 'cleared': 212, 'errors': 0}"
   },
   "warmup": {
@@ -264,15 +267,16 @@
   },
   "audit_chain": {
     "ok": true,
-    "length": 1398,
-    "windows": 14
+    "length": 1373,
+    "windows": 28,
+    "window": 50
   },
   "audit_copy": {
     "table": "governance.audit_events",
-    "rows": 1401,
-    "copied_this_run": 1401,
-    "last_seq": 1401,
-    "chain_length": 1398,
+    "rows": 1376,
+    "copied_this_run": 1376,
+    "last_seq": 1376,
+    "chain_length": 1373,
     "last_hash_matches": true,
     "lag_after_export": 1
   },
@@ -293,15 +297,16 @@
     }
   },
   "timing_ms": {
-    "workflow_p50": 65834.0,
-    "workflow_p95": 109986.0,
-    "total_run": 417079
+    "workflow_p50": 25581.5,
+    "workflow_p95": 46819.0,
+    "total_run": 197857
   },
   "gate": {
     "passed": true,
     "checks": {
       "false_clean_zero": true,
       "all_faults_detected": true,
+      "holds_respected": true,
       "held_data_intact": true,
       "coverage_100": true,
       "every_category_applicable": true
