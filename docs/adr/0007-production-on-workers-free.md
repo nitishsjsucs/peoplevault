@@ -36,7 +36,7 @@ Every Free daily allowance applies per account: Workflow steps (3,000 a day), KV
    - Audit chain verification is windowed at 50 events per request (100 in the first redesign; lowered after the committed `npm run bench:cpu` median for 100 events, 2.626 ms, missed the 2.5 ms design target). Report totals are computed with SQL `GROUP BY`.
    - The BigQuery client makes at most 20 polls and 10 pages and sets `maximumBytesBilled`.
 
-   The redesigned worst case measures 1.83 ms on this Mac. Allowing three times that for edge hardware and cold isolates still leaves 45% of the 10 ms limit unused.
+   The repo's committed measurement (`evals/results/cpu-2026-10-11.json`, `npm run bench:cpu`, 2026-10-11) puts the largest step-sized path, the 50-event audit verification window, at a 1.789 ms warm median on this Mac. Allowing three times that for edge hardware and cold isolates (5.37 ms) still leaves 46% of the 10 ms limit unused. (The 1.83 ms figure first written here was the 2026-10-10 scratch measurement of the erase step alone; the first committed run measured the 100-event window at 2.626 ms, which is why the window is now 50.)
 3. **The audit copy is pulled, not streamed.** `pv audit export` pages D1 audit rows through a new executor route (`GET /api/v1/executor/audit-export`) and appends them to the Basin Catalog Iceberg table `governance.audit_events` with pyiceberg.
    - Each commit records the last copied `seq` and `hash` in its snapshot summary, and pyiceberg 0.12.0 commits appends with `AssertRefSnapshotId`. So the copy is exactly once: a rerun copies nothing, and a concurrent exporter fails and retries.
    - Before it commits, the export checks that the chain links (`prev_hash` equals the previous `hash`), so a gap is never committed.
