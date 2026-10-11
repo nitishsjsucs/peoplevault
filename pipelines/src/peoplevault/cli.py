@@ -18,6 +18,33 @@ def main(log_level: str) -> None:
     install_redaction(getattr(logging, log_level.upper()))
 
 
+@main.command()
+@click.option("--out", "out_dir", default=None, help="output directory (default data/generated)")
+@click.option("--master-key-b64", default=None, help="pseudonym master key (default: PV_PSEUDONYM_MASTER_KEY from .dev.vars)")
+@click.option("--write-expected", is_flag=True, help="rewrite the committed data/expected_counts.json")
+def synth(out_dir: str | None, master_key_b64: str | None, write_expected: bool) -> None:
+    """Deterministic synthetic workforce generator."""
+    import base64
+    import json
+    from pathlib import Path
+
+    from peoplevault import config
+    from peoplevault.synth.generate import generate
+
+    key = base64.b64decode(master_key_b64) if master_key_b64 else config.local_settings().master_key
+    target = Path(out_dir) if out_dir else config.GENERATED_DIR
+    counts = generate(target, key)
+    expected_path = config.REPO_ROOT / "data" / "expected_counts.json"
+    rendered = json.dumps(counts, indent=2) + "\n"
+    if write_expected:
+        expected_path.write_text(rendered)
+        click.echo(f"wrote {expected_path.relative_to(config.REPO_ROOT)}")
+    elif expected_path.exists() and expected_path.read_text() != rendered:
+        raise click.ClickException("generated counts differ from data/expected_counts.json (golden); review and rerun with --write-expected")
+    click.echo(f"synth: {counts['export_objects']} export objects, {counts['export_rows_total']} export rows, "
+               f"{counts['d1']['principals']} principals, {counts['d1']['identity_map']} identity rows -> {target}")
+
+
 @main.group()
 def policy() -> None:
     """Compile policy/policy.yaml or check generated files for drift."""

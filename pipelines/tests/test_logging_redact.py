@@ -38,3 +38,12 @@ def test_logger_output_is_redacted(caplog):
     logging.getLogger("pv.test").addFilter(RedactingFilter())
     logging.getLogger("pv.test").warning("id %s", "E00001")
     assert "E00001" not in caplog.text
+
+
+def test_redacts_synthetic_full_names_in_both_orders():
+    from peoplevault.synth.names import FIRST_NAMES, LAST_NAMES
+
+    first, last = FIRST_NAMES[3], LAST_NAMES[7]
+    out = redact(f"rows for {first} {last} and {last}, {first} done")
+    assert first not in out and last not in out
+    assert out == f"rows for {REDACTED} and {REDACTED} done"

@@ -1,0 +1,186 @@
+{
+  "description": "Golden counts from `pv synth` ground truth (SPEC.md section 7.2). Regenerate with `pv synth --write-expected` and review the diff in the same commit.",
+  "population": {
+    "employees_ever": 1200,
+    "active": 1000,
+    "terminated": 200,
+    "managers": 120,
+    "restricted_active": 24,
+    "held_subjects": 6,
+    "changes": {
+      "promotion": 60,
+      "transfer": 40,
+      "manager_change": 30
+    }
+  },
+  "export_objects": 41,
+  "export_rows": {
+    "hris": {
+      "objects": {
+        "exports/hris/employees/dt=2026-07-06/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-07-13/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-07-20/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-07-27/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-08-03/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-08-10/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-08-17/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-08-24/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-08-31/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-09-07/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-09-14/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-09-21/employees.jsonl": 1200,
+        "exports/hris/employees/dt=2026-09-28/employees.jsonl": 1200
+      },
+      "total": 15600
+    },
+    "payroll": {
+      "objects": {
+        "exports/payroll/compensation/period=2025-10/compensation.csv": 1002,
+        "exports/payroll/compensation/period=2025-11/compensation.csv": 1004,
+        "exports/payroll/compensation/period=2025-12/compensation.csv": 1003,
+        "exports/payroll/compensation/period=2026-01/compensation.csv": 1002,
+        "exports/payroll/compensation/period=2026-02/compensation.csv": 1003,
+        "exports/payroll/compensation/period=2026-03/compensation.csv": 1000,
+        "exports/payroll/compensation/period=2026-04/compensation.csv": 1000,
+        "exports/payroll/compensation/period=2026-05/compensation.csv": 1004,
+        "exports/payroll/compensation/period=2026-06/compensation.csv": 1000,
+        "exports/payroll/compensation/period=2026-07/compensation.csv": 1000,
+        "exports/payroll/compensation/period=2026-08/compensation.csv": 1000,
+        "exports/payroll/compensation/period=2026-09/compensation.csv": 1000
+      },
+      "total": 12018
+    },
+    "leave": {
+      "objects": {
+        "exports/leave/requests/month=2025-10/requests.jsonl": 52,
+        "exports/leave/requests/month=2025-11/requests.jsonl": 39,
+        "exports/leave/requests/month=2025-12/requests.jsonl": 59,
+        "exports/leave/requests/month=2026-01/requests.jsonl": 49,
+        "exports/leave/requests/month=2026-02/requests.jsonl": 48,
+        "exports/leave/requests/month=2026-03/requests.jsonl": 46,
+        "exports/leave/requests/month=2026-04/requests.jsonl": 39,
+        "exports/leave/requests/month=2026-05/requests.jsonl": 38,
+        "exports/leave/requests/month=2026-06/requests.jsonl": 48,
+        "exports/leave/requests/month=2026-07/requests.jsonl": 43,
+        "exports/leave/requests/month=2026-08/requests.jsonl": 59,
+        "exports/leave/requests/month=2026-09/requests.jsonl": 40
+      },
+      "total": 560
+    },
+    "performance": {
+      "objects": {
+        "exports/performance/reviews/cycle=2024H2/reviews.jsonl": 983,
+        "exports/performance/reviews/cycle=2025H1/reviews.jsonl": 979,
+        "exports/performance/reviews/cycle=2025H2/reviews.jsonl": 990,
+        "exports/performance/reviews/cycle=2026H1/reviews.jsonl": 987
+      },
+      "total": 3939
+    }
+  },
+  "export_rows_total": 32117,
+  "lake": {
+    "employee_monthly": {
+      "rows": 86148,
+      "appends": 8,
+      "months": 93
+    }
+  },
+  "d1": {
+    "principals": 133,
+    "identity_map": 1200,
+    "legal_holds": 6
+  },
+  "kv": {
+    "profile": 300,
+    "team": 120
+  },
+  "extracts": 6,
+  "cohorts": {
+    "full": {
+      "R": 72,
+      "R_held": 2,
+      "D": 40,
+      "H": 4,
+      "F": 20,
+      "variants": 3
+    },
+    "ci": {
+      "R": 12,
+      "R_held": 2,
+      "D": 6,
+      "H": 2,
+      "F": 5,
+      "variants": 0
+    },
+    "prod": {
+      "R": 0,
+      "R_held": 0,
+      "D": 6,
+      "H": 1,
+      "F": 5,
+      "variants": 0
+    }
+  },
+  "retention_expected": {
+    "export_objects_expired": 8,
+    "export_objects_deleted": 3,
+    "export_objects_minimized_for_hold": 5,
+    "expired_export_keys": [
+      "exports/hris/employees/dt=2026-07-06/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-13/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-20/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-27/employees.jsonl",
+      "exports/hris/employees/dt=2026-08-03/employees.jsonl",
+      "exports/payroll/compensation/period=2025-10/compensation.csv",
+      "exports/payroll/compensation/period=2025-11/compensation.csv",
+      "exports/performance/reviews/cycle=2024H2/reviews.jsonl"
+    ],
+    "minimized_export_keys": [
+      "exports/hris/employees/dt=2026-07-06/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-13/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-20/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-27/employees.jsonl",
+      "exports/hris/employees/dt=2026-08-03/employees.jsonl"
+    ],
+    "raw_rows_expired": {
+      "hris": 5970,
+      "payroll": 2006,
+      "performance": 983
+    },
+    "extracts_expired": 3,
+    "lake_rows_expired_employee_monthly": 7035,
+    "retention_requests": 70,
+    "retention_held": 2
+  },
+  "retention_expected_ci": {
+    "export_objects_expired": 8,
+    "export_objects_deleted": 3,
+    "export_objects_minimized_for_hold": 5,
+    "expired_export_keys": [
+      "exports/hris/employees/dt=2026-07-06/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-13/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-20/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-27/employees.jsonl",
+      "exports/hris/employees/dt=2026-08-03/employees.jsonl",
+      "exports/payroll/compensation/period=2025-10/compensation.csv",
+      "exports/payroll/compensation/period=2025-11/compensation.csv",
+      "exports/performance/reviews/cycle=2024H2/reviews.jsonl"
+    ],
+    "minimized_export_keys": [
+      "exports/hris/employees/dt=2026-07-06/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-13/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-20/employees.jsonl",
+      "exports/hris/employees/dt=2026-07-27/employees.jsonl",
+      "exports/hris/employees/dt=2026-08-03/employees.jsonl"
+    ],
+    "raw_rows_expired": {
+      "hris": 5970,
+      "payroll": 2006,
+      "performance": 983
+    },
+    "extracts_expired": 3,
+    "lake_rows_expired_employee_monthly": 7035,
+    "retention_requests": 10,
+    "retention_held": 2
+  }
+}
