@@ -81,3 +81,17 @@ def test_dbt_bigquery_profiles_cap_bytes():
     outputs = yaml.safe_load(PROFILES.read_text())["peoplevault"]["outputs"]
     for name in ("bigquery", "bigquery_actions", "bigquery_ci"):
         assert outputs[name]["maximum_bytes_billed"] == 1073741824, name
+
+
+def test_dbt_jobs_carry_the_app_label():
+    """dbt-bigquery cannot prefix its job ids (uuid4), so its jobs are attributed by the label app=peoplevault, the same
+    label the Python jobs carry (bqjob.LABELS)."""
+    import json
+
+    from dbt.adapters.bigquery.connections import BigQueryConnectionManager
+
+    project = yaml.safe_load((PROFILES.parent / "dbt_project.yml").read_text())
+    qc = project["query-comment"]
+    assert qc["job-label"] is True
+    assert json.loads(qc["comment"]) == bqjob.LABELS
+    assert BigQueryConnectionManager._labels_from_query_comment(None, qc["comment"]) == bqjob.LABELS

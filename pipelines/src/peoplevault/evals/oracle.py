@@ -222,10 +222,20 @@ def scan_duckdb(idx: TokenIndex, out: OracleFindings, path: Path | None = None) 
         conn.close()
 
 
+def _own_datasets(names: Iterable[str]) -> list[str]:
+    """This repo's datasets: names with the policy's prefix (`peoplevault_`). The Google Cloud project is shared with three
+    other repos, so a dataset of theirs that becomes visible to peoplevault-executor is never read (computed here, not
+    imported from peoplevault.verify, so the oracle stays independent of the verifiers)."""
+    import json as _json
+
+    prefix = _json.loads((config.POLICY_DIR / "compiled" / "policy.json").read_text())["naming"]["prefix"] + "_"
+    return [n for n in names if n.startswith(prefix)]
+
+
 def scan_warehouse(idx: TokenIndex, out: OracleFindings, wh: Any) -> None:
     """Any warehouse with the Warehouse protocol (production: BigQuery as peoplevault-executor): every base table of every
-    dataset, every string column, every row."""
-    for ds in wh.list_datasets():
+    `peoplevault_*` dataset, every string column, every row."""
+    for ds in _own_datasets(wh.list_datasets()):
         for ref in wh.list_base_tables([ds]):
             cols = wh.string_columns(ref)
             if not cols:

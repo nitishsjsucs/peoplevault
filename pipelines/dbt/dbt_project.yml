@@ -27,6 +27,14 @@ vars:
 on-run-end:
   - "{{ create_purpose_routines() }}"
 
+# Every BigQuery job dbt starts carries the label app=peoplevault (dbt-bigquery turns a JSON query comment into job
+# labels when job-label is true), so this repo's dbt jobs can be told apart in the shared project. dbt-bigquery names
+# its job ids with a bare uuid4, so they cannot carry the peoplevault_ prefix the Python jobs have. On DuckDB the
+# comment is only a SQL comment.
+query-comment:
+  comment: '{"app": "peoplevault"}'
+  job-label: true
+
 models:
   peoplevault:
     +persist_docs:

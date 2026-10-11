@@ -88,3 +88,34 @@ def test_the_setup_client_reads_datasets_with_the_policy_prefix():
     from peoplevault.setup.gcp_client import DATASET_PREFIX
 
     assert DATASET_PREFIX == f"{policy().naming.prefix}_"
+
+
+def test_the_oracle_scans_only_this_repos_datasets():
+    """The production eval's oracle runs as peoplevault-executor in the shared project: another repo's dataset that
+    becomes visible to it is never read (the oracle keeps its own filter, independent of the verifier's)."""
+    from peoplevault.evals.oracle import OracleFindings
+    from peoplevault.evals.oracle import scan_warehouse as oracle_scan
+
+    listed, queried = [], []
+
+    class FakeWarehouse:
+        dialect = "duckdb"
+        project = "p"
+
+        def list_datasets(self):
+            return ["otherrepo_hr", "peoplevault_core"]
+
+        def list_base_tables(self, datasets):
+            listed.extend(datasets)
+            return []
+
+        def query(self, sql):
+            queried.append(sql)
+            return []
+
+    class NoTokens:
+        def subjects_in(self, value):
+            return []
+
+    oracle_scan(NoTokens(), OracleFindings(), FakeWarehouse())
+    assert listed == ["peoplevault_core"] and queried == []
