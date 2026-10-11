@@ -19,7 +19,7 @@ export default defineConfig(async () => {
                   TEST_MIGRATIONS: migrations,
                   PV_PSEUDONYM_MASTER_KEY: TEST_MASTER_KEY_B64,
                   DEV_ACCESS_JWKS: JSON.stringify({ keys: [testKeys.primary.public] }),
-                  DEV_ACCESS_PRIVATE_JWK: "",
+                  DEV_ACCESS_PRIVATE_JWK: JSON.stringify(testKeys.primary.private),
                   WAREHOUSE_SHIM_TOKEN: "test-shim-token",
                   GCP_GATEWAY_SA_KEY: "",
                 },
