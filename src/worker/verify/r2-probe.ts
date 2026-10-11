@@ -7,7 +7,7 @@
 // started; a changed listing rescans that bucket from pos 0 (at most 3 times, then the step throws and the request
 // fails closed), so no object is ever skipped. The cursor carries indexes and a digest only, never a key.
 import type { TokenMatcher } from "./tokens.ts";
-import { anyTokenIncluded, countMatches, redactLocation } from "./tokens.ts";
+import { countMatches, re2Escape, redactLocation } from "./tokens.ts";
 import { r2AssetFor, type Finding, type ProbeResult } from "./findings.ts";
 
 export interface ProbeBucket {
@@ -51,18 +51,47 @@ async function sortedKeysDigest(objects: Listed[]): Promise<string> {
   return Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+const occurrenceCache = new WeakMap<TokenMatcher[], RegExp | null>();
+
+/** One regular expression for every token as a literal: a single pass finds an occurrence of any of them (much
+ * cheaper in V8 than one indexOf per token over a large body). */
+function occurrences(matchers: TokenMatcher[]): RegExp | null {
+  if (!occurrenceCache.has(matchers)) {
+    const tokens = [...new Set(matchers.map((m) => m.token).filter((t) => t.length > 0))];
+    occurrenceCache.set(matchers, tokens.length ? new RegExp(tokens.map(re2Escape).join("|"), "g") : null);
+  }
+  return occurrenceCache.get(matchers)!;
+}
+
+/**
+ * Lines of `text` in which some matcher matches. Every matcher needs its token inside the value (exact columns
+ * compare equal, the others test `includes` first), so only lines that contain a token occurrence can match: one
+ * pass finds the occurrences and only their lines are tested. The count equals testing every line, and the cost stays
+ * one pass over the body however many lines hold the subject (SPEC.md section 30.3.1, Free's 10 ms of CPU).
+ */
+export function countMatchingLines(text: string, matchers: TokenMatcher[]): number {
+  const rx = occurrences(matchers);
+  if (!rx) return 0;
+  let n = 0;
+  rx.lastIndex = 0;
+  for (let hit = rx.exec(text); hit !== null; hit = rx.exec(text)) {
+    const start = text.lastIndexOf("\n", hit.index) + 1;
+    const nl = text.indexOf("\n", hit.index);
+    const end = nl === -1 ? text.length : nl;
+    if (countMatches(null, text.slice(start, end), matchers) > 0) n++;
+    if (nl === -1) break;
+    rx.lastIndex = end + 1; // the rest of this line is already decided
+  }
+  return n;
+}
+
 async function scanObject(name: string, bucket: R2Bucket, o: Listed, matchers: TokenMatcher[], findings: Finding[], errors: ProbeResult["errors"]): Promise<void> {
   const location = `${name}/${o.key}`;
   try {
     let matches = countMatches(null, o.key, matchers);
     for (const v of Object.values(o.meta)) matches += countMatches(null, v, matchers);
     const obj = await bucket.get(o.key);
-    if (obj) {
-      const text = await obj.text();
-      if (anyTokenIncluded(text, matchers)) {
-        for (const line of text.split("\n")) if (line && countMatches(null, line, matchers)) matches++;
-      }
-    }
+    if (obj) matches += countMatchingLines(await obj.text(), matchers);
     if (matches > 0) findings.push({ store: "r2", location: redactLocation(location, matchers), assetId: r2AssetFor(name, o.key), matches });
   } catch {
     errors.push({ store: "r2", location: redactLocation(location, matchers), error: "read_failed" });

@@ -2,9 +2,9 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { D1_PROBE_TABLES_PER_STEP, excludedTables, probeD1, type D1Stage } from "../../src/worker/verify/d1-probe.ts";
 import { probeKv } from "../../src/worker/verify/kv-probe.ts";
-import { probeR2 } from "../../src/worker/verify/r2-probe.ts";
+import { countMatchingLines, probeR2 } from "../../src/worker/verify/r2-probe.ts";
 import { countMatches, patternFor, subjectMatchers } from "../../src/worker/verify/tokens.ts";
-import { seedWorld, type WorldIdentity } from "../fixtures/seed.ts";
+import { seedObjects, seedWorld, type WorldIdentity } from "../fixtures/seed.ts";
 
 const s = { employeeId: "E30042", workEmail: "ian.chen@peoplevault.test", fullName: "Ian Chen", employeeRef: `er_${"k".repeat(26)}`, warehouseKey: `wk_${"m".repeat(26)}`, analyticsId: `an_${"p".repeat(26)}` };
 const m = subjectMatchers(s, { includeFullName: true });
@@ -127,5 +127,35 @@ describe("D1 probe inside SQLite (Workers Free, SPEC.md 30.3.1)", () => {
     expect(seen.findings.map((f) => f.location)).toContain("executor_tasks");
     expect(skipped.findings.map((f) => f.location)).not.toContain("executor_tasks");
     await env.DB.prepare("DELETE FROM executor_tasks WHERE id = 't-own'").run();
+  });
+});
+
+describe("R2 probe line matching from token occurrences (Workers Free CPU)", () => {
+  const everyLine = (text: string, matchers: ReturnType<typeof subjectMatchers>) => text.split("\n").filter((line) => line && countMatches(null, line, matchers)).length;
+
+  it("counts exactly the lines that testing every line counts, over every fixture subject and object", async () => {
+    await seedWorld();
+    await seedObjects();
+    const world = (await env.DB.prepare("SELECT * FROM identity_map ORDER BY employee_id").all<WorldIdentity>()).results;
+    const texts: string[] = [];
+    for (const b of [env.EXPORTS, env.DERIVED]) for (const o of (await b.list({ limit: 1000 })).objects) texts.push(await (await b.get(o.key))!.text());
+    let hits = 0;
+    for (const w of world) {
+      const wm = subjectMatchers({ employeeId: w.employee_id, workEmail: w.work_email, fullName: w.full_name, employeeRef: w.employee_ref, warehouseKey: w.warehouse_key, analyticsId: w.analytics_id }, { includeFullName: true });
+      for (const t of texts) {
+        const n = countMatchingLines(t, wm);
+        expect(n).toBe(everyLine(t, wm));
+        hits += n;
+      }
+    }
+    expect(hits).toBeGreaterThan(world.length);
+  });
+
+  it("handles boundary cases, repeated tokens on one line, a last line without a newline and carriage returns", () => {
+    const text = ["brian.chen@peoplevault.test and Brian Chen", "contact ian.chen@peoplevault.test. twice ian.chen@peoplevault.test", "", "E300421 is not E30042", `ref ${s.employeeRef}\r`, `E30042`].join("\n");
+    expect(countMatchingLines(text, m)).toBe(everyLine(text, m));
+    // lines 2 (the email), 4 (E30042 at the end, after E300421), 5 (the ref before \r) and 6 (no trailing newline)
+    expect(countMatchingLines(text, m)).toBe(4);
+    expect(countMatchingLines("", m)).toBe(0);
   });
 });

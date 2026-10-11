@@ -24,6 +24,7 @@ interface Bundle {
   subjectMatchers: Fn;
   countMatches: Fn;
   anyTokenIncluded: Fn;
+  countMatchingLines: (text: string, matchers: unknown[]) => number;
   chainHash: (prev: string, fields: Record<string, unknown>) => Promise<string>;
   hashedFields: Fn;
   createPseudonymizer: (k: string) => { pseudonym(kind: string, id: string): Promise<string> };
@@ -39,6 +40,7 @@ async function loadBundle(): Promise<Bundle> {
       contents: [
         'export { transformRows, deletionRule } from "./src/worker/erase/jsonl-objects.ts";',
         'export { subjectMatchers, countMatches, anyTokenIncluded } from "./src/worker/verify/tokens.ts";',
+        'export { countMatchingLines } from "./src/worker/verify/r2-probe.ts";',
         'export { chainHash, hashedFields } from "./src/worker/audit/audit-log.ts";',
         'export { createPseudonymizer } from "./src/worker/pseudo/hmac.ts";',
         'export { ASSETS } from "./src/worker/assets/registry.ts";',
@@ -166,19 +168,13 @@ async function main(): Promise<void> {
   const probeBytes = byCap(PROBE_CAP, hris).reduce((n, o) => n + o.size, 0);
   const count = b.countMatches as (c: string | null, v: unknown, m: unknown[]) => number;
   const included = b.anyTokenIncluded as (t: string, m: unknown[]) => boolean;
-  const probe = await time(() => {
-    let n = 0;
-    for (const text of erased) {
-      if (included(text, matchers)) for (const line of text.split("\n")) if (line && count(null, line, matchers)) n++;
-    }
-    return n;
-  });
-  // the probe's line loop runs when a token is present (an object that still holds the subject): the worst case
-  const probeWorst = await time(() => {
-    let n = 0;
-    for (const o of byCap(PROBE_CAP, hris)) for (const line of o.body.split("\n")) if (line && count(null, line, matchers)) n++;
-    return n;
-  });
+  // the probe's body scan (verify/r2-probe.ts countMatchingLines), after a clean erasure and with the subject still
+  // in every object of the step (an erasure that did not happen): the cost is one pass per token either way
+  const probe = await time(() => erased.reduce((n, text) => n + b.countMatchingLines(text, matchers), 0));
+  const unerased = byCap(PROBE_CAP, hris).map((o) => o.body);
+  const hits = unerased.reduce((n, text) => n + b.countMatchingLines(text, matchers), 0);
+  if (hits !== unerased.reduce((n, text) => n + text.split("\n").filter((l) => l && count(null, l, matchers)).length, 0)) throw new Error("countMatchingLines differs from testing every line");
+  const probeWorst = await time(() => unerased.reduce((n, text) => n + b.countMatchingLines(text, matchers), 0));
 
   // 4. audit chain verification window of 100 events and an export page of 500 rows
   const row = (i: number) => ({ id: `id-${i}`, ts: "2026-10-10T00:00:00.000Z", actor: "privacy-01", actor_kind: "human", persona: "privacy_officer", purpose: "privacy_compliance", action: "read_audit", route: "/api/v1/privacy/audit", subject_ref: null, request_id: null, decision: "allow", reason: "ok", row_count: i, detail_json: '{"n":1}' });
