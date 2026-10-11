@@ -14,12 +14,21 @@ import statistics
 import subprocess
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date, datetime
 
 from peoplevault import config
 from peoplevault.evals import faults as faults_mod
 from peoplevault.evals.client import LocalClient
-from peoplevault.evals.oracle import SubjectTokens, _json_out, _wrangler, d1_query, run_oracle, subject_tokens
+from peoplevault.evals.oracle import (
+    OracleFindings,
+    SubjectTokens,
+    _json_out,
+    _wrangler,
+    d1_query,
+    run_oracle,
+    subject_tokens,
+)
 from peoplevault.evals.report import header, write_result
 from peoplevault.evals.warmup import create_extracts, load_truth, warm_kv
 
@@ -84,8 +93,10 @@ def _coverage(clean: int, applicable: int) -> dict:
     return {"value": (clean / applicable) if applicable else None, "display": f"{100 * clean / applicable:.1f}%" if applicable else "n/a", "applicable_pairs": applicable, "clean_pairs": clean}
 
 
-def _truth_applicability(asset_id: str, t: dict, expected: dict, warmup: list[dict], principal_of: dict, refs: SubjectTokens) -> str | None:
-    expired = set(expected["retention_expected"]["expired_export_keys"])
+def _truth_applicability(asset_id: str, t: dict, expected: dict, warmup: list[dict], principal_of: dict, refs: SubjectTokens, *, retention_ran: bool = True) -> str | None:
+    """Ground truth for one pair. Without a retention sweep (the production profile) every export object is kept and
+    the whole lake history counts."""
+    expired = set(expected["retention_expected"]["expired_export_keys"]) if retention_ran else set()
     minimized = set(expected["retention_expected"]["minimized_export_keys"])
     held = t["hold_matter"] is not None
 
@@ -99,7 +110,8 @@ def _truth_applicability(asset_id: str, t: dict, expected: dict, warmup: list[di
     if asset_id in ("wh.core", "hist.dbt.dim_employee_history", "id.d1.identity_records", "id.wh.identity_xref"):
         return "present"
     if asset_id == "hist.lake.employee_monthly":
-        return "present" if t["lake_rows_after_retention_cutoff"] + t["lake_ref_rows_after_retention_cutoff"] > 0 else "not_present"
+        rows = t["lake_rows_after_retention_cutoff"] + t["lake_ref_rows_after_retention_cutoff"] if retention_ran else t["lake_rows"] + t["lake_ref_rows"]
+        return "present" if rows > 0 else "not_present"
     if asset_id == "drv.marts.attrition_features":
         return "present" if any("/payroll/" in k for k in t["export_rows"]) else "not_present"
     if asset_id == "drv.marts.team_roster":
@@ -184,14 +196,55 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
     _log("oracle")
     requests = d1_query("SELECT id, kind, subject_ref, status, created_at, completed_at FROM deletion_requests")
     results = d1_query("SELECT request_id, asset_id, category, applicability, action_status, verify_status, verify_matches FROM deletion_asset_results")
-    residuals = d1_query("SELECT request_id, kind, state, evidence FROM residuals")
+    residual_rows = d1_query("SELECT request_id, kind, state, evidence FROM residuals")
+    found = run_oracle({e: tokens[e] for e in cohort_ids})
+    result = score(RunData(
+        profile=profile, run_header=run_header, t_start=t_start, truth=truth, cohorts=cohorts, tokens=tokens, expected=expected, warmup=warmup,
+        principal_of=principal_of, planted=planted, submitted=submitted, requests=requests, results=results, residual_rows=residual_rows, found=found,
+        retention_run=retention_run, report_before=report_before, report=report, audit_ok=audit_ok,
+        warmup_counts={**warm, "kv_keys_after_warmup": kv_keys_after_warmup, **extracts}, expire_out=expire_out, check_out=check_out,
+    ))
+    write(result)
+    return result
+
+
+@dataclass
+class RunData:
+    """Everything a run gathered; score() turns it into the metrics (the same for local and production runs)."""
+
+    profile: str
+    run_header: dict
+    t_start: float
+    truth: dict
+    cohorts: dict
+    tokens: dict
+    expected: dict
+    warmup: list
+    principal_of: dict
+    planted: list
+    submitted: dict
+    requests: list
+    results: list
+    residual_rows: list
+    found: OracleFindings
+    retention_run: dict | None
+    report_before: dict
+    report: dict
+    audit_ok: dict
+    warmup_counts: dict
+    expire_out: str
+    check_out: str
+
+
+def score(d: RunData) -> dict:
+    requests, results, residuals, found, tokens, truth, cohorts = d.requests, d.results, d.residual_rows, d.found, d.tokens, d.truth, d.cohorts
+    expected, warmup, principal_of, planted, submitted = d.expected, d.warmup, d.principal_of, d.planted, d.submitted
+    cohort_ids = set(cohorts["R"]) | set(cohorts["D"]) | set(cohorts["H"]) | {f["subject"] for f in cohorts["F"]}
     by_sref = {tokens[e].subject_ref: e for e in tokens}
     req_subject = {r["id"]: by_sref.get(r["subject_ref"]) for r in requests}
     rows_by_req: dict[str, list[dict]] = defaultdict(list)
     for row in results:
         rows_by_req[row["request_id"]].append(row)
-    oracle_subjects = {e: tokens[e] for e in cohort_ids}
-    found = run_oracle(oracle_subjects)
 
     def oracle_residue(subject: str, asset_id: str) -> bool:
         if asset_id.startswith("unregistered:"):
@@ -235,7 +288,7 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
         for row in rows_by_req[r["id"]]:
             if row["applicability"] not in ("present", "not_present"):
                 continue
-            want = _truth_applicability(row["asset_id"], truth[subj], expected, warmup, principal_of, tokens[subj])
+            want = _truth_applicability(row["asset_id"], truth[subj], expected, warmup, principal_of, tokens[subj], retention_ran=d.retention_run is not None)
             if want is None:
                 continue
             total_app += 1
@@ -268,9 +321,54 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
         d["scenarios"] += 1
         d["detected"] += int(f["request_failed"] and f["finding_at_location"])
 
-    # retention vs golden
+    # retention vs golden (local profiles; production runs no sweep in the eval)
+    retention_out: dict = {"run": False}
+    if d.retention_run is not None:
+        retention_out = _retention_metrics(d.retention_run, expected["retention_expected" if d.profile == "full" else "retention_expected_ci"])
+
+    # residuals
+    res_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for r in residuals:
+        res_counts[r["kind"]][f"{r['state']}/{r['evidence']}"] += 1
+    before = {x["kind"]: {} for x in d.report_before.get("residuals", [])}
+    for x in d.report_before.get("residuals", []):
+        before[x["kind"]][f"{x['state']}/{x['evidence']}"] = x["n"]
+
+    # timing
+    durations = []
+    for r in requests:
+        if r["completed_at"] and r["created_at"]:
+            durations.append((datetime.fromisoformat(r["completed_at"].replace("Z", "+00:00")) - datetime.fromisoformat(r["created_at"].replace("Z", "+00:00"))).total_seconds() * 1000)
+    durations.sort()
+
+    result = {
+        **d.run_header,
+        "kind": "deletion",
+        "requests": {"total": len(requests), "by_status": _count(r["status"] for r in requests), "by_kind": _count(r["kind"] for r in requests),
+                     "cohorts": {k: len(v) for k, v in cohorts.items() if isinstance(v, list)}},
+        "assets_registered": 13,
+        "coverage": {**_coverage(clean, len(pairs)), "by_category": by_cat, "scope": "R and D requests that were not held; system verdicts"},
+        "oracle": {"oracle_coverage": _coverage(oracle_clean, len(pairs)), "agreement": (agreement / len(pairs)) if pairs else None, "false_clean": false_clean_pairs + missed,
+                   "false_clean_pairs": false_clean_pairs, "missed_locations": missed, "false_residue": false_residue, "scanned": dict(found.scanned)},
+        "applicability_agreement": {"value": (agree / total_app) if total_app else None, "pairs": total_app, "agree": agree, "disagreements": disagreements},
+        "holds": {"held_requests": len(held_requests), "held_subjects": len(held_subjects), "held_data_intact": intact},
+        "faults": {"scenarios": len(designed), "detected": len(detected), "by_store": by_store, "undetected_by_design": sum(1 for f in fault_rows if f["variant"] and not f["finding_at_location"]),
+                   "variants": [{"variant": f["scenario"], "finding_at_location": f["finding_at_location"]} for f in fault_rows if f["variant"]],
+                   "note": "planted residues of designed types; detection shows the probes reach every store and location type, not that they would find any possible copy"},
+        "retention": retention_out,
+        "residuals": {"by_kind": {k: dict(v) for k, v in res_counts.items()}, "before_lake_expiry": before, "lake_expire": d.expire_out, "residual_check": d.check_out},
+        "warmup": d.warmup_counts,
+        "audit_chain": d.audit_ok,
+        "report": {"coverage": d.report.get("coverage"), "requests": d.report.get("requests")},
+        "timing_ms": {"workflow_p50": statistics.median(durations) if durations else None, "workflow_p95": durations[int(0.95 * (len(durations) - 1))] if durations else None,
+                      "total_run": int((time.time() - d.t_start) * 1000)},
+    }
+    result["gate"] = gate(result)
+    return result
+
+
+def _retention_metrics(retention_run: dict, exp_ret: dict) -> dict:
     rs = retention_run.get("summary") or {}
-    exp_ret = expected["retention_expected" if profile == "full" else "retention_expected_ci"]
     ex_counts = rs.get("executorCounts", {})
     retention = {
         "export_objects_deleted": rs.get("exportObjectsDeleted"),
@@ -292,49 +390,13 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
         "raw_rows_expired": retention["raw_rows_expired"] == expected_raw,
         "lake_rows_expired_employee_monthly": retention["lake_rows_expired_employee_monthly"] == exp_ret["lake_rows_expired_employee_monthly"],
     }
+    return {**retention, "expected": exp_ret, "matches_expected": retention_matches}
 
-    # residuals
-    res_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    for r in residuals:
-        res_counts[r["kind"]][f"{r['state']}/{r['evidence']}"] += 1
-    before = {x["kind"]: {} for x in report_before.get("residuals", [])}
-    for x in report_before.get("residuals", []):
-        before[x["kind"]][f"{x['state']}/{x['evidence']}"] = x["n"]
 
-    # timing
-    durations = []
-    for r in requests:
-        if r["completed_at"] and r["created_at"]:
-            durations.append((datetime.fromisoformat(r["completed_at"].replace("Z", "+00:00")) - datetime.fromisoformat(r["created_at"].replace("Z", "+00:00"))).total_seconds() * 1000)
-    durations.sort()
-
-    result = {
-        **run_header,
-        "kind": "deletion",
-        "requests": {"total": len(requests), "by_status": _count(r["status"] for r in requests), "by_kind": _count(r["kind"] for r in requests),
-                     "cohorts": {k: len(v) for k, v in cohorts.items() if isinstance(v, list)}},
-        "assets_registered": 13,
-        "coverage": {**_coverage(clean, len(pairs)), "by_category": by_cat, "scope": "R and D requests that were not held; system verdicts"},
-        "oracle": {"oracle_coverage": _coverage(oracle_clean, len(pairs)), "agreement": (agreement / len(pairs)) if pairs else None, "false_clean": false_clean_pairs + missed,
-                   "false_clean_pairs": false_clean_pairs, "missed_locations": missed, "false_residue": false_residue, "scanned": dict(found.scanned)},
-        "applicability_agreement": {"value": (agree / total_app) if total_app else None, "pairs": total_app, "agree": agree, "disagreements": disagreements},
-        "holds": {"held_requests": len(held_requests), "held_subjects": len(held_subjects), "held_data_intact": intact},
-        "faults": {"scenarios": len(designed), "detected": len(detected), "by_store": by_store, "undetected_by_design": sum(1 for f in fault_rows if f["variant"] and not f["finding_at_location"]),
-                   "variants": [{"variant": f["scenario"], "finding_at_location": f["finding_at_location"]} for f in fault_rows if f["variant"]],
-                   "note": "planted residues of designed types; detection shows the probes reach every store and location type, not that they would find any possible copy"},
-        "retention": {**retention, "expected": exp_ret, "matches_expected": retention_matches},
-        "residuals": {"by_kind": {k: dict(v) for k, v in res_counts.items()}, "before_lake_expiry": before, "lake_expire": expire_out, "residual_check": check_out},
-        "warmup": {**warm, "kv_keys_after_warmup": kv_keys_after_warmup, **extracts},
-        "audit_chain": audit_ok,
-        "report": {"coverage": report.get("coverage"), "requests": report.get("requests")},
-        "timing_ms": {"workflow_p50": statistics.median(durations) if durations else None, "workflow_p95": durations[int(0.95 * (len(durations) - 1))] if durations else None,
-                      "total_run": int((time.time() - t_start) * 1000)},
-    }
-    result["gate"] = gate(result)
-    name = f"deletion-{profile}-{date.today().isoformat()}"
+def write(result: dict) -> None:
+    name = f"deletion-{result['profile']}-{date.today().isoformat()}"
     write_result(f"{name}.json", result)
     (config.REPO_ROOT / "evals" / "results" / f"{name}.md").write_text(render_md(result))
-    return result
 
 
 def _count(values) -> dict:

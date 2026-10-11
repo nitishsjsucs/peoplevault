@@ -2,7 +2,8 @@
 (it imports nothing from peoplevault.verify). It computes every subject's tokens from ground truth with its own
 HKDF and HMAC code, finds tokens by extraction (Python regexes with lookbehind, unlike the product's RE2 patterns),
 and reads every store directly: DuckDB, pyiceberg, D1 and KV through `wrangler ... --local`, and R2 from Miniflare's
-state files.
+state files. The production profile passes `OracleSources` instead (evals/prod_stores.py: R2 and KV through the
+Cloudflare REST API, D1 through `wrangler --remote`, BigQuery as pv-executor, the Basin Catalog).
 """
 
 from __future__ import annotations
@@ -15,8 +16,10 @@ import re
 import subprocess
 import tempfile
 from collections import defaultdict
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from peoplevault import config
 from peoplevault.evals.miniflare_state import read_r2_objects
@@ -144,8 +147,9 @@ def d1_query(sql: str) -> list[dict]:
     return _json_out(_wrangler(["d1", "execute", "pv-control", "--local", "--json", "--command", sql]))[0]["results"]
 
 
-def scan_r2(idx: TokenIndex, out: OracleFindings) -> None:
-    for o in read_r2_objects():
+def scan_r2(idx: TokenIndex, out: OracleFindings, objects: Iterable | None = None) -> None:
+    """objects: items with bucket, key, body (bytes) and custom_metadata; default Miniflare's local state files."""
+    for o in read_r2_objects() if objects is None else objects:
         out.scanned["r2_objects"] += 1
         text = o.body.decode("utf-8", errors="replace")
         hits: dict[str, int] = defaultdict(int)
@@ -161,7 +165,14 @@ def scan_r2(idx: TokenIndex, out: OracleFindings) -> None:
             out.add(sid, "r2", f"{o.bucket}/{o.key}", r2_asset(o.bucket, o.key), n)
 
 
-def scan_kv(idx: TokenIndex, out: OracleFindings) -> None:
+def scan_kv(idx: TokenIndex, out: OracleFindings, items: list[tuple[str, str]] | None = None) -> None:
+    """items: (key, value) pairs; default every key of the local CACHE namespace through wrangler."""
+    if items is not None:
+        out.scanned["kv_keys"] = len(items)
+        for k, v in items:
+            for sid in idx.subjects_in(k) | idx.subjects_in(v or ""):
+                out.add(sid, "kv", k, kv_asset(k))
+        return
     keys = [k["name"] for k in _json_out(_wrangler(["kv", "key", "list", "--binding", "CACHE", "--local"]))]
     out.scanned["kv_keys"] = len(keys)
     values: dict[str, str] = {}
@@ -176,13 +187,14 @@ def scan_kv(idx: TokenIndex, out: OracleFindings) -> None:
             out.add(sid, "kv", k, kv_asset(k))
 
 
-def scan_d1(idx: TokenIndex, out: OracleFindings) -> None:
-    tables = [r["name"] for r in d1_query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
+def scan_d1(idx: TokenIndex, out: OracleFindings, query: Callable[[str], list[dict]] | None = None) -> None:
+    query = query or d1_query
+    tables = [r["name"] for r in query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
     for t in tables:
         if t.startswith(("_cf_", "sqlite_")) or t == "d1_migrations":
             continue
         out.scanned["d1_tables"] += 1
-        for row in d1_query(f"SELECT * FROM {t}"):
+        for row in query(f"SELECT * FROM {t}"):
             for v in row.values():
                 if isinstance(v, str):
                     for sid in idx.subjects_in(v):
@@ -210,13 +222,32 @@ def scan_duckdb(idx: TokenIndex, out: OracleFindings, path: Path | None = None) 
         conn.close()
 
 
-def scan_lake(idx: TokenIndex, out: OracleFindings) -> None:
+def scan_warehouse(idx: TokenIndex, out: OracleFindings, wh: Any) -> None:
+    """Any warehouse with the Warehouse protocol (production: BigQuery as pv-executor): every base table of every
+    dataset, every string column, every row."""
+    for ds in wh.list_datasets():
+        for ref in wh.list_base_tables([ds]):
+            cols = wh.string_columns(ref)
+            if not cols:
+                continue
+            out.scanned["warehouse_tables"] += 1
+            fqn = f"{ref.dataset}.{ref.table}"
+            rel = f"`{wh.project}.{fqn}`" if getattr(wh, "dialect", "") == "bigquery" else f'"{ref.dataset}"."{ref.table}"'
+            quote = "`" if getattr(wh, "dialect", "") == "bigquery" else chr(34)
+            for row in wh.query(f"select {', '.join(quote + c + quote for c in cols)} from {rel}"):
+                for v in row.values():
+                    if v:
+                        for sid in idx.subjects_in(str(v)):
+                            out.add(sid, "warehouse", fqn, table_asset("warehouse", fqn))
+
+
+def scan_lake(idx: TokenIndex, out: OracleFindings, cat: Any = None) -> None:
     import pyarrow as pa
     import pyarrow.compute as pc
 
     from peoplevault.lake.catalog import open_catalog
 
-    cat = open_catalog("local")
+    cat = cat if cat is not None else open_catalog("local")
     for ns in cat.list_namespaces():
         for ident in cat.list_tables(ns):
             name = ".".join(ident)
@@ -241,12 +272,30 @@ def scan_lake(idx: TokenIndex, out: OracleFindings) -> None:
                             out.add(sid, "iceberg", name, table_asset("iceberg", name), n)
 
 
-def run_oracle(subjects: dict[str, SubjectTokens], duckdb_path: Path | None = None) -> OracleFindings:
+@dataclass
+class OracleSources:
+    """Production readers (evals/prod_stores.py); every field is required so no store is skipped by accident."""
+
+    r2_objects: Callable[[], Iterable]
+    kv_items: Callable[[], list[tuple[str, str]]]
+    d1_query: Callable[[str], list[dict]]
+    warehouse: Any
+    catalog: Any
+
+
+def run_oracle(subjects: dict[str, SubjectTokens], duckdb_path: Path | None = None, *, sources: OracleSources | None = None) -> OracleFindings:
     idx = TokenIndex(subjects)
     out = OracleFindings()
-    scan_r2(idx, out)
-    scan_kv(idx, out)
-    scan_d1(idx, out)
-    scan_duckdb(idx, out, duckdb_path)
-    scan_lake(idx, out)
+    if sources is None:
+        scan_r2(idx, out)
+        scan_kv(idx, out)
+        scan_d1(idx, out)
+        scan_duckdb(idx, out, duckdb_path)
+        scan_lake(idx, out)
+        return out
+    scan_r2(idx, out, sources.r2_objects())
+    scan_kv(idx, out, sources.kv_items())
+    scan_d1(idx, out, sources.d1_query)
+    scan_warehouse(idx, out, sources.warehouse)
+    scan_lake(idx, out, sources.catalog)
     return out

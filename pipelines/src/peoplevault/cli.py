@@ -239,10 +239,15 @@ def eval_group() -> None:
 def eval_deletion(profile: str, no_seed: bool) -> None:
     """Deletion eval with the independent oracle and fault injection (writes evals/results/deletion-<profile>-<date>.*)."""
     if profile == "prod":
-        raise click.ClickException("the production eval profile is not built yet (PROGRESS.md, Remaining); production paths are verified with `npm run doctor -- --prod` and `pv authz warehouse --target bigquery --ceiling-probes`")
-    from peoplevault.evals.deletion import run
+        from peoplevault.evals.prod import run_prod
 
-    result = run(profile, no_seed=no_seed)
+        if no_seed:
+            raise click.ClickException("--no-seed applies to the local profiles only (production is seeded by `npm run seed:prod`)")
+        result = run_prod()
+    else:
+        from peoplevault.evals.deletion import run
+
+        result = run(profile, no_seed=no_seed)
     click.echo(json.dumps({"coverage": result["coverage"]["display"], "false_clean": result["oracle"]["false_clean"],
                            "faults": f"{result['faults']['detected']}/{result['faults']['scenarios']}", "gate": result["gate"]}, indent=1))
     if profile == "ci" and not result["gate"]["passed"]:

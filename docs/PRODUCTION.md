@@ -91,6 +91,7 @@ npm run doctor -- --prod
 # IAM grants take about 30 seconds and policy tag changes up to 30 minutes to propagate (column-level access control docs); wait before the next line
 uv run --project pipelines pv authz warehouse --target bigquery --write-results --ceiling-probes
 uv run --directory pipelines pytest -m bigquery                    # the live BigQuery suite (48 cases, 37 ceiling probes, controls, time travel)
+uv run --project pipelines pv eval deletion --profile prod         # once, on the freshly seeded project; runs the production executor itself
 uv run --project pipelines pv executor run --target prod --drain   # P0: the production executor runs from this Mac (P1 executor.yml automates it)
 # 48 hours later (BigQuery time travel window) and again after 1 day for Basin snapshot expiration
 uv run --project pipelines pv residuals check --target prod
@@ -98,7 +99,7 @@ npm run readme:results
 git add evals/results README.md && git commit -m "docs: production results"
 ```
 
-`pv eval deletion --profile prod` (the deletion eval against the deployed Worker, BigQuery and the Basin Catalog) is not built yet; until it is, deletions in production are exercised through the API (`POST /api/v1/privacy/deletion-requests` with the privacy persona's service token) and `pv executor run --target prod --drain`.
+`pv eval deletion --profile prod` plants 5 residues of designed types (one per store) straight into R2, KV, D1, BigQuery and the Basin Catalog, warms the production caches through Access with the persona service tokens, submits 6 deletions, 1 held request and the 5 planted subjects as `privacy-01`, runs the production executor in-process until every request is terminal, runs the residual check, scans every production store with the independent oracle, removes the planted residues and writes `evals/results/deletion-prod-<date>.{json,md}`. It runs once per seeded project (its subjects are gone afterwards) and refuses to start when deletion requests already exist.
 
 If a run leaves the probe dataset behind (for example after an interrupted ceiling-probe run), `uv run --project pipelines pv authz warehouse --target bigquery --cleanup` removes it and its grants.
 
@@ -113,7 +114,7 @@ If a run leaves the probe dataset behind (for example after an interrupted ceili
 | Seeding | `npm run seed:prod` | written, not yet executed; refuses to run once any deletion request exists (re-uploading exports would resurrect erased data) |
 | Warehouse authorization | `pv authz warehouse --target bigquery --ceiling-probes` | written, not yet executed |
 | Executor, residual check, lake self-test | `pv executor run --target prod`, `pv residuals check --target prod`, `pv lake init --target prod` | written, not yet executed |
-| Production deletion eval | `pv eval deletion --profile prod` | not built |
+| Production deletion eval | `pv eval deletion --profile prod` | written, not yet executed; R2 objects are listed and read through `GET /accounts/{id}/r2/buckets/{bucket}/objects[/{key}]` with wrangler's OAuth token, and that endpoint's pagination fields are unverified |
 
 ## What the scripts cannot do
 

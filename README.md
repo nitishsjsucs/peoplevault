@@ -26,7 +26,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | BigQuery path (dbt build, protected-table controls, 48 cases as purpose service accounts, 37 ceiling probes, Worker REST client) | written, not yet executed |
 | Cloudflare Access in front of the deployed Worker, R2, D1, KV and Workflows on Cloudflare | written, not yet executed |
 | Production executor, residual check and Basin Catalog self-test | written, not yet executed |
-| Production deletion eval profile | not built yet |
+| Production deletion eval profile (`pv eval deletion --profile prod`) | written, not yet executed |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
 

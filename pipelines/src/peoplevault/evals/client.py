@@ -46,3 +46,35 @@ class LocalClient:
         if method != "GET":
             headers.update({"X-PV-Requested-With": "peoplevault", "content-type": "application/json"})
         return self.http.request(method, f"{self.base}{path}", headers=headers, json=body)
+
+
+# principal id -> suffix of the PV_CF_ACCESS_CLIENT_{ID,SECRET}_<suffix> pair recorded by setup:prod (seed:prod maps them)
+PROD_PRINCIPAL_TOKENS = {"privacy-01": "PRIVACY", "hrbp-01": "HR", "mgr-001": "MANAGER", "analyst-01": "ANALYST"}
+
+
+class ProdClient:
+    """The deployed Worker through Cloudflare Access with the persona service tokens (production eval). Access checks
+    the token at the edge and passes its JWT to the Worker. Status: written, not yet executed."""
+
+    def __init__(self, env: dict[str, str], http: httpx.Client | None = None):
+        self.base = env.get("PV_BASE_URL", "").rstrip("/")
+        if not self.base:
+            raise RuntimeError("PV_BASE_URL missing from .secrets/prod.env (run `npm run setup:prod`)")
+        self.creds: dict[str, tuple[str, str]] = {}
+        for principal, suffix in PROD_PRINCIPAL_TOKENS.items():
+            cid, secret = env.get(f"PV_CF_ACCESS_CLIENT_ID_{suffix}"), env.get(f"PV_CF_ACCESS_CLIENT_SECRET_{suffix}")
+            if cid and secret:
+                self.creds[principal] = (cid, secret)
+        if "privacy-01" not in self.creds:
+            raise RuntimeError("the privacy persona's service token is missing from .secrets/prod.env (run `npm run setup:prod`)")
+        self.http = http or httpx.Client(timeout=120.0)
+
+    def principals(self) -> set[str]:
+        return set(self.creds)
+
+    def request(self, principal_id: str, method: str, path: str, body: dict | None = None) -> httpx.Response:
+        cid, secret = self.creds[principal_id]
+        headers = {"CF-Access-Client-Id": cid, "CF-Access-Client-Secret": secret}
+        if method != "GET":
+            headers.update({"X-PV-Requested-With": "peoplevault", "content-type": "application/json"})
+        return self.http.request(method, f"{self.base}{path}", headers=headers, json=body)
