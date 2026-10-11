@@ -59,6 +59,22 @@ describe("purpose data routes", () => {
     expect((await call(app, "hrbp-02", "GET", path)).status).toBe(404);
   });
 
+  it("a manager principal without an employee link never reads a cached team profile", async () => {
+    const { app } = worldApp();
+    const s = subject("mgr-001", "direct_report", 0);
+    const path = `/api/v1/purposes/team_management/employees/${s.employee_ref}`;
+    expect((await call(app, "mgr-001", "GET", path)).status).toBe(200);
+    expect(await env.CACHE.get(`profile:team_management:${s.employee_ref}`)).not.toBeNull();
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO principals (id, kind, persona, system_role, email, service_client_id, employee_id, org_units, status, created_at) VALUES ('mgr-unlinked', 'human', 'manager', NULL, 'unlinked.manager@peoplevault.test', NULL, NULL, '[]', 'active', '2026-09-01T00:00:00Z')",
+    ).run();
+    const res = await call(app, "mgr-unlinked", "GET", path);
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain(String(s.truth.full_name));
+    const last = await env.DB.prepare("SELECT actor, decision, reason FROM audit_events ORDER BY seq DESC LIMIT 1").first();
+    expect(last).toEqual({ actor: "mgr-unlinked", decision: "deny", reason: "action_not_permitted" });
+  });
+
   it("returns 404 for out-of-scope, unknown and wrong-kind refs (no existence oracle)", async () => {
     const { app } = worldApp();
     const outside = subject("hrbp-01", "outside_unit", 0);

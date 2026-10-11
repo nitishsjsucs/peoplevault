@@ -130,8 +130,10 @@ data.get(R.profile, async (c) => {
   const ownRef = principal.employeeId ? await c.get("pseudo").pseudonym("employee_ref", principal.employeeId) : null;
   const cached = await getProfile(c.env.CACHE, purpose, ref);
   if (cached) {
+    // deny by default: only the three scopes a profile can be read under, each checked against the cached scope
+    const s = d.rowScope;
     const inScope =
-      d.rowScope.kind === "org_units" ? d.rowScope.orgUnits.includes(String(cached.scope.org_unit)) : d.rowScope.kind === "direct_reports" ? cached.scope.manager_ref === ownRef : true;
+      s.kind === "org_units" ? s.orgUnits.includes(String(cached.scope.org_unit)) : s.kind === "direct_reports" ? ownRef !== null && cached.scope.manager_ref === ownRef : s.kind === "all";
     if (!inScope) return denyAfter(c, purpose, "read_profile", R.profile, 404, "not_found");
     await audit(c, { purpose, action: "read_profile", route: R.profile, subjectRef: ident.subjectRef, decision: "allow", reason: "ok", rowCount: 1, detail: { cache: "hit" } });
     return c.json({ profile: cached.profile, columns: columnsFor(q) });

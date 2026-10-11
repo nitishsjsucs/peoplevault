@@ -79,7 +79,10 @@ export function decide(input: DecisionInput): Decision {
   if (!grants) return { allow: false, status: 403, reason: "purpose_not_permitted" };
   if (!grants.includes(action)) return { allow: false, status: 403, reason: "action_not_permitted" };
   const p = POLICY.purposes[purpose];
-  return { allow: true, reason: "ok", purpose, persona, queryIdPrefix: purpose, bqIdentity: p.bqIdentity, rowScope: rowScopeFor(principal, purpose) };
+  const rowScope = rowScopeFor(principal, purpose);
+  // a direct_reports purpose without an employee link has no rows of its own: deny instead of allowing scope "none"
+  if (rowScope.kind === "none") return { allow: false, status: 403, reason: "action_not_permitted" };
+  return { allow: true, reason: "ok", purpose, persona, queryIdPrefix: purpose, bqIdentity: p.bqIdentity, rowScope };
 }
 
 /** Visibility of every output column of a named query (deny columns are never part of a query's output). */

@@ -58,6 +58,12 @@ describe("personas and purposes", () => {
     const wa = decide({ principal: human("people_analyst"), purpose: "workforce_analytics", action: "read_dataset" });
     expect(wa).toMatchObject({ allow: true, rowScope: { kind: "all" } });
   });
+
+  it("denies a direct_reports purpose to a principal without an employee link (never scope none)", () => {
+    for (const action of ["read_profile", "list_employees"] as const) {
+      expect(decide({ principal: human("manager", { employeeId: undefined }), purpose: "team_management", action })).toEqual({ allow: false, status: 403, reason: "action_not_permitted" });
+    }
+  });
 });
 
 describe("column filtering", () => {
