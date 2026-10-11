@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 
 from peoplevault.policy.model import policy
 
-D1_TIME_TRAVEL_DAYS = 30
+# D1 Time Travel on Workers Free keeps deleted identity rows recoverable for 7 days (30 on Paid; SPEC.md 30.3.5).
+D1_TIME_TRAVEL_DAYS = 7
 
 
 def time_travel_end(deleted_at: datetime) -> datetime:

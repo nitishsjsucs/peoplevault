@@ -16,7 +16,8 @@ export interface ResidualInput {
   detail?: Record<string, unknown>;
 }
 
-export const D1_TIME_TRAVEL_DAYS = 30;
+/** D1 Time Travel on Workers Free: deleted identity rows stay recoverable for 7 days (30 on Paid; SPEC.md 30.3.5). */
+export const D1_TIME_TRAVEL_DAYS = 7;
 
 export async function recordResiduals(db: D1Database, rows: ResidualInput[]): Promise<number> {
   if (rows.length === 0) return 0;

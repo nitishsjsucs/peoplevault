@@ -12,6 +12,7 @@ import re
 import time
 from datetime import date
 
+from peoplevault.bqjob import run_query
 from peoplevault.warehouse.base import TableRef
 
 CONCURRENT = re.compile(r"concurrent update|could not serialize access|aborted due to concurrent", re.I)
@@ -56,13 +57,12 @@ class BqWarehouse:
         self.location = location
         self.sleep = sleep
 
-    def _config(self, params: dict | None):
-        from google.cloud import bigquery
-
-        return bigquery.QueryJobConfig(query_parameters=[_param(k, v) for k, v in (params or {}).items()], use_query_cache=False, labels={"app": "peoplevault", "role": "executor"})
+    def _run(self, sql: str, params: dict | None):
+        """One byte-capped job (1 GiB, query cache off, `peoplevault_` job id; SPEC.md section 30.3.8)."""
+        return run_query(self.client, sql, [_param(k, v) for k, v in (params or {}).items()], labels={"role": "executor"})
 
     def query(self, sql: str, params: dict | None = None) -> list[dict]:
-        job = self.client.query(_PARAM.sub(r"@\1", sql), job_config=self._config(params))
+        job = self._run(_PARAM.sub(r"@\1", sql), params)
         return [dict(r.items()) for r in job.result()]
 
     def build_script(self, statements: list[tuple[str, dict]]) -> tuple[str, dict]:
@@ -79,7 +79,7 @@ class BqWarehouse:
         script, params = self.build_script(statements)
         for attempt in range(1, attempts + 1):
             try:
-                job = self.client.query(script, job_config=self._config(params))
+                job = self._run(script, params)
                 job.result()
                 children = sorted(self.client.list_jobs(parent_job=job.job_id), key=lambda j: j.created)
                 dml = [int(c.num_dml_affected_rows or 0) for c in children if getattr(c, "statement_type", "") in ("DELETE", "UPDATE", "INSERT", "MERGE")]

@@ -22,6 +22,13 @@ export interface Config {
   kvPropagationWait: string;
   executorWaitTimeout: string;
   retentionAsOf: string | null;
+  /** Free plan capacity (SPEC.md section 30.3.4): null means unlimited (local). */
+  dailyDeletionStarts: number | null;
+  retentionDailyMax: number | null;
+  retentionCron: "on" | "off";
+  /** Decoded R2 bytes per Workflow step (SPEC.md section 30.3.1). */
+  r2EraseStepBytes: number;
+  r2ProbeStepBytes: number;
   masterKeyB64: string;
   access: { teamDomain: string; aud: string } | null;
   dev: { issuer: string; aud: string; jwks: string; privateJwk: string | null } | null;
@@ -51,6 +58,18 @@ export function decodeBase64(b64: string): Uint8Array {
   return out;
 }
 
+/** A positive integer var; "" means unset (null). */
+function positiveInt(env: Record<string, unknown>, name: string): number | null {
+  const v = opt(env[name]);
+  if (v === null) return null;
+  if (!/^[1-9]\d{0,9}$/.test(v)) throw new ConfigError(`${name} must be a positive integer or empty`);
+  return Number(v);
+}
+
+/** Default byte caps when a var is absent (tests that bind a partial environment). */
+export const DEFAULT_R2_ERASE_STEP_BYTES = 4_194_304;
+export const DEFAULT_R2_PROBE_STEP_BYTES = 2_097_152;
+
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -72,6 +91,12 @@ export function loadConfig(envIn: Env | Record<string, unknown>): Config {
   if (!execWait.success) throw new ConfigError("EXECUTOR_WAIT_TIMEOUT must be a duration");
   const asOf = opt(env.RETENTION_AS_OF);
   if (asOf !== null && !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) throw new ConfigError("RETENTION_AS_OF must be YYYY-MM-DD");
+  const dailyDeletionStarts = positiveInt(env, "DAILY_DELETION_STARTS");
+  const retentionDailyMax = positiveInt(env, "RETENTION_DAILY_MAX");
+  const cron = opt(env.RETENTION_CRON) ?? "on";
+  if (cron !== "on" && cron !== "off") throw new ConfigError("RETENTION_CRON must be on or off");
+  const r2EraseStepBytes = positiveInt(env, "R2_ERASE_STEP_BYTES") ?? DEFAULT_R2_ERASE_STEP_BYTES;
+  const r2ProbeStepBytes = positiveInt(env, "R2_PROBE_STEP_BYTES") ?? DEFAULT_R2_PROBE_STEP_BYTES;
 
   const masterKeyB64 = req(env, "PV_PSEUDONYM_MASTER_KEY", "the Worker starts");
   let masterKey: Uint8Array;
@@ -138,6 +163,11 @@ export function loadConfig(envIn: Env | Record<string, unknown>): Config {
     kvPropagationWait: kvWait.data,
     executorWaitTimeout: execWait.data,
     retentionAsOf: asOf,
+    dailyDeletionStarts,
+    retentionDailyMax,
+    retentionCron: cron,
+    r2EraseStepBytes,
+    r2ProbeStepBytes,
     masterKeyB64,
     access,
     dev,

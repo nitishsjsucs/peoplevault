@@ -4,7 +4,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { CF_API, CfApi, CfApiError, isWorkersPaid } from "../../scripts/lib/cf-api.ts";
+import { CF_API, CfApi, CfApiError } from "../../scripts/lib/cf-api.ts";
 import { REPO_ROOT } from "../../scripts/lib/run.ts";
 
 function fixture(name: string): { status: number; body: unknown } {
@@ -66,10 +66,7 @@ describe("Cloudflare API client", () => {
     ]);
   });
 
-  it("recognizes Workers Paid by plan name and paid state; anything else is not matched", () => {
-    const subs = (fixture("subscriptions").body as { result: never[] }).result;
-    expect(isWorkersPaid(subs)).toBe(true);
-    expect(isWorkersPaid([{ id: "s", state: "Paid", rate_plan: { id: "free", public_name: "Workers Free" } }])).toBe(false);
-    expect(isWorkersPaid([{ id: "s", state: "Cancelled", rate_plan: { id: "workers_paid", public_name: "Workers Paid" } }])).toBe(false);
+  it("has no subscriptions call: production runs on Workers Free and the token needs no Billing Read", () => {
+    expect("subscriptions" in CfApi.prototype).toBe(false);
   });
 });

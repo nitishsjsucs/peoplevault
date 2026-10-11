@@ -185,7 +185,9 @@ class LiveProbes:
 
         source, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
         creds = impersonated_credentials.Credentials(source_credentials=source, target_principal=service_account, target_scopes=["https://www.googleapis.com/auth/cloud-platform"])
-        list(bigquery.Client(project=self.project, credentials=creds, location="US").query("SELECT 1").result())
+        from peoplevault.bqjob import run_query
+
+        list(run_query(bigquery.Client(project=self.project, credentials=creds, location="US"), "SELECT 1").result())
 
     def controls(self) -> list[str]:
         from peoplevault.setup.bq_controls import live_verify
@@ -209,8 +211,10 @@ class LiveProbes:
             return False
 
     def counts(self, tables: list[str]) -> dict[str, int]:
+        from peoplevault.bqjob import run_query
+
         client = self._bq()
-        return {t: int(next(iter(client.query(f"SELECT COUNT(*) AS n FROM `{self.project}.{t}`").result()))["n"]) for t in tables}
+        return {t: int(next(iter(run_query(client, f"SELECT COUNT(*) AS n FROM `{self.project}.{t}`").result()))["n"]) for t in tables}
 
     def catalog_namespaces(self) -> list:
         from peoplevault.lake.catalog import open_catalog

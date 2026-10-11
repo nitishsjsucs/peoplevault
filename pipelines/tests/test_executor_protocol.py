@@ -63,9 +63,10 @@ def test_bigquery_concurrent_update_aborts_are_retried():
         def __init__(self):
             self.calls = 0
 
-        def query(self, sql, job_config=None):
+        def query(self, sql, job_config=None, job_id_prefix=None):
             self.calls += 1
             self.sql = sql
+            assert job_config.maximum_bytes_billed == 1 << 30 and job_id_prefix == "peoplevault_"
             return Job(fail=self.calls < 3)
 
         def list_jobs(self, parent_job=None):
@@ -88,7 +89,7 @@ def test_bigquery_other_errors_are_not_retried():
     class Client:
         calls = 0
 
-        def query(self, sql, job_config=None):
+        def query(self, sql, job_config=None, job_id_prefix=None):
             Client.calls += 1
             raise RuntimeError("Access Denied: Table pv_core.dim_employee")
 

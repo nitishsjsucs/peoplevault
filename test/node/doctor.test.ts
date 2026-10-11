@@ -97,7 +97,7 @@ describe("doctor --prod", () => {
     expect(exitCode(r)).toBe(1);
   });
 
-  it("with the API token: reads Access, the Zero Trust org, subscriptions and the missing workers.dev subdomain", async () => {
+  it("with the API token: reads Access, the Zero Trust org and the missing workers.dev subdomain; no Workers Paid line", async () => {
     const r = await prodChecks(
       deps({
         env: { CLOUDFLARE_ACCOUNT_ID: "acct", PV_CF_API_TOKEN: "tok-value-zq" },
@@ -106,14 +106,14 @@ describe("doctor --prod", () => {
           "GET /accounts/acct/access/service_tokens": "service_tokens",
           "GET /accounts/acct/access/organizations": "organizations",
           "GET /accounts/acct/workers/subdomain": "workers_subdomain_missing",
-          "GET /accounts/acct/subscriptions": "subscriptions",
         },
       }),
     );
     const by = Object.fromEntries(r.map((x) => [x.name, x]));
     expect(by["PV_CF_API_TOKEN scopes"]!.status).toBe("ok");
     expect(by["Zero Trust organization"]).toMatchObject({ status: "ok", detail: "nitish-pv.cloudflareaccess.com" });
-    expect(by["Workers Paid"]!.status).toBe("ok");
+    expect(by["Workers Paid"]).toBeUndefined();
+    expect(render(r)).not.toMatch(/Workers Paid|Billing Read|subscription/i);
     expect(by["workers.dev subdomain"]).toMatchObject({ status: "missing" });
     expect(by["workers.dev subdomain"]!.fix).toContain("https://dash.cloudflare.com/acct/workers/onboarding");
     expect(by["service tokens"]).toMatchObject({ status: "missing", detail: "missing: pv-persona-manager, pv-persona-analyst, pv-persona-privacy" });
@@ -124,7 +124,7 @@ describe("doctor --prod", () => {
     const r = await prodChecks(deps({ env: { CLOUDFLARE_ACCOUNT_ID: "acct", PV_CF_API_TOKEN: "t" }, routes: { "GET /accounts/acct/access/apps": "access_apps" } }));
     const line = r.find((x) => x.name === "PV_CF_API_TOKEN scopes")!;
     expect(line.status).toBe("missing");
-    expect(line.detail).toContain("subscriptions (Billing Read)");
+    expect(line.detail).toBe("no access to: service tokens, organizations, workers subdomain");
   });
 
   it("edge protection: an Access redirect is ok, a Worker JSON 401 is missing", async () => {
@@ -135,7 +135,6 @@ describe("doctor --prod", () => {
         "GET /accounts/acct/access/service_tokens": "service_tokens",
         "GET /accounts/acct/access/organizations": "organizations",
         "GET /accounts/acct/workers/subdomain": "workers_subdomain",
-        "GET /accounts/acct/subscriptions": "subscriptions",
       } as Record<string, string | Response>,
     };
     const url = "https://peoplevault.nitish-pv.workers.dev/api/v1/me";
@@ -146,26 +145,23 @@ describe("doctor --prod", () => {
   });
 });
 
-describe("doctor --prod: Basin Pipelines audit stream", () => {
-  it("logged in: stream, sink and pipeline are each checked through wrangler --json listings", async () => {
-    const list = (kind: string[]) => `wrangler basin pipelines ${[...kind, "list"].join(" ")} --json --per-page 100`;
-    const r = await prodChecks(
-      deps({
-        env: { CLOUDFLARE_ACCOUNT_ID: "acct" },
-        commands: {
-          "wrangler whoami --json": ok(JSON.stringify({ loggedIn: true, accounts: [{ id: "acct", name: "a" }] })),
-          "wrangler auth token --json": ok(JSON.stringify({ token: "oauth-value-zq" })),
-          "wrangler d1 list --json": ok(JSON.stringify([{ name: "pv-control", uuid: "u" }])),
-          [list(["streams"])]: ok(JSON.stringify([{ id: "s1", name: "pv_audit_events" }])),
-          [list(["sinks"])]: ok(JSON.stringify([])),
-          [list([])]: ok(JSON.stringify([{ id: "p1", name: "pv_audit_pipeline" }])),
-        },
-      }),
-    );
-    const by = Object.fromEntries(r.map((x) => [x.name, x]));
-    expect(by["audit stream"]).toMatchObject({ status: "ok", detail: "pv_audit_events" });
-    expect(by["audit sink"]).toMatchObject({ status: "missing", fix: "npm run setup:prod -- --only cloudflare" });
-    expect(by["audit pipeline"]).toMatchObject({ status: "ok" });
+describe("doctor --prod on Workers Free: no Basin Pipelines lines", () => {
+  it("logged in: no stream, sink or pipeline is checked and no basin pipelines command runs", async () => {
+    const ran: string[] = [];
+    const base = deps({
+      env: { CLOUDFLARE_ACCOUNT_ID: "acct" },
+      commands: {
+        "wrangler whoami --json": ok(JSON.stringify({ loggedIn: true, accounts: [{ id: "acct", name: "a" }] })),
+        "wrangler auth token --json": ok(JSON.stringify({ token: "oauth-value-zq" })),
+        "wrangler d1 list --json": ok(JSON.stringify([{ name: "pv-control", uuid: "u" }])),
+      },
+    });
+    const r = await prodChecks({ ...base, run: (cmd, args) => (ran.push([cmd, ...args].join(" ")), base.run(cmd, args)) });
+    const names = r.map((x) => x.name);
+    expect(names).not.toContain("audit stream");
+    expect(names).not.toContain("audit sink");
+    expect(names).not.toContain("audit pipeline");
+    expect(ran.some((c) => c.includes("basin pipelines"))).toBe(false);
     expect(render(r)).not.toContain("oauth-value-zq");
   });
 });

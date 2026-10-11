@@ -21,7 +21,7 @@ import time
 from peoplevault import config
 from peoplevault.evals import faults as faults_mod
 from peoplevault.evals.client import ProdClient
-from peoplevault.evals.deletion import RunData, _log, _wait_requests, score, write
+from peoplevault.evals.deletion import PROD_REQUEST_POLL_S, RunData, _log, _wait_requests, score, write
 from peoplevault.evals.oracle import OracleSources, run_oracle, subject_tokens
 from peoplevault.evals.prod_stores import CloudflareRest, cleanup_prod, d1_query, oauth_token, plant_prod
 from peoplevault.evals.report import header
@@ -37,7 +37,7 @@ def _truth(name: str):
 
 
 def run_prod(*, keep_faults: bool = False) -> dict:
-    from peoplevault.executor.loop import start_thread
+    from peoplevault.executor.loop import PROD_POLL_S, start_thread
     from peoplevault.executor.prod import prod_api, prod_context
     from peoplevault.lake.catalog import open_catalog
     from peoplevault.residuals.check_prod import check_prod
@@ -88,8 +88,8 @@ def run_prod(*, keep_faults: bool = False) -> dict:
                 raise RuntimeError(f"DSR submission failed with {r.status_code}")
             submitted[r.json()["requestId"]] = e
         ctx = prod_context()
-        start_thread(prod_api(), ctx, stop)
-        _wait_requests(client, set(submitted), TIMEOUT_S)
+        start_thread(prod_api(), ctx, stop, poll=PROD_POLL_S)
+        _wait_requests(client, set(submitted), TIMEOUT_S, poll_s=PROD_REQUEST_POLL_S)
         stop.set()
         report_before = client.request("privacy-01", "GET", "/api/v1/privacy/reports/deletion").json()
         _log("production residual check")

@@ -1,7 +1,7 @@
 // Doctor checks (SPEC.md section 22.1): one line per check, [ok], [warn] or [missing], and for every non-ok line the
 // exact command or console path that fixes it. Every dependency (commands, environment, files, HTTP, ports) is injected
 // so tests drive each check with a fake runner and recorded API responses.
-import { CfApi, isWorkersPaid } from "./cf-api.ts";
+import { CfApi } from "./cf-api.ts";
 import { EXECUTOR_WORKFLOW, GITHUB_SECRETS, MAX_RUN_AGE_HOURS, readGithubState, type GithubState } from "./github.ts";
 import type { RunResult } from "./run.ts";
 
@@ -123,7 +123,6 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     const api = new CfApi(accountId, env.PV_CF_API_TOKEN, d.fetchImpl);
     const failed: string[] = [];
     let org: { auth_domain: string } | null = null;
-    let subs: Awaited<ReturnType<CfApi["subscriptions"]>> = [];
     let apps: Awaited<ReturnType<CfApi["accessApps"]>> = [];
     let tokens: Awaited<ReturnType<CfApi["serviceTokens"]>> = [];
     try {
@@ -146,18 +145,8 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     } catch {
       failed.push("workers subdomain");
     }
-    try {
-      subs = await api.subscriptions();
-    } catch {
-      failed.push("subscriptions (Billing Read)");
-    }
-    out.push(failed.length ? missing(A, "PV_CF_API_TOKEN scopes", `no access to: ${failed.join(", ")}`, tokenFix) : ok(A, "PV_CF_API_TOKEN scopes", "Access, Workers subdomain and subscriptions readable"));
+    out.push(failed.length ? missing(A, "PV_CF_API_TOKEN scopes", `no access to: ${failed.join(", ")}`, tokenFix) : ok(A, "PV_CF_API_TOKEN scopes", "Access and the Workers subdomain readable"));
     out.push(org?.auth_domain ? ok(A, "Zero Trust organization", org.auth_domain) : missing(A, "Zero Trust organization", "none", "Zero Trust onboarding in the dashboard (docs/PRODUCTION.md step 5)"));
-    out.push(
-      isWorkersPaid(subs)
-        ? ok(A, "Workers Paid", "subscription found")
-        : warn(A, "Workers Paid", `no subscription matched Workers Paid (plans: ${subs.map((s) => s.rate_plan?.public_name).join(", ") || "none"})`, "upgrade to Workers Paid (docs/PRODUCTION.md step 2)"),
-    );
     out.push(
       subdomain
         ? ok(A, "workers.dev subdomain", `${subdomain}.workers.dev`)
@@ -201,16 +190,6 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
       hasD1 = false;
     }
     out.push(hasD1 ? ok(R, "D1", "pv-control") : missing(R, "D1", "pv-control missing", "npm run setup:prod"));
-    for (const [label, kind, name] of [["audit stream", ["streams"], "pv_audit_events"], ["audit sink", ["sinks"], "pv_audit_sink"], ["audit pipeline", [], "pv_audit_pipeline"]] as const) {
-      const res = await d.run(d.wrangler, ["basin", "pipelines", ...kind, "list", "--json", "--per-page", "100"]);
-      let names: string[] = [];
-      try {
-        names = (jsonFrom(res.stdout) as { name: string }[]).map((x) => x.name);
-      } catch {
-        names = [];
-      }
-      out.push(names.includes(name) ? ok(R, label, name) : missing(R, label, `${name} missing (Basin Pipelines copy of the audit log)`, "npm run setup:prod -- --only cloudflare"));
-    }
   }
   out.push(env.PV_R2_CATALOG_TOKEN ? ok(R, "PV_R2_CATALOG_TOKEN", "set (checked by the Google Cloud group's lake check)") : missing(R, "PV_R2_CATALOG_TOKEN", "not set", "create an R2 API token (docs/PRODUCTION.md step 8) and add it to .secrets/prod.env"));
   const W = "Worker";

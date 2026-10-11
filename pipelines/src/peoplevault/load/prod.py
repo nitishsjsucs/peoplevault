@@ -12,6 +12,7 @@ import json
 from datetime import UTC, datetime
 
 from peoplevault import config
+from peoplevault.bqjob import load_kwargs, run_query
 from peoplevault.load.schema import BQ_TYPES, EXPORT_FIELDS, FAMILY_TABLE, all_tables  # noqa: F401
 from peoplevault.pseudo import Pseudonymizer
 
@@ -70,9 +71,9 @@ def load_prod(*, from_r2: bool = False) -> dict:
     xref = [{"employee_id": e, "employee_key": r["warehouse_key"], "employee_ref": r["employee_ref"], "analytics_id": r["analytics_id"], "subject_ref": r["subject_ref"]}
             for e in hris_ids for r in [ps.all(e)] if r["subject_ref"] not in sup]
     stage = f"{project}.pv_restricted._xref_stage"
-    client.load_table_from_json(xref, stage, job_config=bigquery.LoadJobConfig(schema=_bq_schema(all_tables()["pv_restricted.identity_xref"]), write_disposition="WRITE_TRUNCATE")).result()
-    client.query(f"MERGE `{project}.pv_restricted.identity_xref` t USING `{stage}` s ON t.employee_id = s.employee_id "
-                 "WHEN NOT MATCHED THEN INSERT ROW").result()
+    client.load_table_from_json(xref, stage, job_config=bigquery.LoadJobConfig(schema=_bq_schema(all_tables()["pv_restricted.identity_xref"]), write_disposition="WRITE_TRUNCATE"), **load_kwargs()).result()
+    run_query(client, f"MERGE `{project}.pv_restricted.identity_xref` t USING `{stage}` s ON t.employee_id = s.employee_id "
+              "WHEN NOT MATCHED THEN INSERT ROW").result()
     client.delete_table(stage, not_found_ok=True)
     for obj in objects:
         try:
@@ -83,10 +84,9 @@ def load_prod(*, from_r2: bool = False) -> dict:
             continue
         arrow = raw.transform(obj, rows, ps, sup, loaded_at, report)
         table = FAMILY_TABLE[obj.family]
-        client.query(f"DELETE FROM `{project}.{table}` WHERE export_date = @d", job_config=bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("d", "DATE", obj.basis_date)])).result()
-        client.load_table_from_json(_json_rows(arrow), f"{project}.{table}", job_config=bigquery.LoadJobConfig(
-            schema=_bq_schema(all_tables()[table]), write_disposition="WRITE_APPEND")).result()
+        run_query(client, f"DELETE FROM `{project}.{table}` WHERE export_date = @d", [bigquery.ScalarQueryParameter("d", "DATE", obj.basis_date)]).result()
+        load_config = bigquery.LoadJobConfig(schema=_bq_schema(all_tables()[table]), write_disposition="WRITE_APPEND")
+        client.load_table_from_json(_json_rows(arrow), f"{project}.{table}", job_config=load_config, **load_kwargs()).result()
         report.objects_loaded += 1
         report.rows_loaded[table] = report.rows_loaded.get(table, 0) + arrow.num_rows
     for d in sorted(o.basis_date for o in objects if o.family == "hris"):

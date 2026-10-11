@@ -55,7 +55,12 @@ def _log(msg: str) -> None:
     print(f"[eval] {msg}", flush=True)
 
 
-def _wait_requests(client: LocalClient, ids: set[str], timeout_s: int) -> dict[str, dict]:
+LOCAL_REQUEST_POLL_S = 2.0
+# The production eval polls request status every 10 s (Workers requests are a shared daily allowance; SPEC.md 30.3.2).
+PROD_REQUEST_POLL_S = 10.0
+
+
+def _wait_requests(client: LocalClient, ids: set[str], timeout_s: int, *, poll_s: float = LOCAL_REQUEST_POLL_S) -> dict[str, dict]:
     deadline = time.time() + timeout_s
     while True:
         r = client.request("privacy-01", "GET", "/api/v1/privacy/deletion-requests")
@@ -66,7 +71,7 @@ def _wait_requests(client: LocalClient, ids: set[str], timeout_s: int) -> dict[s
         if time.time() > deadline:
             pending = sorted(i for i in ids if rows.get(i, {}).get("status") not in TERMINAL)
             raise TimeoutError(f"{len(pending)} request(s) not terminal after {timeout_s} s")
-        time.sleep(2)
+        time.sleep(poll_s)
 
 
 def _wait_run(client: LocalClient, run_id: str, timeout_s: int) -> dict:

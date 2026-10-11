@@ -26,7 +26,7 @@ const ENV_FULL: Record<string, string> = {
 
 function empty(): SetupState {
   return {
-    accountId: null, loggedIn: false, teamDomain: null, subdomain: null, buckets: [], d1: [], kv: [], queues: [], catalogEnabled: false, streams: [], sinks: [], pipelines: [], workerId: null,
+    accountId: null, loggedIn: false, teamDomain: null, subdomain: null, buckets: [], d1: [], kv: [], queues: [], catalogEnabled: false, workerId: null,
     workerSecrets: [], accessApp: null, serviceTokens: [], resources: {}, workerSecretsFile: [], renderedText: null,
     gcpMissing: [{ name: "gcloud", fix: "brew install --cask gcloud-cli" }], dataLoaded: false, github: NO_GITHUB,
   };
@@ -47,9 +47,9 @@ function complete(): SetupState {
     accountId: "acct-0123", loggedIn: true, teamDomain: "nitish-pv.cloudflareaccess.com", subdomain: "nitish-pv", buckets: ["pv-source-exports", "pv-derived", "pv-lake"],
     d1: [{ name: "pv-control", uuid: "11111111-2222-3333-4444-555555555555" }], kv: [{ id: "0123456789abcdef0123456789abcdef", title: "pv-cache" }],
     queues: ["pv-retention-sweep", "pv-retention-dlq"], catalogEnabled: true, workerId: "w-1",
-    streams: [{ id: "stream-1", name: "pv_audit_events" }], sinks: [{ id: "sink-1", name: "pv_audit_sink" }], pipelines: [{ id: "pipe-1", name: "pv_audit_pipeline" }], workerSecrets: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"],
+    workerSecrets: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"],
     accessApp: { id: "app-1", aud: "aud-123" }, serviceTokens: tokens,
-    resources: { d1_id: "11111111-2222-3333-4444-555555555555", kv_id: "0123456789abcdef0123456789abcdef", audit_stream_id: "stream-1", policy_tags: TAGS },
+    resources: { d1_id: "11111111-2222-3333-4444-555555555555", kv_id: "0123456789abcdef0123456789abcdef", policy_tags: TAGS },
     workerSecretsFile: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"], renderedText: null, gcpMissing: [], dataLoaded: true,
     github: { authed: true, repo: REPO, secrets: [...GITHUB_SECRETS], variables: { PV_PROD_ENABLED: "true" }, workflowState: "active", lastSuccess: "2026-10-10T03:07:00Z" },
   };
@@ -131,16 +131,14 @@ describe("setup:prod --dry-run", () => {
     expect(planGithub(s, { ...ENV_FULL }).find((x) => x.id === "github:blocked")!.display).toContain("PV_BASE_URL");
   });
 
-  it("audit stream: stream, sink and pipeline are created once, and the catalog token is masked in the plan", () => {
-    const text = plan(partial(), { ...ENV_FULL });
-    expect(text).toContain("npx wrangler basin pipelines streams create pv_audit_events --schema-file infra/cloudflare/audit-stream.schema.json --no-http-enabled");
-    expect(text).toContain("--catalog-token *** --roll-interval 300");
-    expect(text).toContain("npx wrangler basin pipelines create pv_audit_pipeline --sql-file infra/cloudflare/audit-pipeline.sql");
-    expect(text).not.toContain(SECRETS.PV_R2_CATALOG_TOKEN);
+  it("Workers Free: no plan creates Basin Pipelines resources or checks a Workers Paid plan", () => {
+    for (const [s, env] of [[empty(), {}], [partial(), { ...ENV_FULL }], [complete(), completeEnv()]] as const) {
+      const text = plan(s, env);
+      expect(text).not.toMatch(/basin pipelines|Workers Paid|subscriptions|--catalog-token/);
+      expect(text).not.toContain(SECRETS.PV_R2_CATALOG_TOKEN);
+    }
     const s = complete();
-    s.resources = { ...s.resources, audit_stream_id: "old" };
-    expect(planSetup(s, completeEnv(), null).map((x) => x.id)).toContain("pipelines:record");
-    s.resources = { ...s.resources, audit_stream_id: undefined };
+    s.resources = { ...s.resources, kv_id: undefined };
     expect(desiredRender(s, completeEnv())).toBeNull();
   });
 
@@ -160,7 +158,8 @@ describe("setup:prod --dry-run", () => {
     expect(text).toContain(`"ACCESS_AUD": "${AUD_PENDING}"`);
     expect(text).toContain('"database_id": "11111111-2222-3333-4444-555555555555"');
     expect(text).toContain("pv-gateway@peoplevault-test.iam.gserviceaccount.com");
-    expect(text).toContain('"pipelines": [{ "binding": "AUDIT_STREAM", "stream": "stream-1" }]');
+    expect(text).not.toContain('"pipelines"');
+    expect(text).not.toContain('"limits"');
     expect(text).toMatch(/"invocation_logs": false/);
   });
 

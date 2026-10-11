@@ -8,14 +8,15 @@
   "workers_dev": true,
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  // Invocation logs would record the method and URL of every request for 7 days (Workers Paid); console logs carry
+  // Invocation logs would record the method and URL of every request (3 days on Workers Free); console logs carry
   // no identifiers (test/worker/logging.test.ts).
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
   // Production secrets only: every listed name becomes an inherit binding at deploy time, uploaded by
   // `wrangler deploy --secrets-file .secrets/worker-secrets.env`.
   "secrets": { "required": ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"] },
-  // Workflow steps rewrite R2 objects and probe whole stores: up to 5 minutes of CPU per step on Workers Paid.
-  "limits": { "cpu_ms": 300000 },
+  // Workers Free (SPEC.md section 30, ADR 0007): no `limits` block (only the Standard usage model supports it), no
+  // `pipelines` binding (Basin Pipelines is Workers Paid only), no Durable Objects. Every Workflow step and request
+  // stays under Free's 10 ms of CPU through byte-capped cursor steps (R2_ERASE_STEP_BYTES, R2_PROBE_STEP_BYTES).
   "workflows": [
     { "name": "pv-subject-deletion", "binding": "DELETION", "class_name": "SubjectDeletionWorkflow" },
     { "name": "pv-retention-sweep", "binding": "RETENTION", "class_name": "RetentionSweepWorkflow" }
@@ -32,17 +33,23 @@
     { "binding": "DERIVED", "bucket_name": "pv-derived" }
   ],
   "kv_namespaces": [{ "binding": "CACHE", "id": "__KV_ID__" }],
-  // Basin Pipelines stream pv_audit_events (P1): a copy of every audit event, written by its sink into the Basin Catalog
-  // Iceberg table governance.audit_events. D1 stays the source of truth. `stream` replaces the deprecated `pipeline` key.
-  "pipelines": [{ "binding": "AUDIT_STREAM", "stream": "__STREAM_ID__" }],
+  // The only Cron Trigger: reconcile deferred or orphaned requests, then the retention sweep when RETENTION_CRON=on.
   "triggers": { "crons": ["0 3 * * *"] },
   "vars": {
     "PV_ENV": "production",
     "AUTH_MODE": "access",
     "WAREHOUSE_MODE": "bigquery",
-    "AUDIT_STREAM_MODE": "pipelines",
+    "AUDIT_STREAM_MODE": "disabled",
     "KV_PROPAGATION_WAIT": "70 seconds",
     "EXECUTOR_WAIT_TIMEOUT": "24 hours",
+    // Free plan capacity (SPEC.md section 30.3.4): at most 16 deletion starts per UTC day, 8 of them retention; the
+    // retention cron stays off until the production eval result is committed (setup:prod --retention-cron on).
+    "DAILY_DELETION_STARTS": "16",
+    "RETENTION_DAILY_MAX": "8",
+    "RETENTION_CRON": "off",
+    // Decoded R2 bytes per Workflow step (SPEC.md section 30.3.1): erase 4 MiB, probe 2 MiB.
+    "R2_ERASE_STEP_BYTES": "4194304",
+    "R2_PROBE_STEP_BYTES": "2097152",
     "RETENTION_AS_OF": "",
     "DEV_ACCESS_ISSUER": "",
     "DEV_ACCESS_AUD": "",

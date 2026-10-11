@@ -6,7 +6,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 
 ## Status
 
-2026-10-10: everything in the core plan is built and runs locally; the production paths are written but have not run against Cloudflare or Google Cloud. The design contract is [SPEC.md](SPEC.md); progress against its commit plan, the exact check status and every deviation are in [PROGRESS.md](PROGRESS.md).
+2026-10-10: everything in the core plan is built and runs locally; the production paths are written but have not run against Cloudflare or Google Cloud. Production runs on the Cloudflare **Workers Free** plan in an account and a Google Cloud project shared with three other repos (SPEC.md section 30, ADR 0007); the migration to that design is in progress, commit by commit (PROGRESS.md). The design contract is [SPEC.md](SPEC.md); progress against its commit plan, the exact check status and every deviation are in [PROGRESS.md](PROGRESS.md).
 
 | Area | State |
 |---|---|
@@ -29,7 +29,8 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Production deletion eval profile (`pv eval deletion --profile prod`) | written, not yet executed |
 | Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
 | The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built; the local rehearsal ran (Results); the production run is written, not yet executed |
-| Audit copy through Basin Pipelines (stream `pv_audit_events`, sink into the Basin Catalog table `governance.audit_events`) | written, not yet executed; locally the stream is disabled and the Worker's stream code is tested with a fake binding |
+| Workers Free production template (no `limits`, no `pipelines`, Free capacity vars), 3-day Workflow retention, 7-day D1 Time Travel residual, byte-capped BigQuery queries (Worker 100 MiB, Python and dbt 1 GiB) | built, tested; not yet executed |
+| Audit copy into the Iceberg table `governance.audit_events` | Basin Pipelines removed from the production path (Workers Paid only); the pulled replacement `pv audit export` is not built yet |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
 
@@ -59,7 +60,6 @@ flowchart LR
   R2D[("R2 pv-derived<br/>analytics extracts")]
   KV[("KV pv-cache<br/>profile cards, team rosters")]
   Q[["Queue pv-retention-sweep<br/>+ pv-retention-dlq"]]
-  PIPE["Basin Pipelines stream<br/>pv_audit_events (production)"]
   subgraph Python["Python (uv): executor, loaders, verifiers"]
     EXE["Executor loop<br/>claims tasks over HTTPS"]
     VER["Warehouse and lake verifiers"]
@@ -81,7 +81,6 @@ flowchart LR
   API -->|"local: named query"| SHIM --> DUCK
   API --> KV
   API --> AUDIT --> D1
-  AUDIT -.-> PIPE -.-> BCAT
   API -->|"create"| WF1
   WF2 --> Q --> QC -->|"createBatch"| WF1
   WF1 --> R2X & R2D & KV & D1
@@ -99,14 +98,14 @@ flowchart LR
 | Concern | Local (works offline and in CI) | Production (after the setup in docs/PRODUCTION.md) |
 |---|---|---|
 | Identity | locally generated RS256 JWKS, `/dev/login` cookie (loopback only), executor dev JWT | Cloudflare Access (Zero Trust Free), team JWKS, service tokens |
-| Worker, Workflows, Queues, Cron | Miniflare via `wrangler dev` on 8793, Worker `peoplevault-local` | Workers Paid deployment `peoplevault` on the account's workers.dev subdomain |
-| Control plane | D1 in `.wrangler/state` | D1 `pv-control` (Time Travel 30 days, tracked as a residual) |
+| Worker, Workflows, Queues, Cron | Miniflare via `wrangler dev` on 8793, Worker `peoplevault-local` | Workers Free deployment `peoplevault` at `https://peoplevault.nitish-ratakonda.workers.dev`; no `limits` block |
+| Control plane | D1 in `.wrangler/state` | D1 `pv-control` (Time Travel 7 days on Free, tracked as a residual) |
 | Source exports and extracts | R2 in `.wrangler/state` | R2 `pv-source-exports`, `pv-derived` |
 | Caches | KV in `.wrangler/state` (immediate) | KV `pv-cache` (70 s propagation wait before verification) |
 | Warehouse | DuckDB file, dbt-duckdb, shim on 8893 with emulated ceilings | BigQuery US, dbt-bigquery, purpose service accounts, authorized views and table functions, policy tags, data masking, row access policies |
 | Recovery windows | modeled from the 48 h setting (labeled modeled) | observed with time travel queries; fail-safe modeled |
 | Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake`, managed snapshot expiration |
-| Audit copy | D1 only; stream disabled (Miniflare's pipeline binding is a no-op, so it is not bound) | D1, plus every event streamed through Basin Pipelines into the Basin Catalog Iceberg table `governance.audit_events` |
+| Audit copy | D1 only | D1 only until `pv audit export` lands (Basin Pipelines is Workers Paid only) |
 | Executor | `pv serve` thread | `pv executor run --target prod` from the owner's machine (impersonating `pv-executor`), or hourly in GitHub Actions (`executor.yml`, with a `pv-executor` key held only as a repository secret) |
 | Production API calls | recorded-response contract tests and `--dry-run` golden plans only | live, after setup |
 
@@ -128,7 +127,7 @@ npm run stop:local
 
 ## Production setup
 
-Everything a script can do is in `npm run setup:prod` (idempotent; `-- --dry-run` prints the plan) and `npm run doctor -- --prod` (prints exactly what is missing, with the fix for each line). The steps only the owner can do (accounts, Workers Paid, Zero Trust onboarding, tokens, logins, billing) are listed in [docs/PRODUCTION.md](docs/PRODUCTION.md).
+Everything a script can do is in `npm run setup:prod` (idempotent; `-- --dry-run` prints the plan) and `npm run doctor -- --prod` (prints exactly what is missing, with the fix for each line). The steps only the owner can do (accounts, Zero Trust onboarding, tokens, logins, billing) are listed in [docs/PRODUCTION.md](docs/PRODUCTION.md); production needs no Workers Paid plan.
 
 The production executor can run hourly in GitHub Actions (`.github/workflows/executor.yml`, enabled by `npm run setup:prod -- --only github`). GitHub disables scheduled workflows in a public repository after 60 days without repository activity; `npm run doctor -- --prod` reports the workflow's state and the age of its last successful run, and deletions that wait more than 24 hours for the executor fail (and can be retried).
 

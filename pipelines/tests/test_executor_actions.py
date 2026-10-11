@@ -159,3 +159,19 @@ def test_a_key_that_could_not_be_uploaded_is_deleted():
 def test_repo_must_be_owner_slash_name():
     with pytest.raises(ValueError):
         github.ensure_actions_key(FakeIam(), FakeGh(), "peoplevault; rm -rf /", "p")
+
+
+def test_production_poll_intervals():
+    """Workers Free: every poll is a Workers request against the account's shared daily allowance (SPEC.md 30.3.2)."""
+    import inspect
+
+    from peoplevault.cli import executor_run
+    from peoplevault.evals import deletion, prod
+    from peoplevault.executor.loop import LOCAL_POLL_S, PROD_POLL_S, run_loop
+
+    assert (LOCAL_POLL_S, PROD_POLL_S) == (0.5, 5.0)
+    assert inspect.signature(run_loop).parameters["poll"].default == LOCAL_POLL_S
+    assert (deletion.LOCAL_REQUEST_POLL_S, deletion.PROD_REQUEST_POLL_S) == (2.0, 10.0)
+    assert "poll=PROD_POLL_S" in inspect.getsource(executor_run.callback)
+    src = inspect.getsource(prod.run_prod)
+    assert "poll=PROD_POLL_S" in src and "poll_s=PROD_REQUEST_POLL_S" in src

@@ -1,7 +1,10 @@
 // BigQuery REST client for the purpose data API (SPEC.md section 11.4). Runs the generated named-query SQL as the
 // purpose's own service account with named parameters and useQueryCache=false (cached results can expose data after
 // a policy change). jobs.query may return jobComplete=false; the client polls getQueryResults until complete and
-// through every page, then normalizes the string-encoded f/v rows to the same typed shape the shim returns.
+// through its pages, then normalizes the string-encoded f/v rows to the same typed shape the shim returns.
+// Workers Free (SPEC.md section 30.3.2): at most 20 polls and 10 result pages, so one data request makes at most
+// 1 JWKS + 2 token + 1 query + 20 + 9 = 33 external fetches (Free allows 50), and every query is byte-capped with
+// maximumBytesBilled (100 MiB; a capped query fails without being billed).
 import type { Purpose } from "../../shared/policy-types.ts";
 import type { PurposeSaMap } from "../env.ts";
 import { POLICY } from "../policy/compiled.ts";
@@ -35,7 +38,11 @@ interface QueryResponse {
 }
 
 const BASE = "https://bigquery.googleapis.com/bigquery/v2";
-const MAX_POLLS = 60;
+export const MAX_POLLS = 20;
+/** Result pages per query, the first included. */
+export const MAX_PAGES = 10;
+/** 100 MiB: a purpose query references at most 3 small tables (SPEC.md section 30.3.2). */
+export const MAXIMUM_BYTES_BILLED = "104857600";
 
 function scalar(type: string, v: unknown): unknown {
   if (v === null || v === undefined) return null;
@@ -82,6 +89,7 @@ export function normalizeRows(schema: BqSchema, rows: BqRow[]): Record<string, u
 
 export function classifyBigQueryError(status: number, body: unknown): WarehouseError {
   const reason = ((body as { error?: { errors?: { reason?: string }[] } })?.error?.errors?.[0]?.reason ?? "") as string;
+  if (reason === "bytesBilledLimitExceeded") return new WarehouseError("bytes_billed_limit");
   if (status === 403 || reason === "accessDenied") return new WarehouseError("access_denied");
   if (status === 404 || reason === "notFound") return new WarehouseError("not_found");
   if (status === 400 || reason === "invalidQuery" || reason === "invalid") return new WarehouseError("invalid_query");
@@ -118,6 +126,7 @@ export function buildQueryRequest(queryId: string, purpose: Purpose, params: Que
     parameterMode: "NAMED",
     queryParameters: names.map((n) => bqParam(n, q.params[n]!, params[n]!)),
     useQueryCache: false,
+    maximumBytesBilled: MAXIMUM_BYTES_BILLED,
     location,
     timeoutMs: 10000,
     labels: { app: "peoplevault", purpose },
@@ -145,7 +154,9 @@ export function createBigQueryClient(opts: BigQueryClientOptions): WarehouseClie
       const schema = page.schema ?? { fields: [] };
       const rows = normalizeRows(schema, page.rows ?? []);
       let pageToken = page.pageToken;
+      let pages = 1;
       while (pageToken) {
+        if (++pages > MAX_PAGES) throw new WarehouseError("result_too_large");
         const next = await getResults(job, pageToken);
         rows.push(...normalizeRows(schema, next.rows ?? []));
         pageToken = next.pageToken;

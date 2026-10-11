@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from peoplevault.bqjob import CEILING_PROBE_BYTES, run_query
 from peoplevault.policy.model import policy
 
 PROBE_DATASET = "pv_authz_probe"
@@ -88,7 +89,7 @@ def purpose_runner(project: str):
             v = params[name]
             qp.append(bigquery.ArrayQueryParameter(name, "STRING", v) if typ == "string_array" else
                       bigquery.ScalarQueryParameter(name, {"date": "DATE", "int": "INT64"}.get(typ, "STRING"), v))
-        job = client.query(q["sql"]["bigquery"].replace("{project}", project), job_config=bigquery.QueryJobConfig(query_parameters=qp, use_query_cache=False))
+        job = run_query(client, q["sql"]["bigquery"].replace("{project}", project), qp, labels={"purpose": purpose})
         return [{k: (v.isoformat() if hasattr(v, "isoformat") else v) for k, v in r.items()} for r in job.result()]
 
     return run
@@ -134,7 +135,7 @@ def run_probes(project: str) -> dict:
         for pr in probes(project):
             client = purpose_client(project, pr.purpose)
             try:
-                rows = list(client.query(pr.sql, job_config=bigquery.QueryJobConfig(use_query_cache=False)).result())
+                rows = list(run_query(client, pr.sql, max_bytes=CEILING_PROBE_BYTES, labels={"purpose": pr.purpose}).result())
                 n = rows[0][0] if rows and len(rows[0]) else None
                 ok = (pr.expect in ("all_null", "year_only", "zero") and n == 0) or (pr.expect == "positive" and (n or 0) > 0)
             except Exception as e:  # noqa: BLE001

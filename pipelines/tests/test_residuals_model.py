@@ -7,7 +7,7 @@ def test_modeled_windows():
     t = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
     assert time_travel_end(t) == datetime(2026, 10, 12, 12, 0, tzinfo=UTC)  # 48 h
     assert fail_safe_end(t) == datetime(2026, 10, 19, 12, 0, tzinfo=UTC)  # + 7 days
-    assert d1_time_travel_end(t) == datetime(2026, 11, 9, 12, 0, tzinfo=UTC)  # 30 days
+    assert d1_time_travel_end(t) == datetime(2026, 10, 17, 12, 0, tzinfo=UTC)  # 7 days on Workers Free
     assert "modeled" in MODELED_LABEL
 
 

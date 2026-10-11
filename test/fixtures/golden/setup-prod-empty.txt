@@ -15,7 +15,7 @@ Preflight: missing (only you can do these; docs/PRODUCTION.md)
       fix: add email=principalId pairs to .secrets/prod.env (docs/PRODUCTION.md step 15)
   [missing] Google Cloud: gcloud
       fix: brew install --cask gcloud-cli
-cloudflare: 11 step(s)
+cloudflare: 8 step(s)
   npx wrangler r2 bucket create pv-source-exports
   npx wrangler r2 bucket create pv-derived
   npx wrangler r2 bucket create pv-lake
@@ -24,14 +24,11 @@ cloudflare: 11 step(s)
   npx wrangler queues create pv-retention-sweep
   npx wrangler queues create pv-retention-dlq
   npx wrangler basin catalog enable pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE in .secrets/prod.env)
-  npx wrangler basin pipelines streams create pv_audit_events --schema-file infra/cloudflare/audit-stream.schema.json --no-http-enabled (records the stream id)
-  npx wrangler basin pipelines sinks create pv_audit_sink --type r2-data-catalog --bucket pv-lake --namespace governance --table audit_events --catalog-token *** --roll-interval 300
-  npx wrangler basin pipelines create pv_audit_pipeline --sql-file infra/cloudflare/audit-pipeline.sql
 gcp: 1 step(s)
   uv run --project pipelines pv setup gcp (idempotent; its own plan: uv run --project pipelines pv setup gcp --dry-run)
 worker: 4 step(s)
   generate PV_PSEUDONYM_MASTER_KEY (32 random bytes) into .secrets/worker-secrets.env, once; copy it to your password manager
-  render infra/cloudflare/wrangler.production.jsonc from the template (D1 id, KV id, audit stream id, ACCESS_TEAM_DOMAIN, ACCESS_AUD = pending-access-application until the Access application exists, GCP_PROJECT_ID)
+  render infra/cloudflare/wrangler.production.jsonc from the template (D1 id, KV id, ACCESS_TEAM_DOMAIN, ACCESS_AUD = pending-access-application until the Access application exists, GCP_PROJECT_ID)
   npx wrangler d1 migrations apply pv-control --remote -c infra/cloudflare/wrangler.production.jsonc
   npm run deploy (npx wrangler deploy -c infra/cloudflare/wrangler.production.jsonc --secrets-file .secrets/worker-secrets.env)
 access: 7 step(s)

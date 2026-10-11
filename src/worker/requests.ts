@@ -1,5 +1,7 @@
 // Deletion request records and workflow instance creation (SPEC.md sections 9.2, 13 and 14.1).
-export const INSTANCE_RETENTION = { successRetention: "30 days", errorRetention: "30 days" } as const;
+// Workers Free keeps completed Workflow instances 3 days, and `retention` can only shorten that (SPEC.md section 30.3.5).
+// Receipts live in D1, so nothing is lost when an instance disappears.
+export const INSTANCE_RETENTION = { successRetention: "3 days", errorRetention: "3 days" } as const;
 
 export interface DeletionRequestRow {
   id: string;

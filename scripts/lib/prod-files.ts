@@ -68,7 +68,6 @@ export interface ProdResources {
   access_team_domain?: string;
   catalog_uri?: string;
   catalog_warehouse?: string;
-  audit_stream_id?: string;
   service_tokens?: Record<string, { id: string; client_id: string }>;
   policy_tags?: Record<string, string>;
   taxonomy?: string;
@@ -93,8 +92,6 @@ export interface RenderValues {
   accessTeamDomain: string;
   accessAud: string;
   gcpProject: string;
-  /** Basin Pipelines stream pv_audit_events (P1 audit stream) */
-  streamId: string;
 }
 
 /** Template with every placeholder replaced; throws if a value is empty or a placeholder is left. */
@@ -105,7 +102,6 @@ export function renderConfig(template: string, v: RenderValues): string {
     __ACCESS_TEAM_DOMAIN__: v.accessTeamDomain,
     __ACCESS_AUD__: v.accessAud,
     __GCP_PROJECT_ID__: v.gcpProject,
-    __STREAM_ID__: v.streamId,
   };
   for (const [k, val] of Object.entries(map)) if (!val) throw new Error(`no value for ${k}`);
   let out = template;

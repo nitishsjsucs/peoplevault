@@ -37,6 +37,13 @@
     "AUDIT_STREAM_MODE": "disabled",
     "KV_PROPAGATION_WAIT": "1 second",
     "EXECUTOR_WAIT_TIMEOUT": "1 hour",
+    // Free plan capacity (SPEC.md section 30.3.4): "" means unlimited locally, so the local and CI evals are unchanged.
+    "DAILY_DELETION_STARTS": "",
+    "RETENTION_DAILY_MAX": "",
+    "RETENTION_CRON": "on",
+    // Decoded R2 bytes per Workflow step, the same caps as production (SPEC.md section 30.3.1).
+    "R2_ERASE_STEP_BYTES": "4194304",
+    "R2_PROBE_STEP_BYTES": "2097152",
     "RETENTION_AS_OF": "2026-09-30",
     "DEV_ACCESS_ISSUER": "https://dev.peoplevault.test",
     "DEV_ACCESS_AUD": "peoplevault-local",

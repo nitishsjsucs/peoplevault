@@ -123,14 +123,14 @@ def executor() -> None:
 @click.option("--once", is_flag=True, help="process one claimed batch and exit")
 @click.option("--drain", is_flag=True, help="process until no task is pending, then exit")
 def executor_run(target: str, once: bool, drain: bool) -> None:
-    from peoplevault.executor.loop import run_loop
+    from peoplevault.executor.loop import PROD_POLL_S, run_loop
 
     if target == "prod":
         from peoplevault.executor.prod import prod_api, prod_context
 
         ctx = prod_context()
         try:
-            n = run_loop(prod_api(), ctx, once=once, drain=drain)
+            n = run_loop(prod_api(), ctx, poll=PROD_POLL_S, once=once, drain=drain)
         finally:
             ctx.wh.close()
         click.echo(f"executor: {n} task(s) completed")

@@ -24,6 +24,7 @@ peoplevault:
       job_execution_timeout_seconds: 600
       job_retries: 1
       priority: interactive
+      maximum_bytes_billed: 1073741824  # 1 GiB per query; shared project inside the free tier (SPEC.md 30.3.8)
     bigquery_actions:
       type: bigquery
       method: service-account
@@ -33,6 +34,7 @@ peoplevault:
       location: US
       threads: 4
       job_execution_timeout_seconds: 600
+      maximum_bytes_billed: 1073741824
     bigquery_ci:
       type: bigquery
       method: oauth
@@ -40,3 +42,4 @@ peoplevault:
       dataset: pv_core
       location: US
       threads: 1
+      maximum_bytes_billed: 1073741824

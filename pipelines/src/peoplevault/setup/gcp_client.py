@@ -126,7 +126,9 @@ class RealGcpClient:
         self.bq.create_dataset(d, exists_ok=True)
 
     def set_time_travel(self, dataset: str, hours: int) -> None:
-        self.bq.query(f"ALTER SCHEMA `{self.project}.{dataset}` SET OPTIONS (max_time_travel_hours = {int(hours)})").result()
+        from peoplevault.bqjob import run_query
+
+        run_query(self.bq, f"ALTER SCHEMA `{self.project}.{dataset}` SET OPTIONS (max_time_travel_hours = {int(hours)})").result()
 
     def add_dataset_access(self, dataset: str, role: str, member: str) -> None:
         from google.cloud import bigquery

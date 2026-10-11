@@ -44,7 +44,13 @@ def process(api, ctx: ExecContext, tasks) -> int:
     return done
 
 
-def run_loop(api, ctx: ExecContext, stop: threading.Event | None = None, *, poll: float = 0.5, once: bool = False, drain: bool = False, lease_seconds: int = 600) -> int:
+LOCAL_POLL_S = 0.5
+# Production polls every 5 s: each claim is a Workers request, and the account's 100,000 daily requests are shared by
+# four repos (SPEC.md section 30.3.2).
+PROD_POLL_S = 5.0
+
+
+def run_loop(api, ctx: ExecContext, stop: threading.Event | None = None, *, poll: float = LOCAL_POLL_S, once: bool = False, drain: bool = False, lease_seconds: int = 600) -> int:
     total = 0
     stop = stop or threading.Event()
     while not stop.is_set():
@@ -66,10 +72,10 @@ def run_loop(api, ctx: ExecContext, stop: threading.Event | None = None, *, poll
     return total
 
 
-def start_thread(api, ctx: ExecContext, stop: threading.Event) -> threading.Thread:
-    t = threading.Thread(target=run_loop, args=(api, ctx, stop), name="pv-executor", daemon=True)
+def start_thread(api, ctx: ExecContext, stop: threading.Event, *, poll: float = LOCAL_POLL_S) -> threading.Thread:
+    t = threading.Thread(target=run_loop, args=(api, ctx, stop), kwargs={"poll": poll}, name="pv-executor", daemon=True)
     t.start()
     return t
 
 
-__all__ = ["process", "run_loop", "start_thread"]
+__all__ = ["LOCAL_POLL_S", "PROD_POLL_S", "process", "run_loop", "start_thread"]

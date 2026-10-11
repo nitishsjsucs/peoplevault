@@ -35,6 +35,14 @@ describe("loadConfig", () => {
     const cfg = loadConfig(env);
     expect(cfg).toMatchObject({ env: "local", authMode: "local-jwks", warehouseMode: "local-shim", auditStreamMode: "disabled", retentionAsOf: "2026-09-30" });
   });
+  it("reads the Free plan capacity vars: unlimited locally, capped in production (SPEC.md 30.3.4)", () => {
+    expect(loadConfig(env)).toMatchObject({ dailyDeletionStarts: null, retentionDailyMax: null, retentionCron: "on", r2EraseStepBytes: 4194304, r2ProbeStepBytes: 2097152 });
+    const capped = loadConfig({ ...prod, DAILY_DELETION_STARTS: "16", RETENTION_DAILY_MAX: "8", RETENTION_CRON: "off", R2_ERASE_STEP_BYTES: "1048576", R2_PROBE_STEP_BYTES: "524288" });
+    expect(capped).toMatchObject({ dailyDeletionStarts: 16, retentionDailyMax: 8, retentionCron: "off", r2EraseStepBytes: 1048576, r2ProbeStepBytes: 524288 });
+    for (const bad of [{ DAILY_DELETION_STARTS: "0" }, { RETENTION_DAILY_MAX: "-1" }, { R2_PROBE_STEP_BYTES: "2 MiB" }, { RETENTION_CRON: "yes" }]) {
+      expect(() => loadConfig({ ...prod, ...bad }), JSON.stringify(bad)).toThrow(ConfigError);
+    }
+  });
   it("accepts a complete production configuration and treats empty strings as unset", () => {
     const cfg = loadConfig(prod);
     expect(cfg.bigquery?.purposeSa.team_management).toBe("pv-tm-reader@pv-test.iam.gserviceaccount.com");

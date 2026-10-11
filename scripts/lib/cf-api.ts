@@ -1,5 +1,5 @@
 // Cloudflare REST client for setup:prod and doctor. Two credentials, never printed: PV_CF_API_TOKEN (Access, Workers
-// subdomain, account subscriptions) and wrangler's OAuth token (R2, KV, Queues, Basin listings), read into memory with
+// subdomain, Workers scripts) and wrangler's OAuth token (R2, KV, Queues, Basin listings), read into memory with
 // `wrangler auth token --json`. The fetch implementation is injectable so recorded responses test every call.
 export const CF_API = "https://api.cloudflare.com/client/v4";
 
@@ -32,11 +32,6 @@ export interface ServiceToken {
   name: string;
   client_id: string;
   client_secret?: string;
-}
-export interface Subscription {
-  id: string;
-  state: string;
-  rate_plan: { id: string; public_name: string };
 }
 
 export class CfApi {
@@ -105,9 +100,6 @@ export class CfApi {
   registerWorkersSubdomain(subdomain: string): Promise<{ subdomain: string }> {
     return this.call("PUT", this.acct("/workers/subdomain"), { subdomain });
   }
-  subscriptions(): Promise<Subscription[]> {
-    return this.call("GET", this.acct("/subscriptions"));
-  }
   r2Buckets(): Promise<{ buckets: { name: string }[] }> {
     return this.call("GET", this.acct("/r2/buckets"));
   }
@@ -121,9 +113,4 @@ export class CfApi {
   catalog(bucket: string): Promise<{ status?: string; name?: string }> {
     return this.call("GET", this.acct(`/r2-catalog/${bucket}`));
   }
-}
-
-/** True when a subscription looks like Workers Paid; the exact plan identifier is unverified, so callers warn on no match. */
-export function isWorkersPaid(subs: Subscription[]): boolean {
-  return subs.some((s) => /workers[ _-]?paid|workers[ _-]?standard/i.test(`${s.rate_plan?.id ?? ""} ${s.rate_plan?.public_name ?? ""}`) && /paid|provisioned/i.test(s.state));
 }

@@ -3,7 +3,8 @@ import accessDenied from "../fixtures/contracts/bigquery.error.accessDenied.json
 import page1 from "../fixtures/contracts/bigquery.getQueryResults.page1.json";
 import page2 from "../fixtures/contracts/bigquery.getQueryResults.page2.json";
 import incomplete from "../fixtures/contracts/bigquery.jobs.query.incomplete.json";
-import { buildQueryRequest, classifyBigQueryError, createBigQueryClient, normalizeRows, type BqRow, type BqSchema } from "../../src/worker/warehouse/bigquery-rest.ts";
+import { POLICY } from "../../src/worker/policy/compiled.ts";
+import { buildQueryRequest, classifyBigQueryError, createBigQueryClient, MAX_PAGES, MAX_POLLS, MAXIMUM_BYTES_BILLED, normalizeRows, type BqRow, type BqSchema } from "../../src/worker/warehouse/bigquery-rest.ts";
 import { WarehouseError } from "../../src/worker/warehouse/client.ts";
 
 const purposeSa = {
@@ -78,5 +79,46 @@ describe("BigQuery REST contract (recorded responses)", () => {
 
   it("normalizes an empty result", () => {
     expect(normalizeRows({ fields: [] } as BqSchema, [] as BqRow[])).toEqual([]);
+  });
+});
+
+describe("BigQuery REST client on Workers Free (SPEC.md section 30.3.2)", () => {
+  it("every jobs.query body carries maximumBytesBilled of 100 MiB", () => {
+    for (const [id, q] of Object.entries(POLICY.queries)) {
+      const params = Object.fromEntries(Object.entries(q.params).map(([n, t]) => [n, t === "string_array" ? ["A"] : t === "int" ? 1 : t === "date" ? "2026-01-01" : "x"]));
+      const req = buildQueryRequest(id, q.purpose, params, "pv-test", "US");
+      expect(req.maximumBytesBilled, id).toBe("104857600");
+      expect(MAXIMUM_BYTES_BILLED).toBe(String(100 * 1024 * 1024));
+    }
+  });
+
+  it("gives up after 20 polls and 10 pages, so a data request stays within 34 external fetches", async () => {
+    expect([MAX_POLLS, MAX_PAGES]).toEqual([20, 10]);
+    let fetches = 0;
+    const neverDone = (async (url: string | URL | Request) => {
+      fetches++;
+      const u = String(url);
+      return json({ status: 200, body: { ...incomplete.body, ...(u.endsWith("/queries") ? {} : { jobComplete: false }) } });
+    }) as typeof fetch;
+    const client = createBigQueryClient({ projectId: "pv-test", location: "US", purposeSa, tokens, fetchImpl: neverDone, pollDelayMs: 0 });
+    await expect(client.run("workforce_analytics.headcount_monthly", "workforce_analytics", {})).rejects.toMatchObject({ code: "query_timeout" });
+    expect(fetches).toBe(1 + MAX_POLLS);
+
+    fetches = 0;
+    const endlessPages = (async (url: string | URL | Request) => {
+      fetches++;
+      const u = String(url);
+      const base = page1.body as Record<string, unknown>;
+      return json({ status: 200, body: { ...base, jobComplete: true, pageToken: u.endsWith("/queries") ? "t0" : `t${fetches}` } });
+    }) as typeof fetch;
+    const paged = createBigQueryClient({ projectId: "pv-test", location: "US", purposeSa, tokens, fetchImpl: endlessPages, pollDelayMs: 0 });
+    await expect(paged.run("workforce_analytics.headcount_monthly", "workforce_analytics", {})).rejects.toMatchObject({ code: "result_too_large" });
+    expect(fetches).toBe(MAX_PAGES);
+    // 1 JWKS (cold isolate) + 2 token calls (gateway assertion, generateAccessToken) + 1 query + polls + further pages
+    expect(1 + 2 + 1 + MAX_POLLS + (MAX_PAGES - 1)).toBeLessThanOrEqual(34);
+  });
+
+  it("classifies a byte-capped query as bytes_billed_limit", () => {
+    expect(classifyBigQueryError(400, { error: { errors: [{ reason: "bytesBilledLimitExceeded" }] } }).code).toBe("bytes_billed_limit");
   });
 });

@@ -1,6 +1,6 @@
 # Production setup
 
-This is section 23 of SPEC.md, kept current as the code lands. Steps marked (P1) are below the core cut line and are not needed for v1. Workers AI and AI Gateway need no setup for v1: no resume claim depends on them, and they are P1.
+This is section 23 of SPEC.md, kept current as the code lands. Production runs on the Cloudflare **Workers Free** plan (SPEC.md section 30, ADR 0007); nothing here needs Workers Paid. The rest of the revision 3 changes (shared Google Cloud project `master-magnet-444903-u4`, `peoplevault` names, the pulled audit copy, the daily admission cap) land in the migration commits listed in PROGRESS.md, and this file follows them. Steps marked (P1) are below the core cut line and are not needed for v1. Workers AI and AI Gateway need no setup for v1: no resume claim depends on them, and they are P1.
 
 Everything a script can do is in `npm run setup:prod`. This section lists, in order, what only Nitish can do (accounts, payment, consent screens, logins, token creation, naming choices) and then the commands to run. The last column says where each fact was checked on 2026-10-10; "(unverified)" marks what could not be confirmed against an official page or the wrangler 4.149.0 source. `docs/PRODUCTION.md` carries this section verbatim and is kept current.
 
@@ -9,13 +9,13 @@ Everything a script can do is in `npm run setup:prod`. This section lists, in or
 | # | Provider | Step | Where | Cost | Needed for | Checked against |
 |---|---|---|---|---|---|---|
 | 1 | Cloudflare | Create or sign in to an account; turn on two-factor authentication | https://dash.cloudflare.com/sign-up | free | everything on Cloudflare | |
-| 2 | Cloudflare | Upgrade the account to Workers Paid | dashboard, Workers & Pages, Plans (console path unverified) | $5/month minimum per account | Workflow steps need more than Free's 10 ms CPU and 50 subrequests per instance; `limits.cpu_ms`; (P1) Basin Pipelines | Workers pricing, Workflows limits page |
+| 2 | Cloudflare | Stay on Workers Free: do not upgrade to Workers Paid and do not create Basin Pipelines resources | none | $0 | the whole design (SPEC.md section 30) | Nitish's decision on 2026-10-10; Pipelines creation returned "This feature requires a Workers Paid plan [code: 1021]" |
 | 3 | Cloudflare | Register a workers.dev subdomain (pick the name; the Worker becomes `peoplevault.<name>.workers.dev`). Either in the dashboard, or put `PV_WORKERS_SUBDOMAIN=<name>` in `.secrets/prod.env` and let `setup:prod` register it after asking | `https://dash.cloudflare.com/<ACCOUNT_ID>/workers/onboarding` | free | wrangler refuses to deploy Workflows without one ("You need to register a workers.dev subdomain before deploying Workflows"); doctor's edge check URL | wrangler 4.149.0 `cli.js` |
 | 4 | Cloudflare | Open R2 Object Storage once and activate it if the dashboard asks (unverified whether a separate activation is still required) | dashboard, R2 Object Storage | free tier covers this project | R2 buckets and Basin Catalog | |
 | 5 | Cloudflare | Zero Trust onboarding: choose a team name (for example `nitish-pv`, giving `nitish-pv.cloudflareaccess.com`), choose the Free plan, enter payment details (the setup docs say Free is not charged) | dashboard, Zero Trust | $0 (Free plan seat limit of 50 reported by third parties, unverified) | Cloudflare Access in front of the Worker | Cloudflare One setup docs |
 | 6 | Cloudflare | Add One-time PIN as a login method | Zero Trust, Settings, Authentication, Login methods, Add new (path unverified) | free | signing in by email as each persona | Access docs |
-| 7 | Cloudflare | Create an account API token named in `.secrets/prod.env` as `PV_CF_API_TOKEN` (Custom token) with exactly: Access: Apps and Policies Edit; Access: Service Tokens Edit; Access: Organizations, Identity Providers, and Groups Read; Workers Scripts Read; Billing Read. Do not call it `CLOUDFLARE_API_TOKEN`: wrangler would use that variable instead of the OAuth login, and this token cannot create D1, R2 or Queues | My Profile, API Tokens, Create Token | free | Access app, policies and service tokens; doctor's subdomain and Workers Paid checks | API token permissions reference (names); subscriptions API reference (Billing Read) |
-| 8 | Cloudflare | Create an R2 API token with Admin Read & Write; save it as `PV_R2_CATALOG_TOKEN` | R2 Object Storage, Manage API tokens, Create API token | free | pyiceberg REST access to the Basin Catalog Iceberg archive; (P1) the audit sink | Basin Catalog guide |
+| 7 | Cloudflare | Create an account API token named in `.secrets/prod.env` as `PV_CF_API_TOKEN` (Custom token) with exactly: Access: Apps and Policies Edit; Access: Service Tokens Edit; Access: Organizations, Identity Providers, and Groups Read; Workers Scripts Read. No Billing Read: the doctor has no plan check on Workers Free. Do not call it `CLOUDFLARE_API_TOKEN`: wrangler would use that variable instead of the OAuth login, and this token cannot create D1, R2 or Queues | My Profile, API Tokens, Create Token | free | Access app, policies and service tokens; doctor's subdomain check | API token permissions reference (names) |
+| 8 | Cloudflare | Create an R2 API token with Admin Read & Write; save it as `PV_R2_CATALOG_TOKEN` | R2 Object Storage, Manage API tokens, Create API token | free | pyiceberg REST access to the Basin Catalog Iceberg archive | Basin Catalog guide |
 | 9 | Cloudflare | `npx wrangler login` in the repo and approve the OAuth consent screen | terminal, browser | free | every wrangler command; doctor's R2, KV, Queues and Basin listings (wrangler OAuth token) | `wrangler whoami --json` |
 | 10 | Google | Google account; create a project (for example `peoplevault-<suffix>`) dedicated to PeopleVault | https://console.cloud.google.com | free | BigQuery; the executor's project-level read grants assume a dedicated project | |
 | 11 | Google | Create or link a billing account to the project | Billing, Link a billing account, or `gcloud billing projects link` | card required; usage expected under $1/month | DML deletes (the BigQuery sandbox has no DML and expires tables after 60 days) | BigQuery sandbox docs |
@@ -26,7 +26,7 @@ Everything a script can do is in `npm run setup:prod`. This section lists, in or
 | 16 | Choice | After the first `setup:prod`, copy `PV_PSEUDONYM_MASTER_KEY` from `.secrets/worker-secrets.env` into a password manager | password manager | free | pseudonym stability; losing it orphans every pseudonym | |
 | 17 | GitHub | Push the repository (`git push origin main`; you publish it), then answer yes when `npm run setup:prod -- --only github` asks to write the executor secrets and `PV_PROD_ENABLED=true`. Optional but recommended: without it, deletions wait for you to run `pv executor run --target prod --drain` and fail after 24 hours | terminal | free (Actions minutes are free for public repositories) | the hourly production executor (`executor.yml`) and the daily residual check | GitHub docs on disabling and enabling workflows |
 
-Not needed for v1: Workers AI and AI Gateway (P1, no resume claim depends on them). The Basin Pipelines audit stream (P1) needs no extra manual step: `setup:prod` creates the stream `pv_audit_events`, the sink `pv_audit_sink` (into the Basin Catalog table `governance.audit_events`, which the sink creates, authenticated with `PV_R2_CATALOG_TOKEN` from step 8) and the pipeline `pv_audit_pipeline`, and renders the stream id into the Worker config; it needs Workers Paid (step 2).
+Not needed: Workers Paid, Basin Pipelines, and any Workers AI or AI Gateway setup for v1 (P1, no resume claim depends on them). Basin Pipelines is Workers Paid only, so `setup:prod` creates no stream, sink or pipeline; the audit copy `governance.audit_events` is pulled by `pv audit export` instead (SPEC.md section 30.3.3).
 
 ### The scheduled executor (`executor.yml`, P1)
 
@@ -86,22 +86,20 @@ PV_CATALOG_URI=... / PV_CATALOG_WAREHOUSE=...
 
 A service token's client secret is shown once by Cloudflare. If `.secrets/prod.env` loses one, `setup:prod` rotates that token and records the new secret.
 
-Also written by setup and gitignored: `.secrets/worker-secrets.env` (`PV_PSEUDONYM_MASTER_KEY`, `GCP_GATEWAY_SA_KEY`; uploaded by `npm run deploy`), `.secrets/prod-resources.json` (resource ids, stream id in P1, policy tag resource names), `infra/cloudflare/wrangler.production.jsonc`. No `pv-executor` key exists on the laptop.
+Also written by setup and gitignored: `.secrets/worker-secrets.env` (`PV_PSEUDONYM_MASTER_KEY`, `GCP_GATEWAY_SA_KEY`; uploaded by `npm run deploy`), `.secrets/prod-resources.json` (resource ids, policy tag resource names), `infra/cloudflare/wrangler.production.jsonc`. No `pv-executor` key exists on the laptop.
 
 ## Costs
 
 | Item | Cost at this project's scale | Source |
 |---|---|---|
-| Workers Paid | $5/month minimum; includes 10M requests and 30M CPU ms per month; Queues 1M operations; KV 10M reads; D1 25B rows read and 5 GB | Workers pricing page (verified) |
-| Workflows | included: 10M requests, 30M CPU ms, 1 GB-month, 500,000 steps per month on Paid (step and storage billing started 2026-08-10) | Workflows pricing page (verified) |
+| Workers Free: Workers, Workflows, Queues, D1, KV, Workers Logs | $0; every daily allowance is per account and shared with three other repos, so this repo plans for at most 25% of each (SPEC.md section 30.4) | Workers, Workflows, Queues, D1 and KV pricing and limits pages (SPEC.md section 30.1) |
 | R2 | free tier 10 GB-month, 1M Class A, 10M Class B per month; this project stores under 50 MB | R2 pricing page (verified) |
 | Basin Catalog | 1M catalog operations per month included, then $9 per million; compaction left off; snapshot expiration has no separate charge | Basin pricing pages (verified) |
-| Basin Pipelines (P1) | stream ingress free; 50 GB sink delivery included | Basin Pipelines pricing (verified) |
-| Workers Logs | invocation logs disabled; only identifier-free console logs remain (Workers Logs pricing not re-checked this session) | Workers Logs docs (retention 3 days Free, 7 days Paid) |
+| Workers Logs | invocation logs disabled; only identifier-free console logs remain, kept 3 days on Free | Workers Logs docs |
 | Zero Trust | Free plan, $0 | setup docs (payment details required, not charged) |
 | BigQuery | 1 TiB of queries and 10 GiB storage free per month (allowance stated on the sandbox page); the full production eval scans a few GB because each referenced table bills at least 10 MB (minimum unverified this session) | BigQuery docs |
 | Workers AI, AI Gateway (P1, not used in v1) | not needed | |
-| Expected total | about $5/month plus well under $1 on Google Cloud | estimate |
+| Expected total | $0 per month on Cloudflare; well under $1 on Google Cloud | estimate |
 
 ## Commands after the logins
 
@@ -143,9 +141,9 @@ If a run leaves the probe dataset behind (for example after an interrupted ceili
 | Production deletion eval | `pv eval deletion --profile prod` | written, not yet executed; R2 objects are listed and read through `GET /accounts/{id}/r2/buckets/{bucket}/objects[/{key}]` with wrangler's OAuth token, and that endpoint's pagination fields are unverified |
 | Authorization cases through Access (P1) | `npm run authz:prod [-- --allow-writes]` (`pv authz api --target prod`) | written, not yet executed. Rehearsed against the local stack with the full synthetic population (`npm run authz:api:local`). It runs every case it can with the four persona service tokens and the executor's, re-resolving subjects from the production population's ground truth (`data/generated-prod`, written by `seed:prod`), and reports the exact runnable count with a reason for each skipped case: forged, missing or unmapped tokens cannot pass Access, the fixture's other principals have no token, some selectors have no qualifying subject, and the deletion and hold cases need `--allow-writes` |
 | Production warm-up (P1) | step 9 of `npm run seed:prod` (`pv warmup --target prod --with-extracts`) | written, not yet executed; creates the 6 analytics extracts as `analyst-01` and warms the cache entries whose principal has a service token (the others need an interactive sign-in) |
-| Audit stream (P1) | `npm run setup:prod -- --only cloudflare` (stream, sink, pipeline), the Worker's `AUDIT_STREAM` binding | written, not yet executed; the record format is checked against `infra/cloudflare/audit-stream.schema.json` before each send (events that do not match a stream's schema are dropped by Pipelines after ingestion), and the Worker side is tested with a fake binding |
+| Audit copy (P1) | removed from the production path: Basin Pipelines is Workers Paid only. Its replacement, `pv audit export` (an exactly-once pull into `governance.audit_events`), is migration commit M6 | not built yet |
 | Scheduled executor (P1) | `.github/workflows/executor.yml`, `npm run setup:prod -- --only github`, `pv setup actions-key` | written, not yet executed (the repository has not been pushed); the workflow's structure, the secrets it reads and the doctor's schedule checks are tested |
 
 ## What the scripts cannot do
 
-Account creation, the Workers Paid upgrade, payment details, Zero Trust onboarding, adding the One-time PIN login method, creating the two Cloudflare tokens, choosing the workers.dev subdomain name (registration itself can be scripted once the name is set), the OAuth consent screens of `wrangler login` and `gcloud auth`, linking billing, the budget alert, any organization policy exception, and accepting any terms of service. Everything else (every resource in sections 15 and 16, secrets, deploys, the Access application, service tokens, seeding, and in P1 GitHub secrets) is scripted and idempotent.
+Account creation, payment details, Zero Trust onboarding, adding the One-time PIN login method, creating the two Cloudflare tokens, choosing the workers.dev subdomain name (registration itself can be scripted once the name is set), the OAuth consent screens of `wrangler login` and `gcloud auth`, linking billing, the budget alert, any organization policy exception, and accepting any terms of service. Everything else (every resource in sections 15 and 16, secrets, deploys, the Access application, service tokens, seeding, and in P1 GitHub secrets) is scripted and idempotent.
