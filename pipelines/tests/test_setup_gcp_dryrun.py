@@ -79,3 +79,61 @@ def test_service_account_policies_are_not_read_before_the_accounts_exist():
     assert sum(1 for x in lines if x.startswith("add service account iam binding")) == 11
     apply(fake, "pv-test", "owner@example.test", gateway_key_recorded=False)
     assert plan(fake, "pv-test", "owner@example.test", gateway_key_recorded=True).steps == []
+
+
+DEFAULT_ACCESS = {("READER", "specialGroup:projectReaders"), ("WRITER", "specialGroup:projectWriters"), ("OWNER", "specialGroup:projectOwners")}
+
+
+def test_project_wide_dataset_access_is_planned_for_removal_and_removed():
+    """A dataset created with BigQuery's default access list is readable by every Viewer, Editor and Owner of the shared
+    project (other repos' identities included): the plan removes those entries and nothing else."""
+    fake = FakeGcp(complete=True)
+    fake.ds["peoplevault_core"]["access"] |= DEFAULT_ACCESS
+    fake.ds["peoplevault_marts"]["access"].add(("READER", "specialGroup:allAuthenticatedUsers"))
+    lines = _lines(plan(fake, "pv-test", "owner@example.test", gateway_key_recorded=True).steps)
+    assert lines == [
+        "remove project-wide dataset access: peoplevault_core: OWNER specialGroup:projectOwners, READER specialGroup:projectReaders, WRITER specialGroup:projectWriters",
+        "remove project-wide dataset access: peoplevault_marts: READER specialGroup:allAuthenticatedUsers",
+    ]
+    apply(fake, "pv-test", "owner@example.test", gateway_key_recorded=True)
+    assert plan(fake, "pv-test", "owner@example.test", gateway_key_recorded=True).steps == []
+    assert ("OWNER", "serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com") in fake.ds["peoplevault_core"]["access"]
+
+
+def test_new_datasets_get_an_explicit_access_list():
+    fake = FakeGcp()
+    apply(fake, "pv-test", "owner@example.test", gateway_key_recorded=False)
+    for name, d in fake.ds.items():
+        assert not [m for _r, m in d["access"] if m.startswith("specialGroup:")], name
+        assert ("OWNER", "user:owner@example.test") in d["access"], name
+
+
+def test_the_real_client_creates_datasets_with_explicit_access_and_reads_only_this_repos():
+    from types import SimpleNamespace
+
+    from peoplevault.setup.gcp_client import RealGcpClient
+
+    created, fetched = [], []
+
+    class Bq:
+        def list_datasets(self):
+            return [SimpleNamespace(dataset_id=n, reference=n) for n in ("otherrepo_core", "peoplevault_core")]
+
+        def get_dataset(self, ref):
+            fetched.append(ref)
+            entries = [SimpleNamespace(role="READER", entity_type="specialGroup", entity_id="projectReaders"),
+                       SimpleNamespace(role="OWNER", entity_type="userByEmail", entity_id="peoplevault-executor@p.iam.gserviceaccount.com")]
+            return SimpleNamespace(dataset_id=ref, max_time_travel_hours=48, access_entries=entries)
+
+        def create_dataset(self, d, exists_ok):
+            created.append(d)
+
+    client = RealGcpClient.__new__(RealGcpClient)
+    client.project, client.bq = "p", Bq()
+    assert client.datasets() == {"peoplevault_core": {"max_time_travel_hours": 48, "access": {("READER", "specialGroup:projectReaders"),
+                                                                                               ("OWNER", "serviceAccount:peoplevault-executor@p.iam.gserviceaccount.com")}}}
+    assert fetched == ["peoplevault_core"]  # another repo's dataset is never read
+    client.create_dataset({"dataset": "peoplevault_raw", "location": "US", "access": [{"role": "OWNER", "member": "serviceAccount:peoplevault-executor@p.iam.gserviceaccount.com"}]}, "user:owner@example.test")
+    (d,) = created
+    assert [(e.role, e.entity_type, e.entity_id) for e in d.access_entries] == [("OWNER", "userByEmail", "owner@example.test"), ("OWNER", "userByEmail", "peoplevault-executor@p.iam.gserviceaccount.com")]
+    assert d.to_api_repr()["access"]  # the request carries the list, so BigQuery adds no default entries

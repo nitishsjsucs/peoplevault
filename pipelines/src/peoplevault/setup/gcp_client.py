@@ -15,6 +15,7 @@ SU = "https://serviceusage.googleapis.com/v1"
 # project IAM policies are read and written at version 3, so conditional bindings of the other repos sharing the
 # project survive the read-modify-write (a version 1 read cannot be written back when the policy has conditions)
 POLICY_VERSION = 3
+DATASET_PREFIX = "peoplevault_"  # policy naming.prefix; tests/test_shared_project_names.py keeps them equal
 
 
 def is_service_disabled(e: BaseException) -> bool:
@@ -169,25 +170,48 @@ class RealGcpClient:
 
     # ---- datasets -----------------------------------------------------------------------------------------------
     def datasets(self) -> dict[str, dict]:
+        """This repo's datasets only (the project is shared: other repos' datasets are never read). Special-group
+        entries come back as `specialGroup:<name>` so the plan can remove project-wide access."""
         out = {}
         for item in self.bq.list_datasets():
+            if not item.dataset_id.startswith(DATASET_PREFIX):
+                continue
             ds = self.bq.get_dataset(item.reference)
             access = set()
             for e in ds.access_entries:
                 member = e.entity_id if isinstance(e.entity_id, str) else json.dumps(e.entity_id)
-                prefix = {"userByEmail": "user:", "groupByEmail": "group:"}.get(e.entity_type, "")
+                prefix = {"userByEmail": "user:", "groupByEmail": "group:", "specialGroup": "specialGroup:", "iamMember": "iamMember:"}.get(e.entity_type, "")
                 if member.endswith(".iam.gserviceaccount.com"):
                     prefix = "serviceAccount:"
                 access.add((e.role, prefix + member))
             out[ds.dataset_id] = {"max_time_travel_hours": int(ds.max_time_travel_hours) if ds.max_time_travel_hours else None, "access": access}
         return out
 
-    def create_dataset(self, ds: dict) -> None:
+    @staticmethod
+    def _entry(role: str, member: str):
+        from google.cloud import bigquery
+
+        kind, ident = member.split(":", 1)
+        entity_type = {"user": "userByEmail", "serviceAccount": "userByEmail", "group": "groupByEmail", "specialGroup": "specialGroup", "iamMember": "iamMember"}[kind]
+        return bigquery.AccessEntry(role=role, entity_type=entity_type, entity_id=ident)
+
+    def create_dataset(self, ds: dict, owner: str) -> None:
+        """Creates the dataset with an explicit access list (the creating user and the spec's entries). Without one,
+        BigQuery adds projectReaders, projectWriters and projectOwners, so every Viewer, Editor and Owner of the shared
+        project (other repos' identities included) could read this repo's data."""
         from google.cloud import bigquery
 
         d = bigquery.Dataset(f"{self.project}.{ds['dataset']}")
         d.location = ds["location"]
+        d.access_entries = [self._entry("OWNER", owner), *(self._entry(a["role"], a["member"]) for a in ds["access"])]
         self.bq.create_dataset(d, exists_ok=True)
+
+    def remove_dataset_access(self, dataset: str, entries: list[tuple[str, str]]) -> None:
+        """Read-modify-write of the dataset's access list without the given (role, member) entries."""
+        ds = self.bq.get_dataset(f"{self.project}.{dataset}")
+        drop = {(r, m.split(":", 1)[1]) for r, m in entries}
+        ds.access_entries = [e for e in ds.access_entries if (e.role, e.entity_id if isinstance(e.entity_id, str) else None) not in drop]
+        self.bq.update_dataset(ds, ["access_entries"])
 
     def set_time_travel(self, dataset: str, hours: int) -> None:
         from peoplevault.bqjob import run_query
@@ -195,13 +219,9 @@ class RealGcpClient:
         run_query(self.bq, f"ALTER SCHEMA `{self.project}.{dataset}` SET OPTIONS (max_time_travel_hours = {int(hours)})").result()
 
     def add_dataset_access(self, dataset: str, role: str, member: str) -> None:
-        from google.cloud import bigquery
-
         ds = self.bq.get_dataset(f"{self.project}.{dataset}")
-        kind, ident = member.split(":", 1)
-        entity_type = "userByEmail" if kind in ("user", "serviceAccount") else "groupByEmail"
         entries = list(ds.access_entries)
-        entries.append(bigquery.AccessEntry(role=role, entity_type=entity_type, entity_id=ident))
+        entries.append(self._entry(role, member))
         ds.access_entries = entries
         self.bq.update_dataset(ds, ["access_entries"])
 

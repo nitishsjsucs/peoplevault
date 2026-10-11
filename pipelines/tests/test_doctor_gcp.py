@@ -129,10 +129,11 @@ def test_bigquery_lines():
     sas = [f"peoplevault-er-reader@{PROJECT}.iam.gserviceaccount.com"]
     checks = bigquery_checks(FakeProbes(fail_sa={"peoplevault-er-reader"}, problems=["peoplevault_core.dim_employee: row access policy rap_full missing"],
                                         leftover=True, counts={"peoplevault_core.dim_employee": 1200, "peoplevault_marts.team_roster": 0}), PROJECT, expected, sas)
-    assert [c.status for c in checks] == ["ok"] + ["missing"] * 4
-    assert checks[2].fix.startswith("uv run --project pipelines pv load --target prod")
-    assert checks[3].fix.endswith("--cleanup") and checks[3].detail == "peoplevault_authz_probe still holds 3 probe view(s)"
-    assert "zero rows in: peoplevault_marts.team_roster" in checks[4].detail
+    assert [c.status for c in checks] == ["ok", "ok"] + ["missing"] * 4
+    assert checks[1].name == "dataset access"
+    assert checks[3].fix.startswith("uv run --project pipelines pv load --target prod")
+    assert checks[4].fix.endswith("--cleanup") and checks[4].detail == "peoplevault_authz_probe still holds 3 probe view(s)"
+    assert "zero rows in: peoplevault_marts.team_roster" in checks[5].detail
     after_deletions = bigquery_checks(FakeProbes(counts={"peoplevault_core.dim_employee": 1190, "peoplevault_marts.team_roster": 1199}), PROJECT, expected, sas)
     assert after_deletions[-1].status == "warn"
     loaded_twice = bigquery_checks(FakeProbes(counts={"peoplevault_core.dim_employee": 1200, "peoplevault_marts.team_roster": 1260}), PROJECT, expected, sas)
@@ -168,6 +169,13 @@ class Unreadable(NoDataChecks):
 def test_data_checks_wait_for_the_setup_steps():
     expected = {"peoplevault_core.dim_employee": 1200}
     for probes, first in [(Unreadable(), "setup state"), (NoDataChecks(steps=["enable apis: iam.googleapis.com"]), "service accounts, IAM, datasets, taxonomy, tags, data policies")]:
-        checks = bigquery_checks(probes, PROJECT, expected, [])
+        checks = [c for c in bigquery_checks(probes, PROJECT, expected, []) if c.name != "dataset access"]
         assert [(c.name, c.status) for c in checks] == [(first, "missing"), ("BigQuery data checks", "missing")]
         assert checks[1].detail == "skipped until the setup steps above are done: impersonation, protected tables, probe dataset, data loaded"
+
+
+def test_project_wide_dataset_access_is_its_own_line():
+    steps = ["remove project-wide dataset access: peoplevault_core: READER specialGroup:projectReaders", "remove project-wide dataset access: peoplevault_raw: OWNER specialGroup:projectOwners"]
+    checks = bigquery_checks(NoDataChecks(steps=steps), PROJECT, {"peoplevault_core.dim_employee": 1200}, [])
+    line = next(c for c in checks if c.name == "dataset access")
+    assert line.status == "missing" and line.detail.endswith("on: peoplevault_core, peoplevault_raw") and line.fix == "npm run setup:prod"

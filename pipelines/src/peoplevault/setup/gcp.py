@@ -4,13 +4,15 @@ Every step reads the current state first and creates only what is missing: APIs,
 peoplevaultTimeTravelReader, project IAM (roles/bigquery.jobUser only: the project `master-magnet-444903-u4` is shared
 with three other repos, so no identity of this repo gets a project-level data role), service-account IAM (Token
 Creator for the owner on peoplevault-executor and the purpose readers, for peoplevault-gateway on the purpose readers),
-10 datasets with max_time_travel_hours = 48 on the data datasets, the dataset grant of the custom role, the policy tag
+12 datasets, each created with an explicit access list (never BigQuery's default projectReaders, projectWriters and
+projectOwners entries, which would open them to every Viewer of the shared project; such entries are removed), with
+max_time_travel_hours = 48 on the data datasets, the dataset grant of the custom role, the policy tag
 taxonomy and its 6 tags (resource names recorded in .secrets/prod-resources.json for `pv dbt --vars`),
 roles/datacatalog.viewer for the executor on the taxonomy resource, Fine-Grained Reader grants, data masking
 policies, and one key: the peoplevault-gateway key (created only if none is recorded locally). The APIs come first:
 IAM, IAM credentials, Cloud Resource Manager and Data Catalog are off on the shared project, so the plan reads nothing
 through an API that is off and apply() enables them before planning again. Status: the dry run has read the shared
-project (read-only, 2026-10-11: 84 steps); applying it is not yet executed. The plans are golden-tested with a fake
+project (read-only, 2026-10-11: 67 steps); applying it is not yet executed. The plans are golden-tested with a fake
 client that answers like that project (tests/test_setup_gcp_dryrun.py).
 """
 
@@ -52,7 +54,8 @@ class GcpClient(Protocol):
     def sa_bindings(self, sa_email: str) -> set[tuple[str, str]]: ...
     def add_sa_binding(self, sa_email: str, role: str, member: str) -> None: ...
     def datasets(self) -> dict[str, dict]: ...
-    def create_dataset(self, ds: dict) -> None: ...
+    def create_dataset(self, ds: dict, owner: str) -> None: ...
+    def remove_dataset_access(self, dataset: str, entries: list[tuple[str, str]]) -> None: ...
     def set_time_travel(self, dataset: str, hours: int) -> None: ...
     def add_dataset_access(self, dataset: str, role: str, member: str) -> None: ...
     def taxonomy(self, display_name: str) -> dict | None: ...
@@ -84,6 +87,11 @@ class SetupResult:
 
 
 FGR = "roles/datacatalog.categoryFineGrainedReader"
+# BigQuery's default access list of a new dataset grants projectReaders READER, projectWriters WRITER and projectOwners
+# OWNER: in the shared project that would let every Viewer, Editor and Owner (other repos' identities included) read
+# this repo's datasets (SPEC.md section 30.3.8), so such entries, and any allUsers-style grant, are removed.
+WIDE_ACCESS_STEP = "remove project-wide dataset access"
+WIDE_MEMBER_PREFIXES = ("specialGroup:", "iamMember:allUsers", "iamMember:allAuthenticatedUsers")
 
 
 # The API each kind of read goes through. Google answers 403 SERVICE_DISABLED for a read through an API that is not
@@ -130,8 +138,12 @@ def plan(client: GcpClient, project: str, user: str, *, gateway_key_recorded: bo
     for ds in fill(spec("datasets"), project, user):
         cur = have_ds.get(ds["dataset"])
         if cur is None:
-            add(Step("create dataset", f"{project}.{ds['dataset']} (US)", lambda ds=ds: client.create_dataset(ds)))
-            cur = {"max_time_travel_hours": None, "access": set()}
+            # created with an explicit access list (the owner and the spec's entries), never BigQuery's default one
+            add(Step("create dataset", f"{project}.{ds['dataset']} (US)", lambda ds=ds: client.create_dataset(ds, f"user:{user}")))
+            cur = {"max_time_travel_hours": None, "access": {("OWNER", f"user:{user}"), *((a["role"], a["member"]) for a in ds["access"])}}
+        wide = sorted(e for e in cur["access"] if e[1].startswith(WIDE_MEMBER_PREFIXES))
+        if wide:
+            add(Step(WIDE_ACCESS_STEP, f"{ds['dataset']}: {', '.join(f'{r} {m}' for r, m in wide)}", lambda ds=ds, wide=wide: client.remove_dataset_access(ds["dataset"], wide)))
         if ds["max_time_travel_hours"] and cur.get("max_time_travel_hours") != ds["max_time_travel_hours"]:
             add(Step("set time travel window", f"ALTER SCHEMA {ds['dataset']} SET OPTIONS (max_time_travel_hours = {ds['max_time_travel_hours']})",
                      lambda ds=ds: client.set_time_travel(ds["dataset"], ds["max_time_travel_hours"])))

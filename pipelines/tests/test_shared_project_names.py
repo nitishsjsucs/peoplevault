@@ -82,3 +82,9 @@ def test_the_verifier_scans_only_this_repos_datasets():
 
     assert scan_warehouse(FakeWarehouse(), {"E00042": "employee_id"}) == []
     assert seen == ["peoplevault_core"]
+
+
+def test_the_setup_client_reads_datasets_with_the_policy_prefix():
+    from peoplevault.setup.gcp_client import DATASET_PREFIX
+
+    assert DATASET_PREFIX == f"{policy().naming.prefix}_"

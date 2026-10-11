@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Protocol
 
 from peoplevault import config
+from peoplevault.setup.gcp import WIDE_ACCESS_STEP
 
 G = "Google Cloud"
 B = "BigQuery objects"
@@ -140,6 +141,11 @@ def bigquery_checks(probes: Probes, project: str, expected: dict[str, int], purp
     except Exception as e:  # noqa: BLE001
         steps = None
         out.append(missing(B, "setup state", f"could not read ({type(e).__name__})", "npm run setup:prod"))
+    if steps is not None:
+        # shared project: a dataset with BigQuery's default access list is readable by every project Viewer
+        wide = [s.split(": ", 2)[1] for s in steps if s.startswith(f"{WIDE_ACCESS_STEP}: ")]
+        out.append(ok(B, "dataset access", "no peoplevault_* dataset grants project-wide special groups") if not wide else
+                   missing(B, "dataset access", f"project-wide entries (every Viewer, Editor or Owner of the shared project) on: {', '.join(wide)}", "npm run setup:prod"))
     if steps is None or steps:
         # the identities, datasets and tags these checks use come from the setup steps above
         out.append(missing(B, "BigQuery data checks", f"skipped until the setup steps above are done: {DATA_CHECKS}", "npm run setup:prod, then npm run doctor -- --prod"))

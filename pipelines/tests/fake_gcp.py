@@ -21,7 +21,7 @@ class FakeGcp:
     API_OF = {"service_accounts": "iam.googleapis.com", "create_service_account": "iam.googleapis.com", "custom_roles": "iam.googleapis.com",
               "create_custom_role": "iam.googleapis.com", "sa_bindings": "iam.googleapis.com", "add_sa_binding": "iam.googleapis.com", "create_sa_key": "iam.googleapis.com",
               "project_bindings": "cloudresourcemanager.googleapis.com", "add_project_bindings": "cloudresourcemanager.googleapis.com",
-              "datasets": "bigquery.googleapis.com", "create_dataset": "bigquery.googleapis.com", "set_time_travel": "bigquery.googleapis.com", "add_dataset_access": "bigquery.googleapis.com",
+              "datasets": "bigquery.googleapis.com", "create_dataset": "bigquery.googleapis.com", "remove_dataset_access": "bigquery.googleapis.com", "set_time_travel": "bigquery.googleapis.com", "add_dataset_access": "bigquery.googleapis.com",
               "taxonomy": "datacatalog.googleapis.com", "create_taxonomy": "datacatalog.googleapis.com", "create_policy_tag": "datacatalog.googleapis.com",
               "taxonomy_bindings": "datacatalog.googleapis.com", "add_taxonomy_binding": "datacatalog.googleapis.com", "tag_readers": "datacatalog.googleapis.com",
               "add_tag_reader": "datacatalog.googleapis.com", "data_policies": "bigquerydatapolicy.googleapis.com", "create_data_policy": "bigquerydatapolicy.googleapis.com"}
@@ -70,7 +70,7 @@ class FakeGcp:
         for b in iam["service_account"]:
             self.sab.setdefault(b["service_account"], set()).add((b["role"], b["member"]))
         for d in fill(spec("datasets"), self.project, self.user):
-            self.ds[d["dataset"]] = {"max_time_travel_hours": d["max_time_travel_hours"], "access": {(a["role"], a["member"]) for a in d["access"]}}
+            self.ds[d["dataset"]] = {"max_time_travel_hours": d["max_time_travel_hours"], "access": {("OWNER", f"user:{self.user}"), *((a["role"], a["member"]) for a in d["access"])}}
         for r in fill(spec("custom_roles"), self.project, self.user):
             for g in r["grants"]:
                 self.ds[g["dataset"]]["access"].add((f"projects/{self.project}/roles/{r['role_id']}", g["member"]))
@@ -108,9 +108,13 @@ class FakeGcp:
         self.sab.setdefault(e, set()).add((r, m))
     def datasets(self):
         return {k: {"max_time_travel_hours": v["max_time_travel_hours"], "access": set(v["access"])} for k, v in self.ds.items()}
-    def create_dataset(self, d):
+    def create_dataset(self, d, owner):
+        """Like the real client: the explicit access list replaces BigQuery's default special-group entries."""
         self.calls.append(f"ds:{d['dataset']}")
-        self.ds[d["dataset"]] = {"max_time_travel_hours": None, "access": set()}
+        self.ds[d["dataset"]] = {"max_time_travel_hours": None, "access": {("OWNER", owner), *((a["role"], a["member"]) for a in d["access"])}}
+    def remove_dataset_access(self, d, entries):
+        self.calls.append(f"acl-remove:{d}")
+        self.ds[d]["access"] -= set(entries)
     def set_time_travel(self, d, h):
         self.calls.append(f"tt:{d}")
         self.ds[d]["max_time_travel_hours"] = h

@@ -21,38 +21,21 @@ add service account iam binding: peoplevault-pc-reader@pv-test.iam.gserviceaccou
 add service account iam binding: peoplevault-lh-reader@pv-test.iam.gserviceaccount.com: roles/iam.serviceAccountTokenCreator -> user:owner@example.test
 create dataset: pv-test.peoplevault_raw (US)
 set time travel window: ALTER SCHEMA peoplevault_raw SET OPTIONS (max_time_travel_hours = 48)
-grant dataset access: peoplevault_raw: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_core (US)
 set time travel window: ALTER SCHEMA peoplevault_core SET OPTIONS (max_time_travel_hours = 48)
-grant dataset access: peoplevault_core: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_snapshots (US)
 set time travel window: ALTER SCHEMA peoplevault_snapshots SET OPTIONS (max_time_travel_hours = 48)
-grant dataset access: peoplevault_snapshots: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_restricted (US)
 set time travel window: ALTER SCHEMA peoplevault_restricted SET OPTIONS (max_time_travel_hours = 48)
-grant dataset access: peoplevault_restricted: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_marts (US)
 set time travel window: ALTER SCHEMA peoplevault_marts SET OPTIONS (max_time_travel_hours = 48)
-grant dataset access: peoplevault_marts: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_purpose_employee_relations (US)
-grant dataset access: peoplevault_purpose_employee_relations: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
-grant dataset access: peoplevault_purpose_employee_relations: READER -> serviceAccount:peoplevault-er-reader@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_purpose_team_management (US)
-grant dataset access: peoplevault_purpose_team_management: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
-grant dataset access: peoplevault_purpose_team_management: READER -> serviceAccount:peoplevault-tm-reader@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_purpose_workforce_analytics (US)
-grant dataset access: peoplevault_purpose_workforce_analytics: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
-grant dataset access: peoplevault_purpose_workforce_analytics: READER -> serviceAccount:peoplevault-wa-reader@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_purpose_privacy_compliance (US)
-grant dataset access: peoplevault_purpose_privacy_compliance: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
-grant dataset access: peoplevault_purpose_privacy_compliance: READER -> serviceAccount:peoplevault-pc-reader@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_purpose_legal_hold_management (US)
-grant dataset access: peoplevault_purpose_legal_hold_management: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
-grant dataset access: peoplevault_purpose_legal_hold_management: READER -> serviceAccount:peoplevault-lh-reader@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_authz_probe (US)
-grant dataset access: peoplevault_authz_probe: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
 create dataset: pv-test.peoplevault_scratch (US)
-grant dataset access: peoplevault_scratch: OWNER -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
 grant custom role on dataset: peoplevault_core: projects/pv-test/roles/peoplevaultTimeTravelReader -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
 grant custom role on dataset: peoplevault_snapshots: projects/pv-test/roles/peoplevaultTimeTravelReader -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
 grant custom role on dataset: peoplevault_marts: projects/pv-test/roles/peoplevaultTimeTravelReader -> serviceAccount:peoplevault-executor@pv-test.iam.gserviceaccount.com
