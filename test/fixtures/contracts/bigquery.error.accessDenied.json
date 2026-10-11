@@ -1,0 +1,13 @@
+{
+  "_source": "https://cloud.google.com/bigquery/docs/error-messages (accessDenied, HTTP 403)",
+  "_note": "Constructed from the official API reference on 2026-10-10 (no production response has been captured yet); replace with a captured response after the first production run.",
+  "status": 403,
+  "body": {
+    "error": {
+      "code": 403,
+      "message": "Access Denied: BigQuery BigQuery: Permission denied while getting Drive credentials.",
+      "errors": [ { "message": "Access Denied", "domain": "global", "reason": "accessDenied" } ],
+      "status": "PERMISSION_DENIED"
+    }
+  }
+}

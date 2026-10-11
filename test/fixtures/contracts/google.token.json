@@ -1,0 +1,6 @@
+{
+  "_source": "https://developers.google.com/identity/protocols/oauth2/service-account#httprest (JWT bearer grant response)",
+  "_note": "Constructed from the official API reference on 2026-10-10 (no production response has been captured yet); replace with a captured response after the first production run.",
+  "status": 200,
+  "body": { "access_token": "gateway-access-token-contract", "expires_in": 3599, "token_type": "Bearer" }
+}

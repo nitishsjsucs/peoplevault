@@ -93,6 +93,15 @@ def counts(target: str) -> None:
     click.echo(f"counts match: {len(golden['warehouse'])} warehouse tables and the lake table")
 
 
+@main.command()
+@click.option("--port", type=int, default=None, help="shim port (default 8893 or PV_SHIM_PORT)")
+def serve(port: int | None) -> None:
+    """Local warehouse shim (DuckDB) for wrangler dev; owns the DuckDB file."""
+    from peoplevault.serve import serve as run_serve
+
+    run_serve(port)
+
+
 @main.group()
 def fixtures() -> None:
     """Committed Worker test fixtures built from data/fixtures/world.yaml."""

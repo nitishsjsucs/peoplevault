@@ -1,0 +1,15 @@
+{
+  "_source": "https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs/getQueryResults (GetQueryResultsResponse)",
+  "_note": "Constructed from the official API reference on 2026-10-10 (no production response has been captured yet); replace with a captured response after the first production run.",
+  "status": 200,
+  "body": {
+    "kind": "bigquery#getQueryResultsResponse",
+    "jobReference": { "projectId": "pv-test", "jobId": "job_contract_001", "location": "US" },
+    "jobComplete": true,
+    "totalRows": "3",
+    "schema": { "fields": [] },
+    "rows": [
+      { "f": [ { "v": "er_cccccccccccccccccccccccccc" }, { "v": "2" }, { "v": "99000" }, { "v": "false" }, { "v": "1985-01-01" }, { "v": "0" }, { "v": [ { "v": "FINANCE" } ] }, { "v": { "f": [ { "v": "80k_120k" }, { "v": null } ] } } ] }
+    ]
+  }
+}
