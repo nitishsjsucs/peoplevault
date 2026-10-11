@@ -1,6 +1,6 @@
 // Privacy officer API (SPEC.md section 13): deletion requests, legal holds, asset inventory and audit.
 import { Hono, type Context } from "hono";
-import { DeletionRequestBody, LegalHoldBody } from "../../shared/api-schemas.ts";
+import { DeletionRequestBody, LegalHoldBody, RetentionRunBody } from "../../shared/api-schemas.ts";
 import type { AppEnv } from "../app.ts";
 import { ASSETS } from "../assets/registry.ts";
 import { audit, errorJson } from "../context.ts";
@@ -8,6 +8,7 @@ import { activeHolds, placeHold, releaseHold, type HoldRow } from "../holds/hold
 import { identityByRef } from "../identity/refs.ts";
 import { decide, type Action } from "../policy/pdp.ts";
 import { deletionReport } from "../reports/deletion-report.ts";
+import { utcToday } from "../retention/rules.ts";
 import { ActiveRequestExists, getRequest, insertRequest, nextInstanceId, publicRequest, startDeletionInstance, type DeletionRequestRow } from "../requests.ts";
 
 export const privacy = new Hono<AppEnv>();
@@ -188,6 +189,35 @@ privacy.get(REPORT, async (c) => {
   const report = await deletionReport(c.env.DB, c.req.query("from") ?? null, c.req.query("to") ?? null);
   await audit(c, { purpose: "privacy_compliance", action: "read_report", route: REPORT, decision: "allow", reason: "ok", rowCount: report.requests.total });
   return c.json(report);
+});
+
+// ---- retention ------------------------------------------------------------------------------------------------------
+const RET_RUN = "/api/v1/privacy/retention/run";
+privacy.post(RET_RUN, async (c) => {
+  const denied = await authorize(c, "privacy_compliance", "run_retention", RET_RUN);
+  if (denied) return denied;
+  const body = RetentionRunBody.safeParse((await c.req.json().catch(() => ({}))) ?? {});
+  if (!body.success) return deny(c, "privacy_compliance", "run_retention", RET_RUN, 400, "invalid_body");
+  const asOf = body.data.as_of ?? c.get("cfg").retentionAsOf ?? utcToday();
+  const max = body.data.max_subjects;
+  const runId = max !== undefined ? `retention-${asOf}-max${max}` : `retention-${asOf}`;
+  try {
+    await c.env.RETENTION.create({ id: runId, params: { asOf, ...(max !== undefined ? { maxSubjects: max } : {}) } });
+  } catch (e) {
+    if (/already[ _]exists?/i.test(String(e))) return deny(c, "privacy_compliance", "run_retention", RET_RUN, 409, "run_exists");
+    throw e;
+  }
+  await audit(c, { purpose: "privacy_compliance", action: "run_retention", route: RET_RUN, decision: "allow", reason: "ok", detail: { max_subjects: max ?? null } });
+  return c.json({ runId, asOf }, 202);
+});
+
+const RET_RUNS = "/api/v1/privacy/retention/runs";
+privacy.get(RET_RUNS, async (c) => {
+  const denied = await authorize(c, "privacy_compliance", "run_retention", RET_RUNS);
+  if (denied) return denied;
+  const { results } = await c.env.DB.prepare("SELECT * FROM retention_runs ORDER BY started_at DESC LIMIT 100").all<{ summary_json: string | null }>();
+  await audit(c, { purpose: "privacy_compliance", action: "run_retention", route: RET_RUNS, decision: "allow", reason: "ok", rowCount: results.length });
+  return c.json({ runs: results.map((r) => ({ ...r, summary: r.summary_json ? JSON.parse(r.summary_json) : null })) });
 });
 
 // ---- audit ----------------------------------------------------------------------------------------------------------

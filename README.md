@@ -6,13 +6,21 @@ All workforce data is synthetic and generated deterministically. No real person'
 
 ## Status
 
-Under construction (2026-10-10). The design contract is [SPEC.md](SPEC.md); progress against its commit plan is tracked in [PROGRESS.md](PROGRESS.md).
+Under construction (2026-10-10). The design contract is [SPEC.md](SPEC.md); progress against its commit plan, the exact check status and every deviation are in [PROGRESS.md](PROGRESS.md).
 
 | Area | State |
 |---|---|
-| Design spec, glossary, ADRs, production setup guide | written |
-| Worker, Workflows, policy compiler, warehouse models, executor, verifiers, eval | not built yet |
-| Production paths (BigQuery, Cloudflare Access, R2 and Workflows on Cloudflare, Basin Catalog) | not built yet; once written they are labeled "written, not yet executed" until a committed production result exists |
+| Policy file, compiler (TypeScript JSON, DuckDB and BigQuery SQL), drift check | built, tested |
+| HKDF and HMAC pseudonyms (TypeScript and Python, shared vectors) | built, tested |
+| Deterministic synthetic population with golden counts | built, tested |
+| Access JWT verification (local RS256 keys), principals, purpose-scoped decision point | built, tested locally |
+| 100 authorization cases (all at the decision point, 48 also on DuckDB purpose views) | built, passing locally |
+| dbt project for DuckDB and BigQuery (merge-only protected tables, generated purpose views and functions) | built; DuckDB runs, BigQuery parses only |
+| Loaders, identity xref, snapshot replay, Iceberg history (pyiceberg SqlCatalog) | built, tested locally |
+| Subject deletion Workflow, conditional R2 rewrites, Python executor, independent probes and scanners | built, tested locally (Miniflare, DuckDB, SqlCatalog) |
+| Legal holds, retention sweep Workflow, cron and queue consumer | built, tested locally |
+| Residual checks, deletion eval with oracle and fault injection, CI | not built yet |
+| Production paths (BigQuery, Cloudflare Access, R2 and Workflows on Cloudflare, Basin Catalog), `setup:prod`, `doctor` | not built yet; once written they are labeled "written, not yet executed" until a committed production result exists |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
 

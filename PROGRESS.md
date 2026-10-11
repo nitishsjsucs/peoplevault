@@ -4,7 +4,7 @@ Tracks the build against the commit plan in SPEC.md section 26. Updated in every
 
 ## Position
 
-Commit 19 done (spec items 17 and 18): `feat(executor): Python executor and independent warehouse and lake verifiers`. Commits are numbered in the order made (17 recorded the authz results).
+Commit 20 done (spec item 20): `feat(retention): retention sweep workflow, cron and queue consumer`. Commits are numbered in the order made (17 recorded the authz results).
 
 ## Done
 
@@ -29,14 +29,15 @@ Commit 19 done (spec items 17 and 18): `feat(executor): Python executor and inde
 | 17 | `test(authz): record local authorization results` | `evals/results/authz-local-2026-10-10.json` from `npm run eval:authz` on a clean tree: pdp 100/100, warehouse 48/48 |
 | 18 | `feat(deletion): subject deletion workflow, conditional R2 rewrites and executor task protocol` | `SubjectDeletionWorkflow` with the 18 steps of section 14.1 (hold check and held path, suppression, discovery, per-family etag compare-and-swap R2 rewrites with reference scrubbing that never touches held rows, extracts, KV bulk-read erasure, executor erase task and `waitForEvent`, KV propagation sleep, independent R2/KV/D1 probes over whole stores with boundary-aware matching and redacted locations, verdicts with unregistered residue pairs, identity erasure and re-probe, executor identity task, residual recording, request redaction with a final full D1 probe, receipt hashed into the audit chain, error path to `failed`); operation counting per step; coverage report route; tests: happy path, held, unregistered residue, hold-reference conflict, executor failure and forced timeout, identifier-free step outputs, 10 concurrent R2 rewrites and 10 concurrent deletions, operation budget at the full population's 420 KV entries and 47 R2 objects, identifier-free audit, probes, console logging, verify isolation (node project), event delivery through the executor API |
 | 19 | `feat(executor): Python executor and independent warehouse and lake verifiers` | `pv executor run --target local [--once\|--drain]` and the executor thread of `pv serve` (claim, batch by phase, complete; a rejected or failed batch completes as `ok: false` with the error type only); erase batch: one DuckDB transaction for every DML erase and reference scrub (held rows never scrubbed) plus the suppression append, one `dbt build --select headcount_monthly`, one Iceberg transaction (copy-on-write delete plus filtered overwrite of manager references), per-subject verification, counts-only results with Iceberg residuals (observed: retained snapshots and data files that held the subject) and modeled BigQuery time travel and fail-safe windows; identity batch deletes `pv_restricted.identity_xref` and re-verifies everything; independent `verify/warehouse_scan.py` (every base table in every schema, exact equality on identifier columns, RE2 boundary regex elsewhere) and `verify/lake_scan.py` (every table in every namespace, retained snapshots, local orphan files); `lake/ops.py` (erase, local expiry plus orphan purge, refused for production); `scripts/dev.ts`, `scripts/stop-local.ts` and `scripts/lib/pids.ts` (process groups, pidfiles, TCP probes); verified end to end on the live local stack (wrangler dev + pv serve): a DSR completed in 7.5 s with all 13 assets clean |
+| 20 | `feat(retention): retention sweep workflow, cron and queue consumer` | `RetentionSweepWorkflow` (load holds, expire or minimize R2 exports past retention and extracts past 90 days through compare-and-swap rewrites, executor retention task, terminated subjects past 3 years inserted as retention requests in employee id order with `max_subjects`, held ones recorded `held`, `already_active` counted, the rest sent to the Queue, run record and audit); queue consumer (`createBatch` object form, existing ids acked, invalid ids and other errors retried toward the dead letter queue); cron handler (`retention-<as_of>`, existing instance ignored); `POST /api/v1/privacy/retention/run` (`retention-<as_of>[-max<N>]`) and run listing; Python retention handler (raw rows past retention and lake rows past 84 months, held subjects skipped, local expiry and orphan purge); README status updated |
 
 ## Next
 
-20. `feat(retention): retention sweep workflow, cron and queue consumer` (holds landed with commit 15)
+21. `feat(residuals): Iceberg, BigQuery, D1 and KV residual tracking` (`pv lake expire`, `pv residuals check`, classifier)
 
 ## Check status
 
-At commit 19: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 232 passed, 0 failed (incl. the 100 authorization cases; the forced-timeout test logs an expected WorkflowTimeoutError); `npm run test:py` 139 passed, 0 failed; `pv fixtures check` clean; `npm run eval:authz` pdp 100/100, warehouse 48/48; `ruff check pipelines` clean; `pv policy check` clean.
+At commit 20: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 244 passed, 0 failed (incl. the 100 authorization cases; the forced-timeout test logs an expected WorkflowTimeoutError); `npm run test:py` 140 passed, 0 failed; `pv fixtures check` clean; `npm run eval:authz` pdp 100/100, warehouse 48/48; `ruff check pipelines` clean; `pv policy check` clean.
 
 ## Deviations from SPEC.md
 
@@ -45,6 +46,7 @@ At commit 19: `npm run typecheck` passes; `npm run types:check` passes (with and
 - Policy tags in schema YAML use `{{ var('pv_policy_tags')['<class>'] }}` directly: dbt does not expose project macros when rendering schema YAML (checked: "'pv_policy_tag' is undefined"), so the `pv_policy_tag()` macro was dropped.
 - dbt staging models are ephemeral (no staging relations exist), so `var('pv_snapshot_export_date')` applies when each `dbt snapshot` of the replay compiles.
 - Executor task ids are `<instanceId>:erase` and `<instanceId>:identity` (equal to `<requestId>:...` for the first attempt), so a retry instance gets fresh tasks; `loadSubject` falls back to the request's latest erase payload.
+- Retention request ids are `<runId>-<12 characters of the subject_ref>` (Workflow instance ids allow only letters, digits, `-` and `_`).
 - Iceberg snapshot ids travel as strings in executor results (they exceed JavaScript's safe integer range).
 - Probe findings redact token occurrences inside locations (for example an R2 key named after an employee id becomes `[redacted]`), so findings stored in D1 never carry a value.
 - The local `kv_propagation` residual is recorded as `cleared` with evidence `modeled` (there is no edge network locally).

@@ -91,3 +91,31 @@ def test_hold_reference_conflict(small_load):
     conn = duckdb.connect(str(small_load["duckdb"]))
     kept = conn.execute("select manager_employee_id from pv_raw.hris_employees where employee_id = ? limit 1", [held_active]).fetchone()
     assert kept == (manager,)
+
+
+def test_retention_rows_skip_held_subjects(small_load):
+    from executor_helpers import PS
+
+    from peoplevault.executor.api import Task
+    from peoplevault.executor.retention import handle_retention
+
+    pop = population()
+    held = pop.held_subjects()
+    held_refs = [PS.pseudonym("subject_ref", h) for h in held]
+    ctx, _ = _ctx(small_load)
+    conn = duckdb.connect(str(small_load["duckdb"]))
+    expected = conn.execute("select count(*) from pv_raw.hris_employees where export_date <= date '2026-09-21' and not list_contains(?, subject_ref)", [held_refs]).fetchone()[0]
+    held_rows = conn.execute("select count(*) from pv_raw.hris_employees where export_date <= date '2026-09-21' and list_contains(?, subject_ref)", [held_refs]).fetchone()[0]
+    conn.close()
+    t = Task("run:rows", "retention", "executor_result_retention", "RETENTION", "run", None, "run",
+             {"runId": "run", "asOf": "2026-09-30", "rawCutoffs": {"pv_raw.hris_employees": "2026-09-21"}, "lakeCutoff": "2025-06-30", "heldSubjectRefs": held_refs})
+    ok, result = handle_retention(t, ctx)
+    assert ok and result["counts"]["raw_rows_expired_hris_employees"] == expected > 0
+    assert result["counts"]["lake_rows_expired_employee_monthly"] > 0
+    conn = duckdb.connect(str(small_load["duckdb"]))
+    assert conn.execute("select count(*) from pv_raw.hris_employees where export_date <= date '2026-09-21'").fetchone()[0] == held_rows
+    lake = open_catalog("local", root=small_load["lake"]).load_table(EMPLOYEE_MONTHLY).scan().to_arrow()
+    held_keys = {PS.pseudonym("warehouse_key", h) for h in held}
+    rows = lake.to_pylist()
+    assert all(r["employee_key"] in held_keys for r in rows if r["month"].isoformat() <= "2025-06-30")
+    assert any(r["month"].isoformat() > "2025-06-30" for r in rows)
