@@ -95,11 +95,36 @@ def counts(target: str) -> None:
 
 @main.command()
 @click.option("--port", type=int, default=None, help="shim port (default 8893 or PV_SHIM_PORT)")
-def serve(port: int | None) -> None:
-    """Local warehouse shim (DuckDB) for wrangler dev; owns the DuckDB file."""
+@click.option("--no-executor", is_flag=True, help="run only the shim")
+def serve(port: int | None, no_executor: bool) -> None:
+    """Local warehouse shim and executor loop for wrangler dev; owns the DuckDB file."""
     from peoplevault.serve import serve as run_serve
 
-    run_serve(port)
+    run_serve(port, executor=not no_executor)
+
+
+@main.group()
+def executor() -> None:
+    """Python executor (claims tasks from the Worker)."""
+
+
+@executor.command("run")
+@click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
+@click.option("--once", is_flag=True, help="process one claimed batch and exit")
+@click.option("--drain", is_flag=True, help="process until no task is pending, then exit")
+def executor_run(target: str, once: bool, drain: bool) -> None:
+    if target == "prod":
+        raise click.ClickException("the production executor context lands with the production commit (see PROGRESS.md)")
+    from peoplevault.executor.local import local_api, local_context
+    from peoplevault.executor.loop import run_loop
+    from peoplevault.warehouse.duck import DuckWarehouse
+
+    wh = DuckWarehouse.open()
+    try:
+        n = run_loop(local_api(), local_context(wh), once=once, drain=drain)
+    finally:
+        wh.close()
+    click.echo(f"executor: {n} task(s) completed")
 
 
 @main.group()

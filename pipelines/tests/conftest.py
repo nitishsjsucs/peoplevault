@@ -32,7 +32,7 @@ def bigquery_manifest():
     return json.loads((config.DBT_DIR / "target" / "manifest.json").read_text())
 
 
-def _load_world(root, only_keys=None):
+def _load_world(root, only_keys=None, lake_years=None):
     from peoplevault.load.run import load_local
     from peoplevault.pseudo import TEST_MASTER_KEY
     from peoplevault.synth.generate import generate
@@ -40,7 +40,8 @@ def _load_world(root, only_keys=None):
     gen = root / "gen"
     generate(gen, TEST_MASTER_KEY)
     result = load_local(
-        suppressed=set(), master_key=TEST_MASTER_KEY, duckdb_path=root / "wh.duckdb", lake_root=root / "lake", generated=gen, only_keys=only_keys
+        suppressed=set(), master_key=TEST_MASTER_KEY, duckdb_path=root / "wh.duckdb", lake_root=root / "lake", generated=gen, only_keys=only_keys,
+        lake_years=lake_years,
     )
     return {"root": root, "gen": gen, "duckdb": root / "wh.duckdb", "lake": root / "lake", "result": result}
 
@@ -62,5 +63,5 @@ SMALL_KEYS = {
 
 @pytest.fixture()
 def small_load(tmp_path):
-    """Five export objects loaded into a fresh temp warehouse (for tests that mutate it)."""
-    return _load_world(tmp_path, SMALL_KEYS)
+    """Five export objects and two years of lake history loaded into a fresh temp warehouse (for tests that mutate it)."""
+    return _load_world(tmp_path, SMALL_KEYS, lake_years={2025, 2026})

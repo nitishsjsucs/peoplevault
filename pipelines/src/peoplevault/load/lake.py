@@ -58,18 +58,20 @@ def year_rows(path: Path, ps: Pseudonymizer, suppressed: set[str]) -> pa.Table:
     })
 
 
-def load_employee_monthly(cat: Catalog, ps: Pseudonymizer, suppressed: set[str], history_dir: Path | None = None) -> dict:
+def load_employee_monthly(cat: Catalog, ps: Pseudonymizer, suppressed: set[str], history_dir: Path | None = None, years: set[int] | None = None) -> dict:
     """Appends each year once. A table that already has snapshots is left unchanged (idempotent re-runs)."""
     tbl = ensure_table(cat)
     if tbl.current_snapshot() is not None:
         return {"appended_years": [], "skipped": "table already loaded", "snapshots": len(tbl.snapshots())}
     base = history_dir or (config.GENERATED_DIR / "history" / "employee_monthly")
-    years = []
+    appended: list[int] = []
     rows = 0
     for f in sorted(base.glob("year=*.jsonl")):
+        if years is not None and int(f.stem.split("=")[1]) not in years:
+            continue
         data = year_rows(f, ps, suppressed)
         tbl.append(data)
-        years.append(int(f.stem.split("=")[1]))
+        appended.append(int(f.stem.split("=")[1]))
         rows += data.num_rows
     tbl = cat.load_table(EMPLOYEE_MONTHLY)
-    return {"appended_years": years, "rows": rows, "snapshots": len(tbl.snapshots())}
+    return {"appended_years": appended, "rows": rows, "snapshots": len(tbl.snapshots())}

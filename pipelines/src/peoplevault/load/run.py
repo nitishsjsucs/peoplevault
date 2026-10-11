@@ -24,6 +24,7 @@ def load_local(
     lake_root: Path | None = None,
     generated: Path | None = None,
     only_keys: set[str] | None = None,
+    lake_years: set[int] | None = None,
 ) -> dict:
     import os
 
@@ -53,7 +54,7 @@ def load_local(
             raise RuntimeError(f"dbt build failed ({build.exception})")
         cat = open_catalog("local", root=lake_root)
         hist = (generated / "history" / "employee_monthly") if generated else None
-        lake_report = lake.load_employee_monthly(cat, ps, sup, hist)
+        lake_report = lake.load_employee_monthly(cat, ps, sup, hist, lake_years)
     finally:
         conn.close()
     return {"suppression_synced": synced, "identity_xref": xref, "raw": asdict(report), "snapshot_replays": len(hris_dates), "lake": lake_report}
