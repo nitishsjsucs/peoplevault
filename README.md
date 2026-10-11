@@ -6,7 +6,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 
 ## Status
 
-2026-10-10: everything in the core plan is built and runs locally; the production paths are written but have not run against Cloudflare or Google Cloud. Production runs on the Cloudflare **Workers Free** plan in an account and a Google Cloud project shared with three other repos (SPEC.md section 30, ADR 0007); the migration to that design is in progress, commit by commit (PROGRESS.md). The design contract is [SPEC.md](SPEC.md); progress against its commit plan, the exact check status and every deviation are in [PROGRESS.md](PROGRESS.md).
+2026-10-11: everything in the core plan is built and runs locally; the production paths are written for the **Cloudflare Workers Free plan** but have not run against Cloudflare or Google Cloud. Production shares one Cloudflare account and one Google Cloud project (`master-magnet-444903-u4`) with three other repos, so this repo plans for at most 25% of every per-account Free allowance and names everything it creates in Google Cloud with the `peoplevault` prefix (SPEC.md section 30, [ADR 0007](docs/adr/0007-production-on-workers-free.md)). The design contract is [SPEC.md](SPEC.md); progress against its commit plan, the exact check status and every deviation are in [PROGRESS.md](PROGRESS.md).
 
 | Area | State |
 |---|---|
@@ -15,28 +15,25 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Deterministic synthetic population with golden counts | built, tested |
 | Access JWT verification (local RS256 keys), principals, purpose-scoped decision point | built, tested locally |
 | 100 authorization cases (all at the decision point, 48 also on DuckDB purpose views) | built, passing locally |
-| dbt project for DuckDB and BigQuery (merge-only protected tables, generated purpose views and functions) | built; DuckDB runs, BigQuery parses only |
+| dbt project for DuckDB and BigQuery (merge-only protected tables, generated purpose views and functions, `peoplevault_*` schemas) | built; DuckDB runs, BigQuery parses only |
 | Loaders, identity xref, snapshot replay, Iceberg history (pyiceberg SqlCatalog) | built, tested locally |
-| Subject deletion Workflow, conditional R2 rewrites, Python executor, independent probes and scanners | built, tested locally (Miniflare, DuckDB, SqlCatalog) |
-| Legal holds, retention sweep Workflow, cron and queue consumer | built, tested locally |
-| Residual tracking (Iceberg, BigQuery, D1, KV) and the deletion eval with an independent oracle and fault injection | built, run locally (results below) |
-| CI (GitHub Actions: worker, python and e2e jobs, no secrets) | workflow written; each job's commands pass locally and in a fresh clone; it has not run on GitHub because the repository has not been pushed |
-| `npm run doctor` and `npm run doctor -- --prod` | built; tested with fakes and recorded responses; on this Mac the production lines all report missing setup |
-| `npm run setup:prod`, `pv setup gcp`, `npm run deploy`, `npm run seed:prod` | written, not yet executed (dry-run plans golden-tested) |
-| BigQuery path (dbt build, protected-table controls, 48 cases as purpose service accounts, 37 ceiling probes, Worker REST client) | written, not yet executed |
+| Subject deletion Workflow (30 steps per completed deletion: byte-capped cursor steps for R2 erasure and probing, D1 token matching inside SQLite, daily admission, request-level idempotency), conditional R2 rewrites, Python executor, independent probes and scanners | built, tested locally (Miniflare, DuckDB, SqlCatalog); Miniflare enforces no CPU or query limit, so the Free plan budgets per step are counted in tests |
+| Legal holds, retention sweep Workflow (at most 8 new subjects a day in production), cron (reconcile, then the sweep when `RETENTION_CRON=on`) and queue consumer | built, tested locally |
+| Residual tracking (Iceberg, BigQuery, D1 Time Travel 7 days on Free, KV) and the deletion eval with an independent oracle and fault injection | built, run locally (results below) |
+| Audit hash chain, windowed verification (100 events per request), the deletion report in SQL, and the exactly-once audit copy into the Iceberg table `governance.audit_events` (`pv audit export`, which replaces the Workers Paid Basin Pipelines stream) | built; the audit copy runs locally in the ci eval (pyiceberg SqlCatalog); the production export (Basin Catalog) is written, not yet executed |
+| Workers Free budget model (`scripts/lib/free-budget.ts`; the budget test fails if a cap pushes the worst-case day past the 25% share) and `npm run bench:cpu` | built, tested |
+| CI (GitHub Actions: worker, python and e2e jobs, no secrets) | workflow written; each job's commands pass locally; it has not run on GitHub because the repository has not been pushed |
+| `npm run doctor` and `npm run doctor -- --prod` (including the Workers Free usage lines) | built; tested with fakes and recorded responses; on this Mac the production lines report the missing setup |
+| `npm run setup:prod` (with `--retention-cron on\|off`; refuses to adopt a same-named Cloudflare resource it did not create), `pv setup gcp`, `npm run deploy`, `npm run seed:prod` | written, not yet executed (dry-run plans golden-tested) |
+| BigQuery path (dbt build, protected-table controls, 48 cases as purpose service accounts, 37 ceiling probes, Worker REST client with 20 polls, 10 pages and a 100 MiB byte cap; every Python and dbt query capped at 1 GiB) | written, not yet executed |
 | Cloudflare Access in front of the deployed Worker, R2, D1, KV and Workflows on Cloudflare | written, not yet executed |
 | Production executor, residual check and Basin Catalog self-test | written, not yet executed |
-| Production deletion eval profile (`pv eval deletion --profile prod`) | written, not yet executed |
-| Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
+| Production deletion eval profile (`pv eval deletion --profile prod`, canary deletion first) | written, not yet executed |
+| Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the audit copy when due and the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
 | The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built; the local rehearsal ran (Results); the production run is written, not yet executed |
-| Workers Free production template (no `limits`, no `pipelines`, Free capacity vars), 3-day Workflow retention, 7-day D1 Time Travel residual, byte-capped BigQuery queries (Worker 100 MiB, Python and dbt 1 GiB) | built, tested; not yet executed |
-| Workflow steps sized for Free's 10 ms of CPU and 50 D1 queries: byte-capped cursor steps for R2 erasure (4 MiB) and probing (2 MiB) with a line prefilter, D1 token matching inside SQLite in steps of at most 16 tables, windowed audit verification (100 events per request), the deletion report in SQL; 30 steps per completed deletion | built, tested locally (Miniflare does not enforce CPU or query limits; the budgets are counted in tests) |
-| Shared Google Cloud project: every dataset, service account, custom role, data policy and the taxonomy named from `naming.prefix: peoplevault`; the executor's only project-level role is `roles/bigquery.jobUser` (no project-wide read), the warehouse verifier scans `peoplevault_*` datasets only; `setup:prod` refuses to adopt a same-named Cloudflare resource it has no record of | built, dry-run golden-tested; not yet executed |
-| Workers Free budget model (`scripts/lib/free-budget.ts`: facts, 25% planning share, unit costs; the budget test fails if a cap pushes the worst-case day past the share), doctor usage lines (retention cron, admissions today, D1 rows per probe, audit copy lag, optional CPU p99), `npm run bench:cpu` | built, tested; the doctor's production lines are not yet executed |
-| Daily admission cap (16 deletion starts per UTC day in production, 8 of them retention; unlimited locally), cron reconcile of deferred and orphaned requests, request-level idempotency, retention cron off in production until the production eval result is committed | built, tested locally |
-| Audit copy into the Iceberg table `governance.audit_events` (`pv audit export`: pulled through the executor API, one commit per run with its cursor in the snapshot summary, exactly once; replaces the Basin Pipelines stream, which needs Workers Paid) | built; runs locally in the ci eval (pyiceberg SqlCatalog); the production export (Basin Catalog, hourly in `executor.yml` when due) is written, not yet executed |
+| P1 web console and Workers AI schema-drift triage | not built yet |
 
-Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
+Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service. Until the production runs in [docs/PRODUCTION.md](docs/PRODUCTION.md) pass, the honest wording for the BigQuery and Cloudflare parts is "designed for" them and "verified against local stand-ins" (SPEC.md section 24).
 
 ## Architecture
 
@@ -48,34 +45,37 @@ flowchart LR
     AN["people_analyst"]
     PO["privacy_officer"]
   end
-  ACCESS["Cloudflare Access<br/>adds Cf-Access-Jwt-Assertion<br/>(production only)"]
-  subgraph Worker["Worker: peoplevault (Hono)"]
+  ACCESS["Cloudflare Access (Zero Trust Free)<br/>adds Cf-Access-Jwt-Assertion<br/>(production only)"]
+  subgraph Worker["Worker: peoplevault (Hono) on Workers Free"]
     AUTH["Access JWT verify (jose RS256)<br/>principal from D1"]
     PDP["Policy decision point<br/>persona to purpose, columns, row scope"]
-    API["Purpose data API<br/>privacy API, executor API"]
-    WF1["SubjectDeletionWorkflow"]
+    API["Purpose data API<br/>privacy API, executor API<br/>(incl. audit-export route)"]
+    ADM["Daily admission cap<br/>(16 starts per UTC day in production)"]
+    CRON["Cron 03:00 UTC<br/>reconcile, then retention sweep"]
+    WF1["SubjectDeletionWorkflow<br/>byte-capped cursor steps, 10 ms CPU each"]
     WF2["RetentionSweepWorkflow"]
     QC["Queue consumer"]
-    PROBES["Independent probes<br/>R2, KV, D1"]
+    PROBES["Independent probes<br/>R2 (cursor steps), KV, D1 (in SQLite)"]
     AUDIT["Audit log (hash chain)"]
   end
   D1[("D1 pv-control<br/>principals, identity_map,<br/>requests, holds, tasks, audit")]
   R2X[("R2 pv-source-exports<br/>41 export objects")]
   R2D[("R2 pv-derived<br/>analytics extracts")]
   KV[("KV pv-cache<br/>profile cards, team rosters")]
-  Q[["Queue pv-retention-sweep<br/>+ pv-retention-dlq"]]
+  Q[["Queue pv-retention-sweep<br/>+ pv-retention-dlq (24 h retention on Free)"]]
   subgraph Python["Python (uv): executor, loaders, verifiers"]
     EXE["Executor loop<br/>claims tasks over HTTPS"]
+    AEX["pv audit export<br/>seq cursor in the Iceberg snapshot summary"]
     VER["Warehouse and lake verifiers"]
     DBT["dbt (dbt-duckdb / dbt-bigquery)"]
     SHIM["Warehouse shim :8893<br/>(local only)"]
   end
   subgraph WH["Warehouse"]
-    BQ[("BigQuery (production)<br/>restricted datasets, authorized views and TVFs,<br/>policy tags, data masking, row access policies")]
+    BQ[("BigQuery (production, shared project)<br/>peoplevault_* datasets, authorized views and TVFs,<br/>policy tags, data masking, row access policies")]
     DUCK[("DuckDB file (local stand-in)")]
   end
   subgraph LAKE["Iceberg archive"]
-    BCAT[("Basin Catalog on R2 pv-lake (production)")]
+    BCAT[("Basin Catalog on R2 pv-lake (production)<br/>hr_history.employee_monthly, governance.audit_events")]
     SQLCAT[("pyiceberg SqlCatalog + local files (local stand-in)")]
   end
   Users --> ACCESS --> AUTH
@@ -85,33 +85,75 @@ flowchart LR
   API -->|"local: named query"| SHIM --> DUCK
   API --> KV
   API --> AUDIT --> D1
-  API -->|"create"| WF1
+  API -->|"create when admitted"| ADM --> WF1
+  CRON --> ADM
+  CRON -->|"RETENTION_CRON=on"| WF2
   WF2 --> Q --> QC -->|"createBatch"| WF1
+  CRON -->|"re-send deferred or orphaned requests"| Q
   WF1 --> R2X & R2D & KV & D1
+  WF1 -->|"executor_tasks rows"| D1
   EXE -->|"claim / complete"| API
   API -->|"instance.sendEvent"| WF1
   EXE --> DBT
   EXE --> BQ & DUCK
   EXE --> BCAT & SQLCAT
+  AEX -->|"GET /api/v1/executor/audit-export"| API
+  AEX -->|"one append per run"| BCAT & SQLCAT
   VER --> BQ & DUCK & BCAT & SQLCAT
   WF1 --> PROBES
 ```
+
+### Deletion request sequence
+
+```mermaid
+sequenceDiagram
+  participant PO as privacy_officer
+  participant W as Worker API
+  participant WF as SubjectDeletionWorkflow
+  participant D1 as D1
+  participant X as Python executor
+  participant WH as Warehouse + Iceberg
+  PO->>W: POST /api/v1/privacy/deletion-requests
+  W->>D1: insert request (employee_id held until redaction)
+  W->>WF: DELETION.create({ id: requestId, params: { requestId } })
+  WF->>D1: legal hold check, suppression entry
+  WF->>WF: discover + erase R2 exports (etag compare-and-swap), R2 extracts, KV caches
+  WF->>D1: insert executor task (phase erase)
+  WF-->>WF: waitForEvent executor_result_erase
+  X->>W: POST /api/v1/executor/tasks/claim
+  X->>WH: DML deletes, reference scrubbing, dbt rebuild, Iceberg delete
+  X->>WH: independent verifier scan
+  X->>W: POST /api/v1/executor/tasks/{id}/complete
+  W->>WF: instance.sendEvent(executor_result_erase)
+  WF->>WF: sleep kv-propagation, then independent probes (R2, KV, D1)
+  WF->>D1: delete identity records, insert task (phase identity)
+  WF-->>WF: waitForEvent executor_result_identity
+  X->>WH: delete identity_xref, verify
+  X->>W: complete
+  WF->>D1: residuals, receipt, redact request, audit
+```
+
+### Trust model
+
+Cloudflare Access authenticates; the Worker verifies the Access JWT itself and is the policy enforcement point for per-user row scope (org units, direct reports), which it derives from the D1 principal record and passes as query parameters. BigQuery enforces the ceiling for each purpose independently of the Worker: a purpose's service account can only read that purpose's dataset of authorized views and table functions, policy tags block or mask sensitive columns for that identity, and row access policies hide the restricted population from purposes that must not see it. A compromised Worker could read anything the five purpose identities can read, but never a column class or population that the purpose ceiling denies. The ceiling only holds while tags and row access policies stay attached, and BigQuery drops both on `CREATE OR REPLACE TABLE`, so no tagged or row-policy table is ever replaced after its first creation (section 9.3). The local stand-in (DuckDB) has no IAM, so locally the ceiling is emulated in the generated view SQL and by the shim's purpose-to-schema allowlist; README says so.
 
 ## What runs where
 
 | Concern | Local (works offline and in CI) | Production (after the setup in docs/PRODUCTION.md) |
 |---|---|---|
-| Identity | locally generated RS256 JWKS, `/dev/login` cookie (loopback only), executor dev JWT | Cloudflare Access (Zero Trust Free), team JWKS, service tokens |
-| Worker, Workflows, Queues, Cron | Miniflare via `wrangler dev` on 8793, Worker `peoplevault-local` | Workers Free deployment `peoplevault` at `https://peoplevault.nitish-ratakonda.workers.dev`; no `limits` block |
+| Identity | locally generated RS256 JWKS, `/dev/login` cookie (loopback only), executor dev JWT | Cloudflare Access, Zero Trust Free team `old-truth-a7dc` (5 of 50 seats), team JWKS, 5 service tokens |
+| Worker, Workflows, Queues, Cron | Miniflare via `wrangler dev` on 8793, Worker `peoplevault-local` | Workers **Free** deployment `peoplevault` at `https://peoplevault.nitish-ratakonda.workers.dev`; no `limits` block |
+| CPU and per-invocation limits | not enforced by Miniflare; counted in tests (bytes, D1 statements, calls) | 10 ms per request and per Workflow step: byte-capped cursor steps (4 MiB erase, 2 MiB probe), D1 matching inside SQLite, at most 40 D1 statements per step, windowed audit verification |
+| Daily capacity | unlimited (`DAILY_DELETION_STARTS` and `RETENTION_DAILY_MAX` empty, `RETENTION_CRON` on) | at most 16 deletion starts per UTC day, 8 of them retention; deferred and orphaned requests re-admitted by the cron; retention cron off until the production eval is committed |
 | Control plane | D1 in `.wrangler/state` | D1 `pv-control` (Time Travel 7 days on Free, tracked as a residual) |
 | Source exports and extracts | R2 in `.wrangler/state` | R2 `pv-source-exports`, `pv-derived` |
 | Caches | KV in `.wrangler/state` (immediate) | KV `pv-cache` (70 s propagation wait before verification) |
-| Warehouse | DuckDB file with `peoplevault_*` schemas, dbt-duckdb, shim on 8893 with emulated ceilings | BigQuery US in the shared project `master-magnet-444903-u4` (`peoplevault_*` datasets, dataset- and resource-scoped grants only, every query byte-capped), dbt-bigquery, `peoplevault-*` purpose service accounts, authorized views and table functions, policy tags, data masking, row access policies |
+| Warehouse | DuckDB file with `peoplevault_*` schemas, dbt-duckdb, shim on 8893 with emulated ceilings | BigQuery US in the shared project, `peoplevault_*` datasets, dbt-bigquery, `peoplevault-*` purpose service accounts, authorized views and table functions, policy tags, data masking, row access policies; dataset- and resource-scoped grants only; every query byte-capped |
 | Recovery windows | modeled from the 48 h setting (labeled modeled) | observed with time travel queries; fail-safe modeled |
-| Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake`, managed snapshot expiration |
-| Audit copy | `pv audit export --target local` into the SqlCatalog table `governance.audit_events` | the same command into the Basin Catalog table `governance.audit_events` (exactly once), from `executor.yml` or the production eval; no Basin Pipelines (Workers Paid only) |
-| Executor | `pv serve` thread | `pv executor run --target prod` from the owner's machine (impersonating `peoplevault-executor`), or hourly in GitHub Actions (`executor.yml`, with a `peoplevault-executor` key held only as a repository secret) |
-| Production API calls | recorded-response contract tests and `--dry-run` golden plans only | live, after setup |
+| Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake` (R2 subscription, Free plan), managed snapshot expiration |
+| Audit copy | `pv audit export --target local` into the SqlCatalog table `governance.audit_events` | the same command into the Basin Catalog table `governance.audit_events` (exactly once, cursor in the snapshot summary), from `executor.yml` or the production eval; no Basin Pipelines (Workers Paid only) |
+| Executor | `pv serve` thread (0.5 s poll) | `pv executor run --target prod` from the owner's Mac (5 s poll), impersonating `peoplevault-executor`; hourly in `executor.yml` |
+| Production API calls | recorded-response contract tests and `--dry-run` golden plans only | live, after setup; each path labeled "written, not yet executed" above until it has run |
 
 ## Local quickstart
 
@@ -129,11 +171,21 @@ npm run authz:api:local               # the 100-case file through the local API 
 npm run stop:local
 ```
 
+## Tests and evals
+
+```bash
+npm test                    # vitest: the Worker project (Miniflare) and the node project (scripts, doctor, setup plans, budget model)
+npm run test:py             # pytest (the live BigQuery suite and the end-to-end API run are opt-in markers)
+npm run eval:authz          # the 100 authorization cases at the decision point and the 48 warehouse cases on DuckDB
+npm run eval:deletion:ci    # the ci deletion eval and its gate (CI runs it); npm run eval:deletion runs the full profile
+npm run bench:cpu           # CPU of the Worker's hot paths over the generated population (local)
+```
+
 ## Production setup
 
-Everything a script can do is in `npm run setup:prod` (idempotent; `-- --dry-run` prints the plan) and `npm run doctor -- --prod` (prints exactly what is missing, with the fix for each line). The steps only the owner can do (accounts, Zero Trust onboarding, tokens, logins, billing) are listed in [docs/PRODUCTION.md](docs/PRODUCTION.md); production needs no Workers Paid plan.
+Production runs on **Workers Free**: nothing needs Workers Paid, Basin Pipelines or a new Google Cloud project. Everything a script can do is in `npm run setup:prod` (idempotent; `-- --dry-run` prints the plan) and `npm run doctor -- --prod` (prints exactly what is missing, with the fix for each line). The steps only the owner can do are listed in [docs/PRODUCTION.md](docs/PRODUCTION.md): enable billing on the shared Google Cloud project (the BigQuery sandbox has no DML) with a $1 budget alert, add the One-time PIN login method, create the two Cloudflare tokens, write `.secrets/prod.env`, and run the commands in order. The production eval submits one canary deletion alone before the other 11, and the retention cron stays off until its result is committed (`npm run setup:prod -- --only worker --retention-cron on`).
 
-The production executor can run hourly in GitHub Actions (`.github/workflows/executor.yml`, enabled by `npm run setup:prod -- --only github`). GitHub disables scheduled workflows in a public repository after 60 days without repository activity; `npm run doctor -- --prod` reports the workflow's state and the age of its last successful run, and deletions that wait more than 24 hours for the executor fail (and can be retried).
+The production executor can run hourly in GitHub Actions (`.github/workflows/executor.yml`, enabled by `npm run setup:prod -- --only github`), which also copies the audit chain when due. GitHub disables scheduled workflows in a public repository after 60 days without repository activity; `npm run doctor -- --prod` reports the workflow's state and the age of its last successful run, and deletions that wait more than 24 hours for the executor fail (and can be retried).
 
 ## Results
 
@@ -202,6 +254,17 @@ About the two applicability disagreements in the full profile: a team roster is 
 - Verification is independent of deletion (ADR 0003): probes scan whole stores with boundary-aware matching, and the eval oracle shares no code with them.
 - Protected BigQuery tables are merge-only (ADR 0006).
 - Residuals (Iceberg snapshots and orphan files, BigQuery time travel and fail-safe, D1 Time Travel, KV propagation) are tracked separately and never counted in coverage.
+- Workers Free (ADR 0007): every Workflow step and request is sized for 10 ms of CPU and 40 D1 statements; a deletion's R2 work advances through cursor steps whose key-listing digest is re-checked, so no object is skipped; at most 16 deletions start per UTC day; the audit copy is pulled exactly once instead of streamed; a budget test keeps the worst-case day within a 25% share of every per-account allowance.
+
+## Limitations and known gaps
+
+- New HRIS drops are not suppression-filtered on arrival in R2; the suppression list is applied when loading the warehouse and the lake.
+- D1 Time Travel keeps deleted identity rows recoverable for 7 days on Workers Free (tracked as a residual).
+- In the shared Google Cloud project the warehouse verifier scans only this repo's `peoplevault_*` datasets: a copy someone places in another repo's dataset is outside its scope.
+- `subject_ref` and opaque principal ids are kept in the audit log by design (ADR 0005).
+- The 20 planted residues of the full eval are of the types the probes are designed to find; detecting them shows the probes reach every store, not that they would find any possible copy.
+- The CPU sizing rests on measurements on the owner's Mac times 3; the canary deletion and the doctor's CPU p99 line check it in production, and the byte caps are Worker vars.
+- The audit copy lags D1 by up to a day in production (exported when 1,000 events wait or the last copy is a day old).
 
 See [CONTEXT.md](CONTEXT.md) for the glossary and [docs/adr](docs/adr) for decisions.
 
