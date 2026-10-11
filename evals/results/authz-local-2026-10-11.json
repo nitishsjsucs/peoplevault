@@ -1,7 +1,7 @@
 {
   "command": "npm run eval:authz",
   "date": "2026-10-11",
-  "git_sha": "d18af2e4f991f069560456ad2aa371f9f0781b20",
+  "git_sha": "894f45215fcefacb49786fba0a7d78c35ed4e4ea",
   "git_dirty": false,
   "environment": "local (Miniflare, DuckDB, pyiceberg SqlCatalog)",
   "versions": {
