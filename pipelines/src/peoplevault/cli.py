@@ -193,6 +193,28 @@ def authz_warehouse(target: str, write_results: bool, pdp_report: str | None, ce
         raise SystemExit(1)
 
 
+@authz.command("api")
+@click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
+@click.option("--allow-writes", is_flag=True, help="also run the cases that create a deletion request and place and release a legal hold")
+@click.option("--start", is_flag=True, help="local only: start wrangler dev and pv serve for the run, and stop them afterwards")
+@click.option("--write-results", is_flag=True, help="write evals/results/authz-api-local-<date>.json or authz-prod-<date>.json")
+def authz_api(target: str, allow_writes: bool, start: bool, write_results: bool) -> None:
+    """The case file through the deployed API against the full synthetic population (npm run authz:prod)."""
+    from peoplevault.authz.api_runner import run_api
+
+    result = run_api(target, allow_writes=allow_writes, start=start, write_results=write_results)
+    api = result["layers"]["api"]
+    click.echo(f"authz api ({target}): {api['passed']}/{api['runnable']} runnable cases passed, {api['skipped']} skipped")
+    for reason, n in sorted(result["skip_reasons"].items()):
+        click.echo(f"  skipped {n}: {reason}")
+    for f in result["failures"]:
+        click.echo(f"FAIL {f['id']}: {f['reason']}", err=True)
+    if result.get("written"):
+        click.echo(f"wrote {result['written']}")
+    if api["failed"]:
+        raise SystemExit(1)
+
+
 def _prod_project() -> str:
     from peoplevault import config
 
@@ -260,17 +282,31 @@ def eval_deletion(profile: str, no_seed: bool) -> None:
 
 
 @main.command()
+@click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
 @click.option("--with-extracts", is_flag=True, help="also create the 6 analytics extracts as analyst-01")
-def warmup(with_extracts: bool) -> None:
-    """Warms the 420 KV entries of kv_warmup.json through the running local Worker (and creates the extracts)."""
-    from peoplevault.evals.client import LocalClient
+def warmup(target: str, with_extracts: bool) -> None:
+    """Warms KV entries of kv_warmup.json through the Worker (and creates the extracts).
+
+    Local: all 420 entries, minting a dev token for every principal. Production: only the entries whose principal has an
+    Access service token (the four persona principals); the rest need a sign-in that a script cannot do."""
     from peoplevault.evals.warmup import create_extracts, load_truth, warm_kv
 
-    client = LocalClient(load_truth("principals.json"))
-    out = warm_kv(client)
+    if target == "prod":
+        from peoplevault import config
+        from peoplevault.evals.client import ProdClient
+        from peoplevault.evals.prod import PROD_GENERATED
+
+        client = ProdClient(config.prod_env())
+        entries = [w for w in json.loads((PROD_GENERATED / "truth" / "kv_warmup.json").read_text()) if w["principal"] in client.principals()]
+        out = {**warm_kv(client, entries), "reachable_with_service_tokens": len(entries)}
+    else:
+        from peoplevault.evals.client import LocalClient
+
+        client = LocalClient(load_truth("principals.json"))
+        out = warm_kv(client)
     if with_extracts:
         out.update(create_extracts(client))
-    click.echo(f"warmup: {out}")
+    click.echo(f"warmup ({target}): {out}")
     if out["failed"]:
         raise SystemExit(1)
 

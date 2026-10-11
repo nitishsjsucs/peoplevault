@@ -41,15 +41,17 @@ class LocalClient:
         self._tokens[principal_id] = (now + 3600, tok)
         return tok
 
-    def request(self, principal_id: str, method: str, path: str, body: dict | None = None) -> httpx.Response:
+    def request(self, principal_id: str, method: str, path: str, body: dict | None = None, omit_csrf: bool = False) -> httpx.Response:
         headers = {"Cf-Access-Jwt-Assertion": self.token(principal_id)}
         if method != "GET":
-            headers.update({"X-PV-Requested-With": "peoplevault", "content-type": "application/json"})
+            headers.update({"content-type": "application/json", **({} if omit_csrf else {"X-PV-Requested-With": "peoplevault"})})
         return self.http.request(method, f"{self.base}{path}", headers=headers, json=body)
 
 
 # principal id -> suffix of the PV_CF_ACCESS_CLIENT_{ID,SECRET}_<suffix> pair recorded by setup:prod (seed:prod maps them)
 PROD_PRINCIPAL_TOKENS = {"privacy-01": "PRIVACY", "hrbp-01": "HR", "mgr-001": "MANAGER", "analyst-01": "ANALYST"}
+# the executor's service token, used by `pv authz api --target prod` for the executor-route cases
+PROD_EXECUTOR = "executor"
 
 
 class ProdClient:
@@ -67,14 +69,21 @@ class ProdClient:
                 self.creds[principal] = (cid, secret)
         if "privacy-01" not in self.creds:
             raise RuntimeError("the privacy persona's service token is missing from .secrets/prod.env (run `npm run setup:prod`)")
+        cid, secret = env.get("PV_CF_ACCESS_CLIENT_ID_EXECUTOR"), env.get("PV_CF_ACCESS_CLIENT_SECRET_EXECUTOR")
+        self.executor_creds = (cid, secret) if cid and secret else None
         self.http = http or httpx.Client(timeout=120.0)
 
     def principals(self) -> set[str]:
         return set(self.creds)
 
-    def request(self, principal_id: str, method: str, path: str, body: dict | None = None) -> httpx.Response:
-        cid, secret = self.creds[principal_id]
+    def request(self, principal_id: str, method: str, path: str, body: dict | None = None, omit_csrf: bool = False) -> httpx.Response:
+        if principal_id == PROD_EXECUTOR:
+            if not self.executor_creds:
+                raise RuntimeError("the executor's service token is missing from .secrets/prod.env (run `npm run setup:prod`)")
+            cid, secret = self.executor_creds
+        else:
+            cid, secret = self.creds[principal_id]
         headers = {"CF-Access-Client-Id": cid, "CF-Access-Client-Secret": secret}
         if method != "GET":
-            headers.update({"X-PV-Requested-With": "peoplevault", "content-type": "application/json"})
+            headers.update({"content-type": "application/json", **({} if omit_csrf else {"X-PV-Requested-With": "peoplevault"})})
         return self.http.request(method, f"{self.base}{path}", headers=headers, json=body)

@@ -114,6 +114,7 @@ npm run doctor -- --prod
 uv run --project pipelines pv authz warehouse --target bigquery --write-results --ceiling-probes
 uv run --directory pipelines pytest -m bigquery                    # the live BigQuery suite (48 cases, 37 ceiling probes, controls, time travel)
 uv run --project pipelines pv eval deletion --profile prod         # once, on the freshly seeded project; runs the production executor itself
+npm run authz:prod -- --allow-writes                               # the 100-case file through Access with the service tokens (after the eval: it creates a deletion request and a hold)
 uv run --project pipelines pv executor run --target prod --drain   # P0: the production executor runs from this Mac (P1 executor.yml automates it)
 # 48 hours later (BigQuery time travel window) and again after 1 day for Basin snapshot expiration
 uv run --project pipelines pv residuals check --target prod
@@ -140,6 +141,8 @@ If a run leaves the probe dataset behind (for example after an interrupted ceili
 | Warehouse authorization | `pv authz warehouse --target bigquery --ceiling-probes` | written, not yet executed |
 | Executor, residual check, lake self-test | `pv executor run --target prod`, `pv residuals check --target prod`, `pv lake init --target prod` | written, not yet executed |
 | Production deletion eval | `pv eval deletion --profile prod` | written, not yet executed; R2 objects are listed and read through `GET /accounts/{id}/r2/buckets/{bucket}/objects[/{key}]` with wrangler's OAuth token, and that endpoint's pagination fields are unverified |
+| Authorization cases through Access (P1) | `npm run authz:prod [-- --allow-writes]` (`pv authz api --target prod`) | written, not yet executed. Rehearsed against the local stack with the full synthetic population (`npm run authz:api:local`). It runs every case it can with the four persona service tokens and the executor's, re-resolving subjects from the production population's ground truth (`data/generated-prod`, written by `seed:prod`), and reports the exact runnable count with a reason for each skipped case: forged, missing or unmapped tokens cannot pass Access, the fixture's other principals have no token, some selectors have no qualifying subject, and the deletion and hold cases need `--allow-writes` |
+| Production warm-up (P1) | step 9 of `npm run seed:prod` (`pv warmup --target prod --with-extracts`) | written, not yet executed; creates the 6 analytics extracts as `analyst-01` and warms the cache entries whose principal has a service token (the others need an interactive sign-in) |
 | Audit stream (P1) | `npm run setup:prod -- --only cloudflare` (stream, sink, pipeline), the Worker's `AUDIT_STREAM` binding | written, not yet executed; the record format is checked against `infra/cloudflare/audit-stream.schema.json` before each send (events that do not match a stream's schema are dropped by Pipelines after ingestion), and the Worker side is tested with a fake binding |
 | Scheduled executor (P1) | `.github/workflows/executor.yml`, `npm run setup:prod -- --only github`, `pv setup actions-key` | written, not yet executed (the repository has not been pushed); the workflow's structure, the secrets it reads and the doctor's schedule checks are tested |
 

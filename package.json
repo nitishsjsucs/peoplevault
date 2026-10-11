@@ -29,7 +29,9 @@
     "setup:prod": "node scripts/setup-prod.ts",
     "seed:prod": "node scripts/seed-prod.ts",
     "deploy:check": "wrangler deploy --dry-run -c infra/cloudflare/wrangler.production.template.jsonc",
-    "deploy": "node scripts/deploy-prod.ts"
+    "deploy": "node scripts/deploy-prod.ts",
+    "authz:prod": "uv run --project pipelines pv authz api --target prod --write-results",
+    "authz:api:local": "uv run --project pipelines pv authz api --target local --start --allow-writes --write-results"
   },
   "dependencies": {
     "hono": "4.13.13",

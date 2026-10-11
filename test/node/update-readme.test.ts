@@ -56,6 +56,24 @@ describe("readme:results", () => {
     expect(() => renderResults([deletionFile({ git_dirty: true })])).toThrow(/uncommitted/);
   });
 
+  it("renders the API layer with its runnable count and every skip reason", () => {
+    const f: ResultFile = {
+      name: "authz-api-local-2026-10-10.json",
+      data: {
+        ...header,
+        command: "npm run authz:api:local",
+        kind: "authz",
+        cases_total: 100,
+        layers: { api: { target: "local", runnable: 85, passed: 85, failed: 0, skipped: 15 } },
+        skip_reasons: { "forged tokens cannot pass Cloudflare Access": 10, "principal mgr-003 has no token": 5 },
+      },
+    };
+    const text = renderResults([f]);
+    expect(text).toContain("**Authorization cases** (`npm run authz:api:local`, 2026-10-10; local (Miniflare, DuckDB, pyiceberg SqlCatalog))");
+    expect(text).toContain("- Through the API (local Worker, full synthetic population, one token per persona principal and the executor): 85 of 85 runnable cases passed; 15 of 100 not runnable there");
+    expect(text).toContain("  - 10 skipped: forged tokens cannot pass Cloudflare Access");
+  });
+
   it("keeps the latest file per kind and profile", () => {
     const old = deletionFile({ date: "2026-10-09", requests: { total: 1, by_status: { failed: 1 } } });
     old.name = "deletion-ci-2026-10-09.json";

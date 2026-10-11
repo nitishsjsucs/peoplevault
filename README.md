@@ -28,6 +28,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Production executor, residual check and Basin Catalog self-test | written, not yet executed |
 | Production deletion eval profile (`pv eval deletion --profile prod`) | written, not yet executed |
 | Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
+| The 100 authorization cases through the API with one token per persona principal (`npm run authz:prod` through Cloudflare Access; rehearsed locally with `npm run authz:api:local`) | built and tested; the production run is written, not yet executed |
 | Audit copy through Basin Pipelines (stream `pv_audit_events`, sink into the Basin Catalog table `governance.audit_events`) | written, not yet executed; locally the stream is disabled and the Worker's stream code is tested with a fake binding |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
@@ -121,6 +122,7 @@ npm run seed:local                    # synthesize, migrate, load, warm caches, 
 npm run dev                           # wrangler dev on 127.0.0.1:8793 and pv serve (shim and executor) on 8893
 npm run dev:token -- privacy-01       # a local Access-style JWT for a persona
 npm run eval:deletion:ci              # the ci deletion eval (seeds again, then oracle and gate)
+npm run authz:api:local               # the 100-case file through the local API against the full population
 npm run stop:local
 ```
 

@@ -58,6 +58,7 @@ jobs:
       - run: uv sync --project pipelines --locked
       - run: npm run dev:keys
       - run: npm run eval:deletion:ci # seeds once (--fresh) itself, then runs the ci profile; exits 1 if its gate fails
+      - run: uv run --project pipelines pv authz api --target local --start --allow-writes # the case file through the API, full population
       - if: always()
         uses: actions/upload-artifact@v7
         with:
