@@ -75,6 +75,15 @@ describe("purpose data routes", () => {
     expect(last).toEqual({ actor: "mgr-unlinked", decision: "deny", reason: "action_not_permitted" });
   });
 
+  it("audits a warehouse refusal of an allowed read as a deny with the error code", async () => {
+    const { WarehouseError } = await import("../../src/worker/warehouse/client.ts");
+    const app = buildApp({ warehouseFactory: () => ({ run: async () => { throw new WarehouseError("access_denied"); } }) });
+    const res = await call(app, "hrbp-01", "GET", "/api/v1/purposes/employee_relations/employees");
+    expect(res.status).toBe(502);
+    const last = await env.DB.prepare("SELECT actor, purpose, action, decision, reason FROM audit_events ORDER BY seq DESC LIMIT 1").first();
+    expect(last).toEqual({ actor: "hrbp-01", purpose: "employee_relations", action: "list_employees", decision: "deny", reason: "warehouse_access_denied" });
+  });
+
   it("returns 404 for out-of-scope, unknown and wrong-kind refs (no existence oracle)", async () => {
     const { app } = worldApp();
     const outside = subject("hrbp-01", "outside_unit", 0);

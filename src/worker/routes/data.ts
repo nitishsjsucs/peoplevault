@@ -79,12 +79,17 @@ function rejectUnknownParams(c: Context<AppEnv>, allowed: string[]): string | nu
   return null;
 }
 
-async function withWarehouse<T>(c: Context<AppEnv>, fn: () => Promise<T>): Promise<T | Response> {
+/** Runs the warehouse part of an allowed request. A warehouse failure is audited as a deny with the error code (an
+ * `access_denied` here is the warehouse ceiling refusing a query the Worker allowed), so every decision stays in the
+ * hash-chained log. */
+async function withWarehouse<T>(c: Context<AppEnv>, at: { purpose: string; action: Action; route: string; subjectRef?: string }, fn: () => Promise<T>): Promise<T | Response> {
   try {
     return await fn();
   } catch (e) {
     if (e instanceof WarehouseError) {
       console.error("warehouse_error", e.code);
+      const code = /^[a-z0-9_]{1,48}$/.test(e.code) ? e.code : "other";
+      await audit(c, { purpose: at.purpose, action: at.action, route: at.route, subjectRef: at.subjectRef, decision: "deny", reason: `warehouse_${code}` });
       return errorJson(c, 502, e.code);
     }
     throw e;
@@ -100,7 +105,7 @@ data.get(R.list, async (c) => {
   const q = queryFor(d.purpose!, "list");
   if (!q) return denyAfter(c, purpose, "list_employees", R.list, 404, "no_list_for_purpose");
   const cursor = c.req.query("cursor") ?? "";
-  const out = await withWarehouse(c, async () => {
+  const out = await withWarehouse(c, { purpose, action: "list_employees", route: R.list }, async () => {
     const res = await c.get("warehouse").run(q.id, d.purpose!, pickParams(q, { ...(await scopeParams(c, d)), cursor, limit: PAGE }));
     const refKind = POLICY.purposes[d.purpose!].ref as RefKind;
     const hidden = await suppressedRefs(c.env.DB, refKind);
@@ -138,7 +143,7 @@ data.get(R.profile, async (c) => {
     await audit(c, { purpose, action: "read_profile", route: R.profile, subjectRef: ident.subjectRef, decision: "allow", reason: "ok", rowCount: 1, detail: { cache: "hit" } });
     return c.json({ profile: cached.profile, columns: columnsFor(q) });
   }
-  const out = await withWarehouse(c, async () => {
+  const out = await withWarehouse(c, { purpose, action: "read_profile", route: R.profile, subjectRef: ident.subjectRef }, async () => {
     const params: QueryParams = { ...(await scopeParams(c, d)), [refKind]: ref };
     const res = await c.get("warehouse").run(q.id, d.purpose!, pickParams(q, params));
     return res.rows;
@@ -171,7 +176,7 @@ data.get(R.team, async (c) => {
   if (!roster) {
     cache = "miss";
     const q = queryFor("team_management", "list")!;
-    const rows = await withWarehouse(c, async () => runAll(c, q, "team_management", await scopeParams(c, d)));
+    const rows = await withWarehouse(c, { purpose: "team_management", action: "list_employees", route: R.team }, async () => runAll(c, q, "team_management", await scopeParams(c, d)));
     if (rows instanceof Response) return rows;
     roster = filterColumns(rows, columnsFor(q))
       .filter((r) => !hidden.has(String(r.employee_ref)))
@@ -194,7 +199,7 @@ data.get(R.dataset, async (c) => {
   if (rejectUnknownParams(c, allowed)) return denyAfter(c, "workforce_analytics", "read_dataset", R.dataset, 400, "unsupported_parameter");
   const month = c.req.query("month") ?? "";
   if (name === "attrition_features" && !/^\d{4}-\d{2}-01$/.test(month)) return denyAfter(c, "workforce_analytics", "read_dataset", R.dataset, 400, "month_required");
-  const out = await withWarehouse(c, async () => {
+  const out = await withWarehouse(c, { purpose: "workforce_analytics", action: "read_dataset", route: R.dataset }, async () => {
     const params: QueryParams = name === "attrition_features" ? { month, cursor: c.req.query("cursor") ?? "", limit: PAGE } : {};
     const res = await c.get("warehouse").run(q.id, "workforce_analytics", pickParams(q, params));
     const hidden = await suppressedRefs(c.env.DB, "analytics_id");
@@ -216,7 +221,7 @@ data.post(R.extract, async (c) => {
   if (!body.success) return denyAfter(c, "workforce_analytics", "create_extract", R.extract, 400, "invalid_body");
   const month = body.data.month;
   const q = queryFor("workforce_analytics", "attrition_features")!;
-  const rows = await withWarehouse(c, async () => runAll(c, q, "workforce_analytics", { month: `${month}-01` }));
+  const rows = await withWarehouse(c, { purpose: "workforce_analytics", action: "create_extract", route: R.extract }, async () => runAll(c, q, "workforce_analytics", { month: `${month}-01` }));
   if (rows instanceof Response) return rows;
   const hidden = await suppressedRefs(c.env.DB, "analytics_id");
   const kept = filterColumns(rows, columnsFor(q)).filter((r) => !hidden.has(String(r.analytics_id)));
@@ -239,7 +244,7 @@ data.post(R.lookup, async (c) => {
   if (!body.success) return denyAfter(c, purpose, "identity_lookup", R.lookup, 400, "invalid_query");
   const q = queryFor(d.purpose!, "identity_lookup");
   if (!q) return denyAfter(c, purpose, "identity_lookup", R.lookup, 404, "not_found");
-  const out = await withWarehouse(c, async () => {
+  const out = await withWarehouse(c, { purpose, action: "identity_lookup", route: R.lookup }, async () => {
     const res = await c.get("warehouse").run(q.id, d.purpose!, { q: body.data.q });
     const hidden = await suppressedRefs(c.env.DB, "employee_ref");
     return filterColumns(res.rows, columnsFor(q)).filter((r) => !hidden.has(String(r.employee_ref)));
