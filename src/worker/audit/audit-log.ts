@@ -41,7 +41,8 @@ export interface AuditRow {
 }
 
 export interface AuditLog {
-  append(e: AuditEventInput): Promise<{ seq: number; hash: string; id: string }>;
+  /** Appends one event; returns the stored row (used by the P1 audit stream). */
+  append(e: AuditEventInput): Promise<{ seq: number; hash: string; id: string; row: AuditRow }>;
   verify(): Promise<{ ok: boolean; length: number; brokenAtSeq?: number }>;
 }
 
@@ -121,7 +122,7 @@ export function createAuditLog(db: D1Database, now: () => Date = () => new Date(
           .run();
         if (res.meta.changes === 1) {
           const seq = Number(res.meta.last_row_id);
-          return { seq, hash, id };
+          return { seq, hash, id, row: { seq, ...row, prev_hash: prev, hash } };
         }
         await new Promise((r) => setTimeout(r, Math.floor(Math.random() * 20) + 1));
       }

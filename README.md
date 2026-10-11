@@ -28,6 +28,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Production executor, residual check and Basin Catalog self-test | written, not yet executed |
 | Production deletion eval profile (`pv eval deletion --profile prod`) | written, not yet executed |
 | Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
+| Audit copy through Basin Pipelines (stream `pv_audit_events`, sink into the Basin Catalog table `governance.audit_events`) | written, not yet executed; locally the stream is disabled and the Worker's stream code is tested with a fake binding |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
 
@@ -57,6 +58,7 @@ flowchart LR
   R2D[("R2 pv-derived<br/>analytics extracts")]
   KV[("KV pv-cache<br/>profile cards, team rosters")]
   Q[["Queue pv-retention-sweep<br/>+ pv-retention-dlq"]]
+  PIPE["Basin Pipelines stream<br/>pv_audit_events (production)"]
   subgraph Python["Python (uv): executor, loaders, verifiers"]
     EXE["Executor loop<br/>claims tasks over HTTPS"]
     VER["Warehouse and lake verifiers"]
@@ -78,6 +80,7 @@ flowchart LR
   API -->|"local: named query"| SHIM --> DUCK
   API --> KV
   API --> AUDIT --> D1
+  AUDIT -.-> PIPE -.-> BCAT
   API -->|"create"| WF1
   WF2 --> Q --> QC -->|"createBatch"| WF1
   WF1 --> R2X & R2D & KV & D1
@@ -102,7 +105,7 @@ flowchart LR
 | Warehouse | DuckDB file, dbt-duckdb, shim on 8893 with emulated ceilings | BigQuery US, dbt-bigquery, purpose service accounts, authorized views and table functions, policy tags, data masking, row access policies |
 | Recovery windows | modeled from the 48 h setting (labeled modeled) | observed with time travel queries; fail-safe modeled |
 | Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake`, managed snapshot expiration |
-| Audit copy | D1 only; stream disabled | D1 (a Basin Pipelines copy is planned, P1) |
+| Audit copy | D1 only; stream disabled (Miniflare's pipeline binding is a no-op, so it is not bound) | D1, plus every event streamed through Basin Pipelines into the Basin Catalog Iceberg table `governance.audit_events` |
 | Executor | `pv serve` thread | `pv executor run --target prod` from the owner's machine (impersonating `pv-executor`), or hourly in GitHub Actions (`executor.yml`, with a `pv-executor` key held only as a repository secret) |
 | Production API calls | recorded-response contract tests and `--dry-run` golden plans only | live, after setup |
 

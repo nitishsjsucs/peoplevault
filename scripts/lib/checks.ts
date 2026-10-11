@@ -201,6 +201,16 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
       hasD1 = false;
     }
     out.push(hasD1 ? ok(R, "D1", "pv-control") : missing(R, "D1", "pv-control missing", "npm run setup:prod"));
+    for (const [label, kind, name] of [["audit stream", ["streams"], "pv_audit_events"], ["audit sink", ["sinks"], "pv_audit_sink"], ["audit pipeline", [], "pv_audit_pipeline"]] as const) {
+      const res = await d.run(d.wrangler, ["basin", "pipelines", ...kind, "list", "--json", "--per-page", "100"]);
+      let names: string[] = [];
+      try {
+        names = (jsonFrom(res.stdout) as { name: string }[]).map((x) => x.name);
+      } catch {
+        names = [];
+      }
+      out.push(names.includes(name) ? ok(R, label, name) : missing(R, label, `${name} missing (Basin Pipelines copy of the audit log)`, "npm run setup:prod -- --only cloudflare"));
+    }
   }
   out.push(env.PV_R2_CATALOG_TOKEN ? ok(R, "PV_R2_CATALOG_TOKEN", "set (checked by the Google Cloud group's lake check)") : missing(R, "PV_R2_CATALOG_TOKEN", "not set", "create an R2 API token (docs/PRODUCTION.md step 8) and add it to .secrets/prod.env"));
   const W = "Worker";

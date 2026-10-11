@@ -11,17 +11,20 @@ import { principalMappingSql } from "../../scripts/seed-prod.ts";
 describe("production helpers", () => {
   it("renders the template and refuses empty values", () => {
     const t = readFileSync(TEMPLATE, "utf8");
-    const out = renderConfig(t, { d1Id: "d1", kvId: "kv", accessTeamDomain: "team.cloudflareaccess.com", accessAud: "aud", gcpProject: "proj" });
+    const out = renderConfig(t, { d1Id: "d1", kvId: "kv", accessTeamDomain: "team.cloudflareaccess.com", accessAud: "aud", gcpProject: "proj", streamId: "stream-1" });
+    expect(out).toContain('"stream": "stream-1"');
+    expect(out).toContain('"AUDIT_STREAM_MODE": "pipelines"');
     expect(out).not.toMatch(/__[A-Z0-9_]+__/);
     expect(deployProblems(out, ["GCP_GATEWAY_SA_KEY", "PV_PSEUDONYM_MASTER_KEY"])).toEqual([]);
-    expect(() => renderConfig(t, { d1Id: "", kvId: "kv", accessTeamDomain: "t", accessAud: "a", gcpProject: "p" })).toThrow(/__D1_ID__/);
+    expect(() => renderConfig(t, { d1Id: "", kvId: "kv", accessTeamDomain: "t", accessAud: "a", gcpProject: "p", streamId: "s" })).toThrow(/__D1_ID__/);
+    expect(() => renderConfig(t, { d1Id: "d", kvId: "kv", accessTeamDomain: "t", accessAud: "a", gcpProject: "p", streamId: "" })).toThrow(/__STREAM_ID__/);
   });
 
   it("refuses to deploy an unrendered config, invocation logs or the wrong secrets", () => {
     const t = readFileSync(TEMPLATE, "utf8");
     expect(deployProblems(null, [])).toHaveLength(2);
     expect(deployProblems(t, ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"])[0]).toMatch(/placeholders left/);
-    const logsOn = renderConfig(t, { d1Id: "d", kvId: "k", accessTeamDomain: "t", accessAud: "a", gcpProject: "p" }).replace('"invocation_logs": false', '"invocation_logs": true');
+    const logsOn = renderConfig(t, { d1Id: "d", kvId: "k", accessTeamDomain: "t", accessAud: "a", gcpProject: "p", streamId: "s" }).replace('"invocation_logs": false', '"invocation_logs": true');
     expect(deployProblems(logsOn, ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"])).toEqual(["observability.logs.invocation_logs must be false"]);
     expect(deployProblems(logsOn.replace('"invocation_logs": true', '"invocation_logs": false'), ["PV_PSEUDONYM_MASTER_KEY", "DEV_ACCESS_JWKS"])[0]).toMatch(/exactly/);
     expect(deployArgs()).toEqual(["deploy", "-c", "infra/cloudflare/wrangler.production.jsonc", "--secrets-file", ".secrets/worker-secrets.env"]);

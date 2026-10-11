@@ -146,6 +146,30 @@ describe("doctor --prod", () => {
   });
 });
 
+describe("doctor --prod: Basin Pipelines audit stream", () => {
+  it("logged in: stream, sink and pipeline are each checked through wrangler --json listings", async () => {
+    const list = (kind: string[]) => `wrangler basin pipelines ${[...kind, "list"].join(" ")} --json --per-page 100`;
+    const r = await prodChecks(
+      deps({
+        env: { CLOUDFLARE_ACCOUNT_ID: "acct" },
+        commands: {
+          "wrangler whoami --json": ok(JSON.stringify({ loggedIn: true, accounts: [{ id: "acct", name: "a" }] })),
+          "wrangler auth token --json": ok(JSON.stringify({ token: "oauth-value-zq" })),
+          "wrangler d1 list --json": ok(JSON.stringify([{ name: "pv-control", uuid: "u" }])),
+          [list(["streams"])]: ok(JSON.stringify([{ id: "s1", name: "pv_audit_events" }])),
+          [list(["sinks"])]: ok(JSON.stringify([])),
+          [list([])]: ok(JSON.stringify([{ id: "p1", name: "pv_audit_pipeline" }])),
+        },
+      }),
+    );
+    const by = Object.fromEntries(r.map((x) => [x.name, x]));
+    expect(by["audit stream"]).toMatchObject({ status: "ok", detail: "pv_audit_events" });
+    expect(by["audit sink"]).toMatchObject({ status: "missing", fix: "npm run setup:prod -- --only cloudflare" });
+    expect(by["audit pipeline"]).toMatchObject({ status: "ok" });
+    expect(render(r)).not.toContain("oauth-value-zq");
+  });
+});
+
 describe("doctor --prod: the scheduled executor on GitHub", () => {
   const NOW = Date.parse("2026-10-10T12:00:00Z");
   const healthy: GithubState = {

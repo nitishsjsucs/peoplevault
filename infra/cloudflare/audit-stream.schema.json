@@ -1,0 +1,20 @@
+{
+  "fields": [
+    { "name": "seq", "type": "int64", "required": true },
+    { "name": "id", "type": "string", "required": true },
+    { "name": "ts", "type": "timestamp", "required": true },
+    { "name": "actor", "type": "string", "required": true },
+    { "name": "actor_kind", "type": "string", "required": true },
+    { "name": "persona", "type": "string", "required": false },
+    { "name": "purpose", "type": "string", "required": false },
+    { "name": "action", "type": "string", "required": true },
+    { "name": "route", "type": "string", "required": false },
+    { "name": "subject_ref", "type": "string", "required": false },
+    { "name": "request_id", "type": "string", "required": false },
+    { "name": "decision", "type": "string", "required": true },
+    { "name": "reason", "type": "string", "required": true },
+    { "name": "row_count", "type": "int64", "required": false },
+    { "name": "prev_hash", "type": "string", "required": true },
+    { "name": "hash", "type": "string", "required": true }
+  ]
+}

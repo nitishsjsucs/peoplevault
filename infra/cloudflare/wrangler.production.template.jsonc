@@ -32,12 +32,15 @@
     { "binding": "DERIVED", "bucket_name": "pv-derived" }
   ],
   "kv_namespaces": [{ "binding": "CACHE", "id": "__KV_ID__" }],
+  // Basin Pipelines stream pv_audit_events (P1): a copy of every audit event, written by its sink into the Basin Catalog
+  // Iceberg table governance.audit_events. D1 stays the source of truth. `stream` replaces the deprecated `pipeline` key.
+  "pipelines": [{ "binding": "AUDIT_STREAM", "stream": "__STREAM_ID__" }],
   "triggers": { "crons": ["0 3 * * *"] },
   "vars": {
     "PV_ENV": "production",
     "AUTH_MODE": "access",
     "WAREHOUSE_MODE": "bigquery",
-    "AUDIT_STREAM_MODE": "disabled",
+    "AUDIT_STREAM_MODE": "pipelines",
     "KV_PROPAGATION_WAIT": "70 seconds",
     "EXECUTOR_WAIT_TIMEOUT": "24 hours",
     "RETENTION_AS_OF": "",

@@ -26,7 +26,7 @@ Everything a script can do is in `npm run setup:prod`. This section lists, in or
 | 16 | Choice | After the first `setup:prod`, copy `PV_PSEUDONYM_MASTER_KEY` from `.secrets/worker-secrets.env` into a password manager | password manager | free | pseudonym stability; losing it orphans every pseudonym | |
 | 17 | GitHub | Push the repository (`git push origin main`; you publish it), then answer yes when `npm run setup:prod -- --only github` asks to write the executor secrets and `PV_PROD_ENABLED=true`. Optional but recommended: without it, deletions wait for you to run `pv executor run --target prod --drain` and fail after 24 hours | terminal | free (Actions minutes are free for public repositories) | the hourly production executor (`executor.yml`) and the daily residual check | GitHub docs on disabling and enabling workflows |
 
-Not needed for v1: Workers AI and AI Gateway (P1, no resume claim depends on them) and the Basin Pipelines stream, sink and pipeline (P1; created by `setup:prod` once that code exists, no extra manual step).
+Not needed for v1: Workers AI and AI Gateway (P1, no resume claim depends on them). The Basin Pipelines audit stream (P1) needs no extra manual step: `setup:prod` creates the stream `pv_audit_events`, the sink `pv_audit_sink` (into the Basin Catalog table `governance.audit_events`, which the sink creates, authenticated with `PV_R2_CATALOG_TOKEN` from step 8) and the pipeline `pv_audit_pipeline`, and renders the stream id into the Worker config; it needs Workers Paid (step 2).
 
 ### The scheduled executor (`executor.yml`, P1)
 
@@ -140,6 +140,7 @@ If a run leaves the probe dataset behind (for example after an interrupted ceili
 | Warehouse authorization | `pv authz warehouse --target bigquery --ceiling-probes` | written, not yet executed |
 | Executor, residual check, lake self-test | `pv executor run --target prod`, `pv residuals check --target prod`, `pv lake init --target prod` | written, not yet executed |
 | Production deletion eval | `pv eval deletion --profile prod` | written, not yet executed; R2 objects are listed and read through `GET /accounts/{id}/r2/buckets/{bucket}/objects[/{key}]` with wrangler's OAuth token, and that endpoint's pagination fields are unverified |
+| Audit stream (P1) | `npm run setup:prod -- --only cloudflare` (stream, sink, pipeline), the Worker's `AUDIT_STREAM` binding | written, not yet executed; the record format is checked against `infra/cloudflare/audit-stream.schema.json` before each send (events that do not match a stream's schema are dropped by Pipelines after ingestion), and the Worker side is tested with a fake binding |
 | Scheduled executor (P1) | `.github/workflows/executor.yml`, `npm run setup:prod -- --only github`, `pv setup actions-key` | written, not yet executed (the repository has not been pushed); the workflow's structure, the secrets it reads and the doctor's schedule checks are tested |
 
 ## What the scripts cannot do

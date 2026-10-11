@@ -32,6 +32,17 @@ export const GROUPS = ["cloudflare", "gcp", "worker", "access", "data", "github"
 export type Group = (typeof GROUPS)[number];
 export const BUCKETS = ["pv-source-exports", "pv-derived", "pv-lake"];
 export const QUEUES = ["pv-retention-sweep", "pv-retention-dlq"];
+/** Basin Pipelines audit stream (P1): stream -> pipeline -> sink into the Basin Catalog table governance.audit_events. */
+export const AUDIT_STREAM = "pv_audit_events";
+export const AUDIT_SINK = "pv_audit_sink";
+export const AUDIT_PIPELINE = "pv_audit_pipeline";
+export const STREAM_SCHEMA_REL = "infra/cloudflare/audit-stream.schema.json";
+export const PIPELINE_SQL_REL = "infra/cloudflare/audit-pipeline.sql";
+export function sinkArgs(catalogToken: string): string[] {
+  return ["basin", "pipelines", "sinks", "create", AUDIT_SINK, "--type", "r2-data-catalog", "--bucket", "pv-lake", "--namespace", "governance", "--table", "audit_events", "--catalog-token", catalogToken, "--roll-interval", "300"];
+}
+export const STREAM_ARGS = ["basin", "pipelines", "streams", "create", AUDIT_STREAM, "--schema-file", STREAM_SCHEMA_REL, "--no-http-enabled"];
+export const PIPELINE_ARGS = ["basin", "pipelines", "create", AUDIT_PIPELINE, "--sql-file", PIPELINE_SQL_REL];
 
 export interface SetupState {
   accountId: string | null;
@@ -43,6 +54,9 @@ export interface SetupState {
   kv: { id: string; title: string }[];
   queues: string[];
   catalogEnabled: boolean;
+  streams: { id: string; name: string }[];
+  sinks: { id: string; name: string }[];
+  pipelines: { id: string; name: string }[];
   workerId: string | null;
   workerSecrets: string[];
   accessApp: { id: string; aud: string } | null;
@@ -95,8 +109,9 @@ export function preflight(s: SetupState, env: Record<string, string>): Missing[]
 export function desiredRender(s: SetupState, env: Record<string, string>): string | null {
   const d1Id = s.resources.d1_id;
   const kvId = s.resources.kv_id;
-  if (!d1Id || !kvId || !s.teamDomain || !env.PV_GCP_PROJECT || !existsSync(TEMPLATE)) return null;
-  return renderConfig(readFileSync(TEMPLATE, "utf8"), { d1Id, kvId, accessTeamDomain: s.teamDomain, accessAud: s.accessApp?.aud ?? AUD_PENDING, gcpProject: env.PV_GCP_PROJECT });
+  const streamId = s.resources.audit_stream_id;
+  if (!d1Id || !kvId || !streamId || !s.teamDomain || !env.PV_GCP_PROJECT || !existsSync(TEMPLATE)) return null;
+  return renderConfig(readFileSync(TEMPLATE, "utf8"), { d1Id, kvId, streamId, accessTeamDomain: s.teamDomain, accessAud: s.accessApp?.aud ?? AUD_PENDING, gcpProject: env.PV_GCP_PROJECT });
 }
 
 export function planSetup(s: SetupState, env: Record<string, string>, render: string | null = null): Step[] {
@@ -115,6 +130,11 @@ export function planSetup(s: SetupState, env: Record<string, string>, render: st
   for (const q of QUEUES) if (!s.queues.includes(q)) add("cloudflare", `queue:${q}`, `${W} queues create ${q}`);
   if (!s.catalogEnabled) add("cloudflare", "catalog:enable", `${W} basin catalog enable pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE in .secrets/prod.env)`);
   else if (!env.PV_CATALOG_URI || !env.PV_CATALOG_WAREHOUSE) add("cloudflare", "catalog:record", `GET /client/v4/accounts/${acct(s)}/r2-catalog/pv-lake (records PV_CATALOG_URI and PV_CATALOG_WAREHOUSE)`);
+  const stream = s.streams.find((x) => x.name === AUDIT_STREAM);
+  if (!stream) add("cloudflare", "pipelines:stream", `${W} ${STREAM_ARGS.join(" ")} (records the stream id)`);
+  else if (s.resources.audit_stream_id !== stream.id) add("cloudflare", "pipelines:record", `record the ${AUDIT_STREAM} stream id in .secrets/prod-resources.json`);
+  if (!s.sinks.some((x) => x.name === AUDIT_SINK)) add("cloudflare", "pipelines:sink", `${W} ${sinkArgs("***").join(" ")}`);
+  if (!s.pipelines.some((x) => x.name === AUDIT_PIPELINE)) add("cloudflare", "pipelines:pipeline", `${W} ${PIPELINE_ARGS.join(" ")}`);
   // gcp
   add("gcp", "gcp:setup", "uv run --project pipelines pv setup gcp (idempotent; its own plan: uv run --project pipelines pv setup gcp --dry-run)");
   // worker
@@ -123,7 +143,7 @@ export function planSetup(s: SetupState, env: Record<string, string>, render: st
   if (!s.workerSecretsFile.includes("PV_PSEUDONYM_MASTER_KEY"))
     add("worker", "worker:master-key", "generate PV_PSEUDONYM_MASTER_KEY (32 random bytes) into .secrets/worker-secrets.env, once; copy it to your password manager");
   const renderChanged = render === null || s.renderedText !== render;
-  if (renderChanged) add("worker", "worker:render", `render ${RENDERED_REL} from the template (D1 id, KV id, ACCESS_TEAM_DOMAIN, ACCESS_AUD ${s.accessApp ? "from the Access application" : `= ${AUD_PENDING} until the Access application exists`}, GCP_PROJECT_ID)`);
+  if (renderChanged) add("worker", "worker:render", `render ${RENDERED_REL} from the template (D1 id, KV id, audit stream id, ACCESS_TEAM_DOMAIN, ACCESS_AUD ${s.accessApp ? "from the Access application" : `= ${AUD_PENDING} until the Access application exists`}, GCP_PROJECT_ID)`);
   add("worker", "worker:migrate", `${W} d1 migrations apply pv-control --remote -c ${RENDERED_REL}`);
   const secretsMissing = ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"].some((n) => !s.workerSecrets.includes(n));
   if (!s.workerId || renderChanged || secretsMissing) add("worker", "worker:deploy", `npm run deploy (${W} deploy -c ${RENDERED_REL} --secrets-file .secrets/worker-secrets.env)`);
@@ -217,6 +237,9 @@ export async function gatherState(d: SetupDeps, env: Record<string, string>): Pr
     kv: [],
     queues: [],
     catalogEnabled: false,
+    streams: [],
+    sinks: [],
+    pipelines: [],
     workerId: null,
     workerSecrets: [],
     accessApp: null,
@@ -248,6 +271,10 @@ export async function gatherState(d: SetupDeps, env: Record<string, string>): Pr
       s.catalogEnabled = !!cat && /active|enabled/i.test(cat.status ?? "");
     }
     s.d1 = tryJson<{ name: string; uuid: string }[]>((await d.run(d.wrangler, ["d1", "list", "--json"])).stdout, []);
+    const basin = async (kind: string[]) => tryJson<{ id: string; name: string }[]>((await d.run(d.wrangler, ["basin", "pipelines", ...kind, "list", "--json", "--per-page", "100"])).stdout, []);
+    s.streams = await basin(["streams"]);
+    s.sinks = await basin(["sinks"]);
+    s.pipelines = await basin([]);
     if (s.renderedText && s.workerId) {
       s.workerSecrets = tryJson<{ name: string }[]>((await d.run(d.wrangler, ["secret", "list", "-c", RENDERED_REL, "--format", "json"])).stdout, []).map((x) => x.name);
     }
@@ -287,7 +314,7 @@ async function applyStep(st: Step, s: SetupState, env: Record<string, string>): 
   const accountId = s.accountId!;
   const api = () => new CfApi(accountId, env.PV_CF_API_TOKEN!);
   const parts = st.id.split(":");
-  const key = ["subdomain", "r2", "d1", "kv", "queue", "catalog"].includes(parts[0]!) ? parts[0]! : `${parts[0]}:${parts[1]}`;
+  const key = ["subdomain", "r2", "d1", "kv", "queue", "catalog", "pipelines"].includes(parts[0]!) ? parts[0]! : `${parts[0]}:${parts[1]}`;
   const arg = parts.slice(1).join(":");
   switch (key) {
     case "subdomain": {
@@ -327,6 +354,21 @@ async function applyStep(st: Step, s: SetupState, env: Record<string, string>): 
       if (!c.uri || !c.warehouse) throw new Error("could not read the Catalog URI and Warehouse; copy them from the dashboard (R2, pv-lake, Settings) into .secrets/prod.env as PV_CATALOG_URI and PV_CATALOG_WAREHOUSE");
       upsertEnvFile(PROD_ENV, { PV_CATALOG_URI: c.uri, PV_CATALOG_WAREHOUSE: c.warehouse });
       writeResources({ catalog_uri: c.uri, catalog_warehouse: c.warehouse });
+      return;
+    }
+    case "pipelines": {
+      if (arg === "stream") {
+        const out = await wrangler(STREAM_ARGS);
+        const id = out.stdout.match(/with id '([^']+)'/)?.[1];
+        if (!id) throw new Error(`could not read the stream id; run setup again to record it from \`wrangler basin pipelines streams list\``);
+        writeResources({ audit_stream_id: id });
+      } else if (arg === "record") {
+        const stream = s.streams.find((x) => x.name === AUDIT_STREAM);
+        if (stream) writeResources({ audit_stream_id: stream.id });
+      } else if (arg === "sink") {
+        if (!env.PV_R2_CATALOG_TOKEN) throw new Error("PV_R2_CATALOG_TOKEN is required for the audit sink");
+        await wrangler(sinkArgs(env.PV_R2_CATALOG_TOKEN)); // the token is an argument only; run() never prints argv
+      } else await wrangler(PIPELINE_ARGS);
       return;
     }
     case "gcp:setup": {
