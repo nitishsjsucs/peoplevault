@@ -1,0 +1,77 @@
+{
+  "command": "npm run eval:authz",
+  "date": "2026-10-10",
+  "git_sha": "01893b9fc1ad21c3403d97d008094e1b8e57ca47",
+  "git_dirty": false,
+  "environment": "local (Miniflare, DuckDB, pyiceberg SqlCatalog)",
+  "versions": {
+    "wrangler": "4.149.0",
+    "dbt-core": "1.12.5",
+    "dbt-duckdb": "1.11.0",
+    "duckdb": "1.5.6",
+    "pyiceberg": "0.12.0"
+  },
+  "kind": "authz",
+  "cases_total": 100,
+  "layers": {
+    "pdp": {
+      "passed": 100,
+      "total": 100,
+      "runner": "vitest test/worker/authz.cases.test.ts (Worker app, fixture world, FakeWarehouse over real DuckDB view rows)"
+    },
+    "warehouse": {
+      "passed": 48,
+      "total": 48,
+      "runner": "pv authz warehouse --target local (DuckDB purpose views through the shim query function)",
+      "backend": "duckdb"
+    }
+  },
+  "by_category": {
+    "A": {
+      "cases": 12,
+      "pdp_passed": 12,
+      "warehouse_cases": 0,
+      "warehouse_passed": 0
+    },
+    "B": {
+      "cases": 15,
+      "pdp_passed": 15,
+      "warehouse_cases": 0,
+      "warehouse_passed": 0
+    },
+    "C": {
+      "cases": 30,
+      "pdp_passed": 30,
+      "warehouse_cases": 30,
+      "warehouse_passed": 30
+    },
+    "D": {
+      "cases": 16,
+      "pdp_passed": 16,
+      "warehouse_cases": 15,
+      "warehouse_passed": 15
+    },
+    "E": {
+      "cases": 8,
+      "pdp_passed": 8,
+      "warehouse_cases": 3,
+      "warehouse_passed": 3
+    },
+    "F": {
+      "cases": 13,
+      "pdp_passed": 13,
+      "warehouse_cases": 0,
+      "warehouse_passed": 0
+    },
+    "G": {
+      "cases": 6,
+      "pdp_passed": 6,
+      "warehouse_cases": 0,
+      "warehouse_passed": 0
+    }
+  },
+  "failures": {
+    "pdp": [],
+    "warehouse": []
+  }
+}
