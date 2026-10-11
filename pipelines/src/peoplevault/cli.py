@@ -173,6 +173,55 @@ def authz_warehouse(target: str, write_results: bool, pdp_report: str | None, ce
 
 
 @main.group()
+def lake() -> None:
+    """Iceberg archive utilities."""
+
+
+@lake.command("init")
+@click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
+def lake_init(target: str) -> None:
+    from peoplevault.lake.catalog import open_catalog
+    from peoplevault.load.lake import ensure_table
+
+    tbl = ensure_table(open_catalog(target))
+    click.echo(f"lake: {tbl.name()} ready ({len(tbl.snapshots())} snapshots)")
+
+
+@lake.command("expire")
+@click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
+def lake_expire(target: str) -> None:
+    """Local: expire snapshots older than now and purge orphaned data files. Refused for production (ADR 0004)."""
+    from datetime import UTC, datetime
+
+    from peoplevault.lake.catalog import EMPLOYEE_MONTHLY, open_catalog
+    from peoplevault.lake.ops import ProductionExpiryRefused, expire_and_purge
+
+    if target == "prod":
+        raise click.ClickException(str(ProductionExpiryRefused("client-side snapshot expiry is refused for the Basin Catalog (ADR 0004); managed expiration cleans it")))
+    res = expire_and_purge(open_catalog("local"), EMPLOYEE_MONTHLY, datetime.now(UTC), target=target)
+    click.echo(f"lake expire: snapshots {res.snapshots_before} -> {res.snapshots_after}, orphan files removed {res.orphan_files_removed}")
+
+
+@main.group()
+def residuals() -> None:
+    """Residual tracking."""
+
+
+@residuals.command("check")
+@click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
+def residuals_check(target: str) -> None:
+    """Token-free checks of pending residuals; posts state changes to the Worker (executor principal)."""
+    if target == "prod":
+        raise click.ClickException("the production residual check lands with the production commit (see PROGRESS.md)")
+    from peoplevault.executor.local import local_api
+    from peoplevault.lake.catalog import open_catalog
+    from peoplevault.residuals.check import check_local
+
+    out = check_local(local_api(), open_catalog("local"))
+    click.echo(f"residuals check: {out}")
+
+
+@main.group()
 def fixtures() -> None:
     """Committed Worker test fixtures built from data/fixtures/world.yaml."""
 

@@ -1,0 +1,8 @@
+{
+  "_note": "Constructed from the BigQuery time travel documentation on 2026-10-10 (no production response captured yet); replace with captured responses after the first production run.",
+  "_source": "https://cloud.google.com/bigquery/docs/time-travel and https://cloud.google.com/bigquery/docs/error-messages",
+  "out_of_window": { "reason": "invalid", "message": "Invalid snapshot time 1791000000000 for table pv-test:pv_core.dim_employee@1791000000000. Cannot read before 1791172800000. Table `pv-test.pv_core.dim_employee` was created at time which is before its allowed time travel interval." },
+  "access_denied": { "reason": "accessDenied", "message": "Access Denied: Table pv-test:pv_core.dim_employee: User does not have permission to query table history with row access policies." },
+  "not_found": { "reason": "notFound", "message": "Not found: Table pv-test:pv_core.dim_employee" },
+  "invalid_other": { "reason": "invalid", "message": "Syntax error: Unexpected keyword" }
+}
