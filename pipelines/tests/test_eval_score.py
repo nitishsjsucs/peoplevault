@@ -45,3 +45,37 @@ def test_score_counts_pairs_faults_and_agreement_without_retention():
     assert r["applicability_agreement"] == {"value": 1.0, "pairs": 1, "agree": 1, "disagreements": []}
     assert r["timing_ms"]["workflow_p50"] == 15000.0
     assert r["gate"]["checks"]["every_category_applicable"] is False and r["gate"]["passed"] is False
+
+
+def test_audit_chain_verification_follows_windows():
+    """The eval verifies the chain window by window (100 events per request on Workers Free, SPEC.md 30.3.2)."""
+    from peoplevault.evals.deletion import verify_audit_chain
+
+    class Resp:
+        def __init__(self, body):
+            self.body = body
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.body
+
+    class Client:
+        def __init__(self, total, break_anchor_at=None):
+            self.total, self.break_anchor_at, self.paths = total, break_anchor_at, []
+
+        def request(self, principal, method, path, body=None):
+            self.paths.append(path)
+            after = int(path.split("after_seq=")[1].split("&")[0])
+            limit = int(path.split("limit=")[1])
+            rows = list(range(after + 1, min(self.total, after + limit) + 1))
+            anchor = f"h{after}" if after != self.break_anchor_at else "forged"
+            return Resp({"ok": True, "anchorHash": anchor, "from": rows[0] if rows else None, "checked": len(rows), "lastHash": f"h{rows[-1]}" if rows else anchor,
+                         "nextAfterSeq": rows[-1] if rows else after, "complete": after + limit >= self.total})
+
+    c = Client(250)
+    assert verify_audit_chain(c) == {"ok": True, "length": 250, "windows": 3}
+    assert c.paths == ["/api/v1/privacy/audit/verify?after_seq=0&limit=100", "/api/v1/privacy/audit/verify?after_seq=100&limit=100", "/api/v1/privacy/audit/verify?after_seq=200&limit=100"]
+    broken = verify_audit_chain(Client(250, break_anchor_at=100))
+    assert broken["ok"] is False and broken["brokenAtSeq"] == 101

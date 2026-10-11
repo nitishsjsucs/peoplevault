@@ -74,6 +74,28 @@ def _wait_requests(client: LocalClient, ids: set[str], timeout_s: int, *, poll_s
         time.sleep(poll_s)
 
 
+def verify_audit_chain(client, principal: str = "privacy-01", *, limit: int = 100, max_windows: int = 100_000) -> dict:
+    """Follows the windowed verification route (SPEC.md section 30.3.2): at most `limit` events per request, each window
+    anchored on the previous window's last hash, until `complete`. Returns {ok, length, windows[, brokenAtSeq]}."""
+    after, length, windows, last_hash = 0, 0, 0, None
+    while windows < max_windows:
+        r = client.request(principal, "GET", f"/api/v1/privacy/audit/verify?after_seq={after}&limit={limit}")
+        r.raise_for_status()
+        w = r.json()
+        windows += 1
+        if last_hash is not None and w["anchorHash"] != last_hash:
+            return {"ok": False, "length": length, "windows": windows, "brokenAtSeq": w.get("from") or after}
+        if not w["ok"]:
+            return {"ok": False, "length": length + int(w.get("checked", 0)), "windows": windows, "brokenAtSeq": w.get("brokenAtSeq")}
+        length += int(w["checked"])
+        if w["complete"]:
+            return {"ok": True, "length": length, "windows": windows}
+        if w["nextAfterSeq"] <= after:
+            return {"ok": False, "length": length, "windows": windows, "brokenAtSeq": after}
+        after, last_hash = w["nextAfterSeq"], w["lastHash"]
+    raise RuntimeError("audit chain verification did not finish")
+
+
 def _wait_run(client: LocalClient, run_id: str, timeout_s: int) -> dict:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -193,7 +215,7 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
         expire_out = _pv(["lake", "expire", "--target", "local"])
         check_out = _pv(["residuals", "check", "--target", "local"])
         report = client.request("privacy-01", "GET", "/api/v1/privacy/reports/deletion").json()
-        audit_ok = client.request("privacy-01", "GET", "/api/v1/privacy/audit/verify").json()
+        audit_ok = verify_audit_chain(client)
     finally:
         if stack_started:
             _node(["scripts/stop-local.ts"], check=False)

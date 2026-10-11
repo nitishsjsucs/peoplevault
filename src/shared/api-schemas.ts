@@ -13,3 +13,14 @@ export const RetentionRunBody = z
   .object({ as_of: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), max_subjects: z.number().int().positive().max(10000).optional() })
   .strict();
 export const ClaimBody = z.object({ phases: z.array(z.enum(["erase", "identity", "retention"])).min(1), max: z.number().int().min(1).max(25).default(25), lease_seconds: z.number().int().min(30).max(3600).default(600) }).strict();
+/** GET /api/v1/privacy/audit/verify?after_seq&limit (SPEC.md section 30.3.2) */
+export const AuditVerifyQuery = z.object({ after_seq: z.coerce.number().int().min(0), limit: z.coerce.number().int().min(1).max(100) }).strict();
+/** GET /api/v1/privacy/reports/deletion?from&to&limit&cursor: failures are paged, at most 100 per page */
+export const ReportQuery = z
+  .object({
+    from: z.string().max(40).nullable(),
+    to: z.string().max(40).nullable(),
+    limit: z.coerce.number().int().min(1).max(100),
+    cursor: z.string().regex(/^[A-Za-z0-9_-]{1,600}$/).nullable(),
+  })
+  .strict();

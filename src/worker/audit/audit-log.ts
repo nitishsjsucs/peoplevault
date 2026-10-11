@@ -40,10 +40,35 @@ export interface AuditRow {
   hash: string;
 }
 
+/** One verified window of the chain (SPEC.md section 30.3.2). */
+export interface VerifyWindow {
+  ok: boolean;
+  /** seq the window continues after (0 = genesis) and the hash it was anchored on */
+  afterSeq: number;
+  anchorHash: string;
+  /** first and last seq checked, null for an empty window */
+  from: number | null;
+  to: number | null;
+  /** hash of the last row checked (the anchor for an empty window) */
+  lastHash: string;
+  /** after_seq for the next window */
+  nextAfterSeq: number;
+  /** true when no row follows this window */
+  complete: boolean;
+  checked: number;
+  brokenAtSeq?: number;
+}
+
+/** Workers Free: a request verifies at most 100 events (about 1.3 ms of CPU on the owner's Mac). */
+export const VERIFY_WINDOW_MAX = 100;
+
 export interface AuditLog {
-  /** Appends one event; returns the stored row (used by the P1 audit stream). */
+  /** Appends one event; returns the stored row. */
   append(e: AuditEventInput): Promise<{ seq: number; hash: string; id: string; row: AuditRow }>;
+  /** The whole chain in one pass (tests and local tools; production routes use verifyWindow). */
   verify(): Promise<{ ok: boolean; length: number; brokenAtSeq?: number }>;
+  /** Verifies the rows after `afterSeq`, at most `limit` of them, anchored on row `afterSeq`'s hash. */
+  verifyWindow(afterSeq: number, limit: number): Promise<VerifyWindow>;
 }
 
 export function canonicalJson(value: unknown): string {
@@ -151,6 +176,38 @@ export function createAuditLog(db: D1Database, now: () => Date = () => new Date(
         }
       }
       return { ok: true, length };
+    },
+
+    async verifyWindow(afterSeq, limit) {
+      const n = Math.max(1, Math.min(VERIFY_WINDOW_MAX, Math.floor(limit)));
+      let anchor = GENESIS;
+      if (afterSeq > 0) {
+        const row = await db.prepare("SELECT hash FROM audit_events WHERE seq = ?").bind(afterSeq).first<{ hash: string }>();
+        if (!row) return { ok: false, afterSeq, anchorHash: "", from: null, to: null, lastHash: "", nextAfterSeq: afterSeq, complete: true, checked: 0, brokenAtSeq: afterSeq };
+        anchor = row.hash;
+      }
+      const { results } = await db.prepare("SELECT * FROM audit_events WHERE seq > ? ORDER BY seq LIMIT ?").bind(afterSeq, n + 1).all<AuditRow>();
+      const rows = results.slice(0, n);
+      let prev = anchor;
+      for (const r of rows) {
+        const expected = await chainHash(prev, hashedFields(r));
+        if (r.prev_hash !== prev || r.hash !== expected) {
+          return { ok: false, afterSeq, anchorHash: anchor, from: rows[0]!.seq, to: r.seq, lastHash: prev, nextAfterSeq: r.seq, complete: true, checked: rows.indexOf(r), brokenAtSeq: r.seq };
+        }
+        prev = r.hash;
+      }
+      const last = rows[rows.length - 1];
+      return {
+        ok: true,
+        afterSeq,
+        anchorHash: anchor,
+        from: rows[0]?.seq ?? null,
+        to: last?.seq ?? null,
+        lastHash: prev,
+        nextAfterSeq: last?.seq ?? afterSeq,
+        complete: results.length <= n,
+        checked: rows.length,
+      };
     },
   };
 }

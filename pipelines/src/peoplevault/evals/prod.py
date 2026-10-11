@@ -21,7 +21,15 @@ import time
 from peoplevault import config
 from peoplevault.evals import faults as faults_mod
 from peoplevault.evals.client import ProdClient
-from peoplevault.evals.deletion import PROD_REQUEST_POLL_S, RunData, _log, _wait_requests, score, write
+from peoplevault.evals.deletion import (
+    PROD_REQUEST_POLL_S,
+    RunData,
+    _log,
+    _wait_requests,
+    score,
+    verify_audit_chain,
+    write,
+)
 from peoplevault.evals.oracle import OracleSources, run_oracle, subject_tokens
 from peoplevault.evals.prod_stores import CloudflareRest, cleanup_prod, d1_query, oauth_token, plant_prod
 from peoplevault.evals.report import header
@@ -95,7 +103,7 @@ def run_prod(*, keep_faults: bool = False) -> dict:
         _log("production residual check")
         check_out = json.dumps(check_prod(prod_api(), wh, cat))
         report = client.request("privacy-01", "GET", "/api/v1/privacy/reports/deletion").json()
-        audit_ok = client.request("privacy-01", "GET", "/api/v1/privacy/audit/verify").json()
+        audit_ok = verify_audit_chain(client)
         _log("oracle over the production stores")
         requests = d1_query("SELECT id, kind, subject_ref, status, created_at, completed_at FROM deletion_requests")
         results = d1_query("SELECT request_id, asset_id, category, applicability, action_status, verify_status, verify_matches FROM deletion_asset_results")

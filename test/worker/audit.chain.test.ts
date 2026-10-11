@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { AuditContention, GENESIS, MAX_APPEND_ATTEMPTS, canonicalJson, createAuditLog } from "../../src/worker/audit/audit-log.ts";
+import { AuditContention, GENESIS, MAX_APPEND_ATTEMPTS, VERIFY_WINDOW_MAX, canonicalJson, createAuditLog, type VerifyWindow } from "../../src/worker/audit/audit-log.ts";
 
 describe("audit hash chain", () => {
   it("appends and verifies; genesis prev_hash is 64 zeros", async () => {
@@ -62,5 +62,43 @@ describe("audit hash chain", () => {
     await expect(createAuditLog(db).append({ actor: "t", actorKind: "system", action: "x", decision: "info", reason: "y" })).rejects.toBeInstanceOf(AuditContention);
     expect(MAX_APPEND_ATTEMPTS).toBe(8);
     expect(statements).toBe(2 * MAX_APPEND_ATTEMPTS);
+  });
+
+  it("windowed verification: 100 events per window, each anchored on the previous window's last hash", async () => {
+    const log = createAuditLog(env.DB);
+    for (let i = 0; i < 230; i++) await log.append({ actor: "t", actorKind: "system", action: "w", decision: "info", reason: `r${i}` });
+    const length = (await log.verify()).length;
+    const windows: VerifyWindow[] = [];
+    let after = 0;
+    for (;;) {
+      const w = await log.verifyWindow(after, 100);
+      windows.push(w);
+      expect(w.ok).toBe(true);
+      if (windows.length > 1) expect(w.anchorHash).toBe(windows[windows.length - 2]!.lastHash);
+      if (w.complete) break;
+      after = w.nextAfterSeq;
+    }
+    expect(windows.reduce((n, w) => n + w.checked, 0)).toBe(length);
+    expect(windows.every((w) => w.checked <= VERIFY_WINDOW_MAX)).toBe(true);
+    expect(windows.length).toBe(Math.ceil(length / 100));
+    expect((await log.verifyWindow(0, 1000)).checked).toBe(VERIFY_WINDOW_MAX);
+  });
+
+  it("windowed verification finds tampering inside a window and across a window boundary", async () => {
+    const log = createAuditLog(env.DB);
+    for (let i = 0; i < 20; i++) await log.append({ actor: "t", actorKind: "system", action: "x", decision: "info", reason: `b${i}` });
+    const { results } = await env.DB.prepare("SELECT seq FROM audit_events ORDER BY seq DESC LIMIT 20").all<{ seq: number }>();
+    const seqs = results.map((r) => r.seq).reverse();
+    // inside a window: a changed field
+    await env.DB.prepare("UPDATE audit_events SET reason = 'tampered' WHERE seq = ?").bind(seqs[5]).run();
+    const inside = await log.verifyWindow(seqs[0]!, 10);
+    expect([inside.ok, inside.brokenAtSeq]).toEqual([false, seqs[5]]);
+    // across the boundary: window [seqs[10]..] anchors on row seqs[9]; a rewritten anchor row breaks the next window
+    await env.DB.prepare("UPDATE audit_events SET hash = ? WHERE seq = ?").bind("f".repeat(64), seqs[9]).run();
+    const next = await log.verifyWindow(seqs[9]!, 10);
+    expect([next.ok, next.brokenAtSeq]).toEqual([false, seqs[10]]);
+    const missingAnchor = await log.verifyWindow(10_000_000, 10);
+    expect([missingAnchor.ok, missingAnchor.brokenAtSeq]).toEqual([false, 10_000_000]);
+    await env.DB.prepare("DELETE FROM audit_events WHERE seq >= ?").bind(seqs[0]).run();
   });
 });

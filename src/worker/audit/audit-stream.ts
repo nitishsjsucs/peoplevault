@@ -93,5 +93,6 @@ export function withAuditStream(log: AuditLog, stream: AuditStream, schedule?: (
       return out;
     },
     verify: () => log.verify(),
+    verifyWindow: (afterSeq, limit) => log.verifyWindow(afterSeq, limit),
   };
 }

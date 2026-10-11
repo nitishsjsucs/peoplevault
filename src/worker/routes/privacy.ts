@@ -1,13 +1,14 @@
 // Privacy officer API (SPEC.md section 13): deletion requests, legal holds, asset inventory and audit.
 import { Hono, type Context } from "hono";
-import { DeletionRequestBody, LegalHoldBody, RetentionRunBody } from "../../shared/api-schemas.ts";
+import { AuditVerifyQuery, DeletionRequestBody, LegalHoldBody, ReportQuery, RetentionRunBody } from "../../shared/api-schemas.ts";
 import type { AppEnv } from "../app.ts";
 import { ASSETS } from "../assets/registry.ts";
+import { VERIFY_WINDOW_MAX } from "../audit/audit-log.ts";
 import { audit, errorJson } from "../context.ts";
 import { activeHolds, placeHold, releaseHold, type HoldRow } from "../holds/holds.ts";
 import { identityByRef } from "../identity/refs.ts";
 import { decide, type Action } from "../policy/pdp.ts";
-import { deletionReport } from "../reports/deletion-report.ts";
+import { deletionReport, REPORT_FAILURES_MAX } from "../reports/deletion-report.ts";
 import { utcToday } from "../retention/rules.ts";
 import { ActiveRequestExists, getRequest, insertRequest, nextInstanceId, publicRequest, startDeletionInstance, type DeletionRequestRow } from "../requests.ts";
 
@@ -186,7 +187,9 @@ const REPORT = "/api/v1/privacy/reports/deletion";
 privacy.get(REPORT, async (c) => {
   const denied = await authorize(c, "privacy_compliance", "read_report", REPORT);
   if (denied) return denied;
-  const report = await deletionReport(c.env.DB, c.req.query("from") ?? null, c.req.query("to") ?? null);
+  const q = ReportQuery.safeParse({ from: c.req.query("from") ?? null, to: c.req.query("to") ?? null, limit: c.req.query("limit") ?? String(REPORT_FAILURES_MAX), cursor: c.req.query("cursor") ?? null });
+  if (!q.success) return deny(c, "privacy_compliance", "read_report", REPORT, 400, "invalid_query");
+  const report = await deletionReport(c.env.DB, q.data.from, q.data.to, { limit: q.data.limit, cursor: q.data.cursor });
   await audit(c, { purpose: "privacy_compliance", action: "read_report", route: REPORT, decision: "allow", reason: "ok", rowCount: report.requests.total });
   return c.json(report);
 });
@@ -231,11 +234,16 @@ privacy.get(AUDIT_ROUTE, async (c) => {
   return c.json({ events: results, cursor: results.length === 200 ? results[results.length - 1]!.seq : null });
 });
 
+// Windowed chain verification (SPEC.md section 30.3.2): at most 100 events per request, anchored on the hash of row
+// `after_seq`; clients follow `nextAfterSeq` until `complete` and check that each window's `anchorHash` equals the
+// previous window's `lastHash`.
 const AUDIT_VERIFY = "/api/v1/privacy/audit/verify";
 privacy.get(AUDIT_VERIFY, async (c) => {
   const denied = await authorize(c, "privacy_compliance", "read_audit", AUDIT_VERIFY);
   if (denied) return denied;
-  const result = await c.get("audit").verify();
-  await audit(c, { purpose: "privacy_compliance", action: "read_audit", route: AUDIT_VERIFY, decision: "allow", reason: "ok", detail: { ok: result.ok, length: result.length } });
-  return c.json(result);
+  const q = AuditVerifyQuery.safeParse({ after_seq: c.req.query("after_seq") ?? "0", limit: c.req.query("limit") ?? String(VERIFY_WINDOW_MAX) });
+  if (!q.success) return deny(c, "privacy_compliance", "read_audit", AUDIT_VERIFY, 400, "invalid_query");
+  const w = await c.get("audit").verifyWindow(q.data.after_seq, q.data.limit);
+  await audit(c, { purpose: "privacy_compliance", action: "read_audit", route: AUDIT_VERIFY, decision: "allow", reason: "ok", detail: { ok: w.ok, checked: w.checked, complete: w.complete } });
+  return c.json(w);
 });
