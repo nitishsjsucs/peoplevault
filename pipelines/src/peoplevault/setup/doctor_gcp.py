@@ -198,7 +198,7 @@ def catalog_check(probes: Probes | None, env: dict[str, str]) -> Check:
         ns = (probes or LiveProbes(env.get("PV_GCP_PROJECT", ""))).catalog_namespaces()
         return ok(C, "Basin Catalog (pyiceberg)", f"REST catalog reachable, {len(ns)} namespace(s)")
     except Exception as e:  # noqa: BLE001
-        return missing(C, "Basin Catalog (pyiceberg)", f"list_namespaces failed ({type(e).__name__})", "check PV_R2_CATALOG_TOKEN (Admin Read & Write) and npm run setup:prod")
+        return missing(C, "Basin Catalog (pyiceberg)", f"list_namespaces failed ({type(e).__name__})", "check PV_R2_CATALOG_TOKEN (Workers R2 Data Catalog Write and Workers R2 Storage Bucket Item Write on pv-lake, docs/PRODUCTION.md step 8) and npm run setup:prod")
 
 
 class LiveProbes:
