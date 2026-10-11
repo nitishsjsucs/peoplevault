@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CF_API } from "../../scripts/lib/cf-api.ts";
-import { exitCode, localChecks, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
+import { exitCode, githubChecks, localChecks, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
+import { GITHUB_SECRETS, readGithubState, type GithubState } from "../../scripts/lib/github.ts";
 import { REPO_ROOT, type RunResult } from "../../scripts/lib/run.ts";
 
 const ok = (stdout: string): RunResult => ({ code: 0, stdout, stderr: "" });
@@ -142,5 +143,52 @@ describe("doctor --prod", () => {
     expect(redirected.find((x) => x.name === "edge protection")!.status).toBe("ok");
     const open = await prodChecks(deps({ ...base, routes: { ...base.routes, [url]: new Response(JSON.stringify({ error: "missing_token" }), { status: 401, headers: { "content-type": "application/json" } }) } }));
     expect(open.find((x) => x.name === "edge protection")).toMatchObject({ status: "missing" });
+  });
+});
+
+describe("doctor --prod: the scheduled executor on GitHub", () => {
+  const NOW = Date.parse("2026-10-10T12:00:00Z");
+  const healthy: GithubState = {
+    authed: true, repo: "nitishsjsucs/peoplevault", secrets: [...GITHUB_SECRETS], variables: { PV_PROD_ENABLED: "true" }, workflowState: "active", lastSuccess: "2026-10-10T11:07:30Z",
+  };
+  const by = (g: GithubState) => Object.fromEntries(githubChecks(g, NOW).map((x) => [x.name, x]));
+
+  it("healthy: logged in, 9 secrets, variable set, workflow active, last success within 26 hours", () => {
+    const r = githubChecks(healthy, NOW);
+    expect(r.every((x) => x.status === "ok")).toBe(true);
+    expect(by(healthy)["executor secrets"]!.detail).toBe("9 of 9");
+  });
+
+  it("each problem names its fix", () => {
+    expect(githubChecks({ ...healthy, authed: false }, NOW)).toEqual([expect.objectContaining({ status: "missing", fix: "gh auth login" })]);
+    expect(by({ ...healthy, secrets: ["PV_BASE_URL"] })["executor secrets"]).toMatchObject({ status: "missing", fix: "npm run setup:prod -- --only github" });
+    expect(by({ ...healthy, variables: {} })["PV_PROD_ENABLED"]).toMatchObject({ status: "missing" });
+    expect(by({ ...healthy, workflowState: null })["executor workflow"]).toMatchObject({ status: "missing", fix: "git push origin main" });
+    expect(by({ ...healthy, workflowState: "disabled_inactivity" })["executor workflow"]).toMatchObject({
+      status: "missing",
+      fix: "gh workflow enable executor.yml --repo nitishsjsucs/peoplevault",
+    });
+    expect(by({ ...healthy, lastSuccess: null })["executor last success"]).toMatchObject({ status: "warn", fix: "gh workflow run executor.yml --repo nitishsjsucs/peoplevault" });
+    expect(by({ ...healthy, lastSuccess: "2026-10-09T08:00:00Z" })["executor last success"]).toMatchObject({ status: "missing", detail: expect.stringContaining("28.0 h ago") });
+  });
+
+  it("reads the state through gh: secrets, variables, workflow state and the last successful run", async () => {
+    const commands: Record<string, RunResult> = {
+      "git remote get-url origin": ok("https://github.com/nitishsjsucs/peoplevault.git\n"),
+      "gh auth status": ok(""),
+      "gh secret list --app actions --repo nitishsjsucs/peoplevault --json name": ok(JSON.stringify([{ name: "PV_BASE_URL" }])),
+      "gh variable list --repo nitishsjsucs/peoplevault --json name,value": ok(JSON.stringify([{ name: "PV_PROD_ENABLED", value: "true" }])),
+      "gh api repos/nitishsjsucs/peoplevault/actions/workflows/executor.yml": ok(JSON.stringify({ id: 1, state: "active" })),
+      "gh api repos/nitishsjsucs/peoplevault/actions/workflows/executor.yml/runs?status=success&per_page=1": ok(JSON.stringify({ workflow_runs: [{ updated_at: "2026-10-10T11:07:30Z" }] })),
+    };
+    const g = await readGithubState(async (cmd, args) => commands[[cmd, ...args].join(" ")] ?? fail, {});
+    expect(g).toEqual({ authed: true, repo: "nitishsjsucs/peoplevault", secrets: ["PV_BASE_URL"], variables: { PV_PROD_ENABLED: "true" }, workflowState: "active", lastSuccess: "2026-10-10T11:07:30Z" });
+    const notPushed = await readGithubState(async (cmd, args) => (args[0] === "api" ? fail : (commands[[cmd, ...args].join(" ")] ?? fail)), {});
+    expect(notPushed.workflowState).toBeNull();
+  });
+
+  it("the full production run includes the GitHub group", async () => {
+    const r = await prodChecks(deps());
+    expect(r.find((x) => x.group === "GitHub")).toMatchObject({ name: "gh login", status: "missing" });
   });
 });

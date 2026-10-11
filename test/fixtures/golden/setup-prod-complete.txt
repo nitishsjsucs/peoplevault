@@ -6,4 +6,4 @@ worker: 1 step(s)
   npx wrangler d1 migrations apply pv-control --remote -c infra/cloudflare/wrangler.production.jsonc
 access: nothing to do
 data: nothing to do
-github: P1 (executor.yml secrets), not built yet
+github: nothing to do

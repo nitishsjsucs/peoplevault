@@ -24,10 +24,32 @@ Everything a script can do is in `npm run setup:prod`. This section lists, in or
 | 14 | Google | Only if `pv setup gcp` reports that organization policy `iam.disableServiceAccountKeyCreation` blocks the `pv-gateway` key: use a project outside that organization, or ask for an exception for this project | IAM, Organization policies | free | the Worker's BigQuery credential | |
 | 15 | Choice | Persona sign-in emails, for example Gmail plus-addresses: `PV_ACCESS_ALLOWED_EMAILS=<you>+hr@gmail.com,<you>+mgr@gmail.com,<you>+analyst@gmail.com,<you>+privacy@gmail.com` and `PV_ACCESS_PERSONA_EMAILS=<you>+hr@gmail.com=hrbp-01,<you>+mgr@gmail.com=mgr-001,<you>+analyst@gmail.com=analyst-01,<you>+privacy@gmail.com=privacy-01` | `.secrets/prod.env` | free | signing in as each of the four personas | |
 | 16 | Choice | After the first `setup:prod`, copy `PV_PSEUDONYM_MASTER_KEY` from `.secrets/worker-secrets.env` into a password manager | password manager | free | pseudonym stability; losing it orphans every pseudonym | |
+| 17 | GitHub | Push the repository (`git push origin main`; you publish it), then answer yes when `npm run setup:prod -- --only github` asks to write the executor secrets and `PV_PROD_ENABLED=true`. Optional but recommended: without it, deletions wait for you to run `pv executor run --target prod --drain` and fail after 24 hours | terminal | free (Actions minutes are free for public repositories) | the hourly production executor (`executor.yml`) and the daily residual check | GitHub docs on disabling and enabling workflows |
 
-Not needed for v1: Workers AI and AI Gateway (P1, no resume claim depends on them), the Basin Pipelines stream, sink and pipeline (P1; created by `setup:prod` once that code exists, no extra manual step), and GitHub repository secrets (P1 `executor.yml`; `gh` is already logged in on this Mac and `setup:prod -- --only github` asks before writing).
+Not needed for v1: Workers AI and AI Gateway (P1, no resume claim depends on them) and the Basin Pipelines stream, sink and pipeline (P1; created by `setup:prod` once that code exists, no extra manual step).
 
-## Local CLIs and logins (wrangler is not logged in and gcloud is not installed on this Mac today; gh is logged in)
+### The scheduled executor (`executor.yml`, P1)
+
+`.github/workflows/executor.yml` runs every hour at minute 7 (and on demand from the Actions tab) once the repository variable `PV_PROD_ENABLED` is `true`. It drains the executor tasks that the Workflows queue in D1 (warehouse DML, the `headcount_monthly` rebuild, Iceberg deletes), and at 04 UTC it also runs the token-free residual check. A concurrency group keeps two runs from overlapping. It reads these repository secrets, all written by `npm run setup:prod -- --only github` with the values travelling on `gh`'s standard input, never in a command line:
+
+| Secret | Value |
+|---|---|
+| `PV_BASE_URL` | `https://peoplevault.<subdomain>.workers.dev` |
+| `PV_CF_ACCESS_CLIENT_ID`, `PV_CF_ACCESS_CLIENT_SECRET` | the `pv-executor` Access service token |
+| `PV_GCP_PROJECT` | the Google Cloud project id |
+| `PV_GCP_EXECUTOR_KEY` | a `pv-executor` key created by `pv setup actions-key` and piped straight into the secret; it is never written to disk, so no `pv-executor` key exists on your machine (rotate with `uv run --project pipelines pv setup actions-key --repo <owner>/<name> --rotate`) |
+| `PV_R2_CATALOG_TOKEN`, `PV_CATALOG_URI`, `PV_CATALOG_WAREHOUSE` | Basin Catalog access |
+| `PV_POLICY_TAGS_JSON` | the policy tag resource names `pv setup gcp` recorded |
+
+Setup keeps a SHA-256 of each uploaded value in `.secrets/prod-resources.json`, so a rotated value (for example a rotated service token) is uploaded again on the next run and nothing else is rewritten. The pseudonym master key is not a GitHub secret: nothing in the job needs it.
+
+The repository is public, and so are its Actions logs: the job sets `PV_PUBLIC_LOGS=true`, which prints an uncaught exception as its type and redacted message only (no traceback), sends warnings through the redacting logger and turns dbt's own console output off; the job prints counts, never rows. The key file lives in the runner's temp directory and is deleted in an `always()` step.
+
+GitHub disables scheduled workflows in a public repository after 60 days without repository activity. `npm run doctor -- --prod` reads the workflow's state and the age of its last successful run (more than 26 hours is `[missing]`) and prints `gh workflow enable executor.yml --repo <owner>/<name>` when it has been disabled.
+
+## Local CLIs and logins
+
+State on this Mac when this section was last updated (`npm run doctor -- --prod`, 2026-10-10 evening): wrangler is logged in (one account), the Google Cloud CLI 588.0.0 is installed with an active account and application default credentials, and gh is logged in. Still to do: the project id, the quota project and billing (below), and the tokens and choices in the table above.
 
 ```bash
 npx wrangler login                                  # browser OAuth
@@ -97,6 +119,9 @@ uv run --project pipelines pv executor run --target prod --drain   # P0: the pro
 uv run --project pipelines pv residuals check --target prod
 npm run readme:results
 git add evals/results README.md && git commit -m "docs: production results"
+# after you push: the hourly executor in GitHub Actions (asks before writing anything to GitHub)
+npm run setup:prod -- --only github
+npm run doctor -- --prod                                       # the GitHub lines turn ok after the first successful run
 ```
 
 `pv eval deletion --profile prod` plants 5 residues of designed types (one per store) straight into R2, KV, D1, BigQuery and the Basin Catalog, warms the production caches through Access with the persona service tokens, submits 6 deletions, 1 held request and the 5 planted subjects as `privacy-01`, runs the production executor in-process until every request is terminal, runs the residual check, scans every production store with the independent oracle, removes the planted residues and writes `evals/results/deletion-prod-<date>.{json,md}`. It runs once per seeded project (its subjects are gone afterwards) and refuses to start when deletion requests already exist.
@@ -115,6 +140,7 @@ If a run leaves the probe dataset behind (for example after an interrupted ceili
 | Warehouse authorization | `pv authz warehouse --target bigquery --ceiling-probes` | written, not yet executed |
 | Executor, residual check, lake self-test | `pv executor run --target prod`, `pv residuals check --target prod`, `pv lake init --target prod` | written, not yet executed |
 | Production deletion eval | `pv eval deletion --profile prod` | written, not yet executed; R2 objects are listed and read through `GET /accounts/{id}/r2/buckets/{bucket}/objects[/{key}]` with wrangler's OAuth token, and that endpoint's pagination fields are unverified |
+| Scheduled executor (P1) | `.github/workflows/executor.yml`, `npm run setup:prod -- --only github`, `pv setup actions-key` | written, not yet executed (the repository has not been pushed); the workflow's structure, the secrets it reads and the doctor's schedule checks are tested |
 
 ## What the scripts cannot do
 

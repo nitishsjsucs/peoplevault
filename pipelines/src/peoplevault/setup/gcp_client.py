@@ -98,6 +98,11 @@ class RealGcpClient:
         d = self._post(f"{IAM}/projects/{self.project}/serviceAccounts/{sa_email}/keys", {})
         return base64.b64decode(d["privateKeyData"]).decode()
 
+    def delete_sa_key(self, sa_email: str, key_id: str) -> None:
+        r = self.http.delete(f"{IAM}/projects/{self.project}/serviceAccounts/{sa_email}/keys/{key_id}")
+        if r.status_code != 404:
+            r.raise_for_status()
+
     # ---- datasets -----------------------------------------------------------------------------------------------
     def datasets(self) -> dict[str, dict]:
         out = {}

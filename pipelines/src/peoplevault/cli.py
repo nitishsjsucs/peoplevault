@@ -9,6 +9,7 @@ import click
 
 from peoplevault import __version__
 from peoplevault.logging_redact import install as install_redaction
+from peoplevault.logging_redact import install_public_excepthook
 
 
 @click.group()
@@ -17,6 +18,10 @@ from peoplevault.logging_redact import install as install_redaction
 def main(log_level: str) -> None:
     """PeopleVault pipelines."""
     install_redaction(getattr(logging, log_level.upper()))
+    from peoplevault.config import public_logs
+
+    if public_logs():
+        install_public_excepthook()
 
 
 @main.command()
@@ -372,6 +377,29 @@ def setup_gcp(dry_run: bool) -> None:
         click.echo(step.line())
     click.echo(f"{len(res.steps)} step(s) applied; policy tag names recorded in .secrets/prod-resources.json"
                + ("; pv-gateway key written to .secrets/worker-secrets.env" if res.resources.get("gateway_key") else ""))
+
+
+@setup.command("actions-key")
+@click.option("--repo", required=True, help="OWNER/NAME of the GitHub repository that runs executor.yml")
+@click.option("--rotate", is_flag=True, help="replace an existing PV_GCP_EXECUTOR_KEY secret and delete the previous key")
+def setup_actions_key(repo: str, rotate: bool) -> None:
+    """(P1) pv-executor key for executor.yml, piped into the PV_GCP_EXECUTOR_KEY repository secret; never on disk."""
+    from peoplevault import config
+    from peoplevault.setup import github
+    from peoplevault.setup.gcp_client import RealGcpClient
+
+    project = _prod_project()
+    recorded = config.prod_resources().get("executor_actions_key_id")
+    try:
+        out = github.ensure_actions_key(RealGcpClient(project), github.real_gh, repo, project, rotate=rotate, recorded_key_id=recorded)
+    except Exception as e:
+        if "disableServiceAccountKeyCreation" in str(e):
+            raise click.ClickException("organization policy iam.disableServiceAccountKeyCreation blocks the pv-executor key: the executor keeps "
+                                       "running from your machine (pv executor run --target prod --drain)") from None
+        raise
+    if out.get("key_id"):
+        github.record_key_id(out["key_id"])
+    click.echo(f"actions key: {out['action']} (secret {github.SECRET} in {repo})")
 
 
 @main.group()

@@ -141,11 +141,48 @@ def prod_env() -> dict[str, str]:
 
 
 def prod_resources() -> dict:
+    """`.secrets/prod-resources.json`; in the executor.yml job (no .secrets/ on the runner) the policy tag names come
+    from the PV_POLICY_TAGS_JSON repository secret instead, and an environment value wins over the file."""
     path = SECRETS_DIR / "prod-resources.json"
-    return json.loads(path.read_text()) if path.exists() else {}
+    out = json.loads(path.read_text()) if path.exists() else {}
+    raw = os.environ.get("PV_POLICY_TAGS_JSON")
+    if raw:
+        tags = json.loads(raw)
+        if not isinstance(tags, dict) or not tags or not all(isinstance(k, str) and isinstance(v, str) and v for k, v in tags.items()):
+            raise RuntimeError("PV_POLICY_TAGS_JSON must be a JSON object of data class -> policy tag resource name")
+        out["policy_tags"] = tags
+    return out
 
 
 def executor_service_account(project: str) -> str:
     """dbt, loaders and the executor always run as pv-executor (never as the owner's user, who is in no
     row access policy and would silently read zero rows)."""
     return f"pv-executor@{project}.iam.gserviceaccount.com"
+
+
+PROD_DBT_TARGETS = ("bigquery", "bigquery_actions")
+
+
+def prod_dbt_target(project: str) -> str:
+    """dbt target for production runs: `bigquery` (the owner's machine, impersonating pv-executor) unless
+    PV_DBT_TARGET=bigquery_actions (the executor.yml job), which runs with the pv-executor key named by
+    GOOGLE_APPLICATION_CREDENTIALS and refuses a key that belongs to any other identity."""
+    target = os.environ.get("PV_DBT_TARGET", "bigquery")
+    if target not in PROD_DBT_TARGETS:
+        raise RuntimeError(f"PV_DBT_TARGET must be one of {', '.join(PROD_DBT_TARGETS)}")
+    if target == "bigquery_actions":
+        keyfile = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+        if not keyfile or not Path(keyfile).is_file():
+            raise RuntimeError("PV_DBT_TARGET=bigquery_actions needs GOOGLE_APPLICATION_CREDENTIALS pointing at the pv-executor key")
+        try:
+            email = json.loads(Path(keyfile).read_text()).get("client_email")
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS is not a service account key file") from exc
+        if email != executor_service_account(project):
+            raise RuntimeError("the key in GOOGLE_APPLICATION_CREDENTIALS is not pv-executor's; dbt runs only as pv-executor")
+    return target
+
+
+def public_logs() -> bool:
+    """True in the executor.yml job: the repository is public and so are its Actions logs."""
+    return os.environ.get("PV_PUBLIC_LOGS", "").lower() == "true"

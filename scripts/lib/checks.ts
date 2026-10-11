@@ -2,6 +2,7 @@
 // exact command or console path that fixes it. Every dependency (commands, environment, files, HTTP, ports) is injected
 // so tests drive each check with a fake runner and recorded API responses.
 import { CfApi, isWorkersPaid } from "./cf-api.ts";
+import { EXECUTOR_WORKFLOW, GITHUB_SECRETS, MAX_RUN_AGE_HOURS, readGithubState, type GithubState } from "./github.ts";
 import type { RunResult } from "./run.ts";
 
 export type Status = "ok" | "warn" | "missing";
@@ -22,6 +23,8 @@ export interface DoctorDeps {
   portOpen(port: number): Promise<boolean>;
   nodeVersion: string;
   wrangler: string;
+  /** clock for the executor workflow's freshness check (defaults to Date.now) */
+  now?: () => number;
 }
 
 export const REQUIRED_SECRETS = ["DEV_ACCESS_JWKS", "DEV_ACCESS_PRIVATE_JWK", "PV_PSEUDONYM_MASTER_KEY", "WAREHOUSE_SHIM_TOKEN", "GCP_GATEWAY_SA_KEY"];
@@ -252,6 +255,38 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     out.push(...(jsonFrom(gcp.stdout) as CheckResult[]));
   } catch {
     out.push(missing(P, "pv doctor gcp", "could not run the Google Cloud checks", "uv sync --project pipelines --locked"));
+  }
+  out.push(...githubChecks(await readGithubState(d.run, env), (d.now ?? Date.now)()));
+  return out;
+}
+
+/** The scheduled production executor (P1 executor.yml): logged in, secrets and variable set, schedule alive. */
+export function githubChecks(gh: GithubState, nowMs: number): CheckResult[] {
+  const H = "GitHub";
+  const setup = "npm run setup:prod -- --only github";
+  if (!gh.authed) return [missing(H, "gh login", "gh is not logged in", "gh auth login")];
+  if (!gh.repo) return [missing(H, "repository", "no GitHub repository (origin remote or PV_GITHUB_REPO)", "set PV_GITHUB_REPO=<owner>/<name> in .secrets/prod.env")];
+  const out: CheckResult[] = [ok(H, "gh login", `repository ${gh.repo}`)];
+  const absent = GITHUB_SECRETS.filter((n) => !gh.secrets.includes(n));
+  out.push(absent.length ? missing(H, "executor secrets", `missing: ${absent.join(", ")}`, setup) : ok(H, "executor secrets", `${GITHUB_SECRETS.length} of ${GITHUB_SECRETS.length}`));
+  out.push(gh.variables.PV_PROD_ENABLED === "true" ? ok(H, "PV_PROD_ENABLED", "true") : missing(H, "PV_PROD_ENABLED", "not true: executor.yml is skipped", setup));
+  if (!gh.workflowState) {
+    out.push(missing(H, "executor workflow", `${EXECUTOR_WORKFLOW} not found on GitHub (repository not pushed yet)`, "git push origin main"));
+    return out;
+  }
+  if (gh.workflowState !== "active") {
+    out.push(missing(H, "executor workflow", `state ${gh.workflowState} (public repositories lose scheduled workflows after 60 days without activity)`, `gh workflow enable ${EXECUTOR_WORKFLOW} --repo ${gh.repo}`));
+    return out;
+  }
+  out.push(ok(H, "executor workflow", "active"));
+  if (!gh.lastSuccess) out.push(warn(H, "executor last success", "no successful run yet", `gh workflow run ${EXECUTOR_WORKFLOW} --repo ${gh.repo}`));
+  else {
+    const hours = (nowMs - Date.parse(gh.lastSuccess)) / 3_600_000;
+    out.push(
+      hours <= MAX_RUN_AGE_HOURS
+        ? ok(H, "executor last success", `${hours.toFixed(1)} h ago`)
+        : missing(H, "executor last success", `${hours.toFixed(1)} h ago (expected hourly; deletions fail after 24 h without the executor)`, `gh run list --workflow ${EXECUTOR_WORKFLOW} --repo ${gh.repo}`),
+    );
   }
   return out;
 }

@@ -25,4 +25,9 @@ access: 7 step(s)
   render ACCESS_AUD from the Access application into infra/cloudflare/wrangler.production.jsonc, then npm run deploy
 data: 1 step(s)
   npm run seed:prod (remote D1 seed and principal mapping, 41 export objects, lake self-test and table, snapshot expiration, pv load --target prod, counts and controls)
-github: P1 (executor.yml secrets), not built yet
+github: 5 step(s) (asks first)
+  uv run --project pipelines pv setup actions-key --repo nitishsjsucs/peoplevault (creates a pv-executor key and pipes it into gh secret set PV_GCP_EXECUTOR_KEY; never written to disk)
+  gh secret set PV_GCP_PROJECT --app actions --repo nitishsjsucs/peoplevault (value on stdin)
+  gh secret set PV_R2_CATALOG_TOKEN --app actions --repo nitishsjsucs/peoplevault (value on stdin)
+  waiting for PV_BASE_URL, PV_CF_ACCESS_CLIENT_ID, PV_CF_ACCESS_CLIENT_SECRET, PV_CATALOG_URI, PV_CATALOG_WAREHOUSE, PV_POLICY_TAGS_JSON: run the cloudflare, gcp, worker and access groups first
+  gh variable set PV_PROD_ENABLED --body true --repo nitishsjsucs/peoplevault (executor.yml runs hourly from then on)

@@ -9,6 +9,7 @@ import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { CfApi } from "./lib/cf-api.ts";
 import { PERSONA_ENV, PERSONA_TOKENS } from "./lib/checks.ts";
+import { EXECUTOR_KEY_SECRET, EXECUTOR_WORKFLOW, GITHUB_SECRET_SOURCES, readGithubState, sha256, type GithubState } from "./lib/github.ts";
 import {
   ACCESS_TEMPLATE,
   AUD_PENDING,
@@ -54,6 +55,8 @@ export interface SetupState {
   /** Google Cloud prerequisite lines that are missing (from `pv doctor gcp --json`) */
   gcpMissing: { name: string; fix: string }[];
   dataLoaded: boolean;
+  /** GitHub repository of the P1 executor.yml job */
+  github: GithubState;
 }
 
 export interface Step {
@@ -137,7 +140,38 @@ export function planSetup(s: SetupState, env: Record<string, string>, render: st
   if (!s.accessApp || s.renderedText?.includes(AUD_PENDING)) add("access", "access:redeploy", `render ACCESS_AUD from the Access application into ${RENDERED_REL}, then npm run deploy`);
   // data
   if (!s.dataLoaded) add("data", "data:seed", "npm run seed:prod (remote D1 seed and principal mapping, 41 export objects, lake self-test and table, snapshot expiration, pv load --target prod, counts and controls)");
+  // github (P1 executor.yml; asks before writing)
+  steps.push(...planGithub(s, env));
   return steps;
+}
+
+/** Repository secrets and the PV_PROD_ENABLED variable for executor.yml. Values travel on gh's stdin, never in argv. */
+export function planGithub(s: SetupState, env: Record<string, string>): Step[] {
+  const g = s.github;
+  const out: Step[] = [];
+  const add = (id: string, display: string) => out.push({ group: "github", id, display });
+  if (!g.authed) {
+    add("github:needs-auth", "gh is not logged in: run gh auth login, then setup again");
+    return out;
+  }
+  if (!g.repo) {
+    add("github:needs-repo", "no GitHub repository: add the origin remote or set PV_GITHUB_REPO=<owner>/<name> in .secrets/prod.env");
+    return out;
+  }
+  const R = g.repo;
+  const recorded = (s.resources.github_secrets ?? {}) as Record<string, string>;
+  const waiting: string[] = [];
+  if (!g.secrets.includes(EXECUTOR_KEY_SECRET))
+    add("github:executor-key", `uv run --project pipelines pv setup actions-key --repo ${R} (creates a pv-executor key and pipes it into gh secret set ${EXECUTOR_KEY_SECRET}; never written to disk)`);
+  for (const [name, source] of Object.entries(GITHUB_SECRET_SOURCES)) {
+    const value = source(env, s.resources);
+    if (!value) waiting.push(name);
+    else if (!g.secrets.includes(name) || recorded[name] !== sha256(value)) add(`github:secret:${name}`, `gh secret set ${name} --app actions --repo ${R} (value on stdin)`);
+  }
+  if (waiting.length) add("github:blocked", `waiting for ${waiting.join(", ")}: run the cloudflare, gcp, worker and access groups first`);
+  if (g.workflowState && g.workflowState !== "active") add("github:enable", `gh workflow enable ${EXECUTOR_WORKFLOW} --repo ${R} (state ${g.workflowState})`);
+  if (g.variables.PV_PROD_ENABLED !== "true") add("github:variable", `gh variable set PV_PROD_ENABLED --body true --repo ${R} (executor.yml runs hourly from then on)`);
+  return out;
 }
 
 export function renderPlan(missing: Missing[], steps: Step[], only: Group | null): string {
@@ -149,7 +183,7 @@ export function renderPlan(missing: Missing[], steps: Step[], only: Group | null
   for (const g of GROUPS) {
     if (only && g !== only) continue;
     const mine = steps.filter((st) => st.group === g);
-    lines.push(`${g}: ${g === "github" ? "P1 (executor.yml secrets), not built yet" : mine.length ? `${mine.length} step(s)` : "nothing to do"}`);
+    lines.push(`${g}: ${mine.length ? `${mine.length} step(s)${g === "github" ? " (asks first)" : ""}` : "nothing to do"}`);
     for (const st of mine) lines.push(`  ${st.display}`);
   }
   return lines.join("\n");
@@ -192,6 +226,7 @@ export async function gatherState(d: SetupDeps, env: Record<string, string>): Pr
     renderedText: existsSync(RENDERED) ? readFileSync(RENDERED, "utf8") : null,
     gcpMissing: [],
     dataLoaded: false,
+    github: await readGithubState(d.run, env),
   };
   if (accountId && env.PV_CF_API_TOKEN) {
     const api = new CfApi(accountId, env.PV_CF_API_TOKEN, d.fetchImpl);
@@ -351,6 +386,28 @@ async function applyStep(st: Step, s: SetupState, env: Record<string, string>): 
     case "data:seed":
       await run(process.execPath, [path.join(REPO_ROOT, "scripts", "seed-prod.ts")]);
       return;
+    case "github:executor-key":
+      process.stdout.write((await pv(["setup", "actions-key", "--repo", s.github.repo!])).stdout);
+      return;
+    case "github:secret": {
+      const name = parts[2]!;
+      const value = GITHUB_SECRET_SOURCES[name]?.(env, readResources());
+      if (!value) throw new Error(`no value for ${name}`);
+      await run("gh", ["secret", "set", name, "--app", "actions", "--repo", s.github.repo!], { input: value, quiet: true });
+      const res = readResources();
+      writeResources({ github_secrets: { ...((res.github_secrets ?? {}) as Record<string, string>), [name]: sha256(value) } });
+      return;
+    }
+    case "github:enable":
+      await run("gh", ["workflow", "enable", EXECUTOR_WORKFLOW, "--repo", s.github.repo!]);
+      return;
+    case "github:variable":
+      await run("gh", ["variable", "set", "PV_PROD_ENABLED", "--body", "true", "--repo", s.github.repo!]);
+      return;
+    case "github:needs-auth":
+    case "github:needs-repo":
+    case "github:blocked":
+      throw new Error(st.display);
     default:
       throw new Error(`unknown step ${st.id}`);
   }
@@ -396,16 +453,20 @@ async function main(): Promise<void> {
   }
   for (const g of GROUPS) {
     if (only && g !== only) continue;
-    if (g === "github") {
-      console.log("github: P1 (executor.yml secrets), not built yet");
-      continue;
-    }
     env = prodEnv();
     state = await gatherState(deps, env);
     const steps = planSetup(state, env, desiredRender(state, env)).filter((st) => st.group === g);
     console.log(`${g}: ${steps.length ? `${steps.length} step(s)` : "nothing to do"}`);
+    if (g === "github" && steps.length) {
+      for (const st of steps) console.log(`  ${st.display}`);
+      const writes = steps.filter((st) => !["github:needs-auth", "github:needs-repo", "github:blocked"].includes(st.id));
+      if (writes.length && !(await ask(`Write ${writes.length} change(s) to the GitHub repository ${state.github.repo} (secrets for executor.yml, PV_PROD_ENABLED=true)?`))) {
+        console.log("  github: skipped (not confirmed); the executor keeps running from this machine until you run setup:prod -- --only github");
+        continue;
+      }
+    }
     for (const st of steps) {
-      console.log(`  ${st.display}`);
+      if (g !== "github") console.log(`  ${st.display}`);
       await applyStep(st, state, prodEnv());
       if (st.id.startsWith("cloudflare:") || st.id.startsWith("d1:") || st.id.startsWith("kv:")) state.resources = readResources();
     }

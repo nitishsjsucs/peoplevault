@@ -1,0 +1,71 @@
+# Production executor (SPEC.md sections 14.2 and 20). Claims the Workflow tasks that need Python (warehouse DML, the
+# aggregate rebuild, Iceberg) from the deployed Worker every hour and drains them; once a day it also runs the
+# token-free residual check. Skipped until `npm run setup:prod -- --only github` sets the repository variable
+# PV_PROD_ENABLED to true together with the secrets below.
+#
+# Log hygiene (the repository is public, and so are these logs): PV_PUBLIC_LOGS=true makes `pv` print an uncaught
+# exception as its type and redacted message only, routes warnings through the redacting logger and silences dbt's own
+# console output; the job prints counts, never rows. The pv-executor key exists only in $RUNNER_TEMP for the
+# duration of the job and is deleted in an always() step.
+#
+# GitHub disables scheduled workflows in a public repository after 60 days without repository activity;
+# `npm run doctor -- --prod` reads this workflow's state and the age of its last successful run.
+name: executor
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+    inputs:
+      residuals:
+        description: "Also run the residual check now"
+        type: boolean
+        default: false
+concurrency:
+  group: pv-executor-prod
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  executor:
+    if: vars.PV_PROD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      PV_PUBLIC_LOGS: "true"
+      PV_DBT_TARGET: bigquery_actions
+      PV_BASE_URL: ${{ secrets.PV_BASE_URL }}
+      PV_CF_ACCESS_CLIENT_ID_EXECUTOR: ${{ secrets.PV_CF_ACCESS_CLIENT_ID }}
+      PV_CF_ACCESS_CLIENT_SECRET_EXECUTOR: ${{ secrets.PV_CF_ACCESS_CLIENT_SECRET }}
+      PV_GCP_PROJECT: ${{ secrets.PV_GCP_PROJECT }}
+      PV_R2_CATALOG_TOKEN: ${{ secrets.PV_R2_CATALOG_TOKEN }}
+      PV_CATALOG_URI: ${{ secrets.PV_CATALOG_URI }}
+      PV_CATALOG_WAREHOUSE: ${{ secrets.PV_CATALOG_WAREHOUSE }}
+      PV_POLICY_TAGS_JSON: ${{ secrets.PV_POLICY_TAGS_JSON }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: "0.12.17"
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --project pipelines --locked
+      - name: Write the pv-executor key
+        env:
+          PV_GCP_EXECUTOR_KEY: ${{ secrets.PV_GCP_EXECUTOR_KEY }}
+        run: |
+          umask 077
+          printf '%s' "$PV_GCP_EXECUTOR_KEY" > "$RUNNER_TEMP/gcp.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp.json" >> "$GITHUB_ENV"
+      - name: Drain executor tasks
+        run: uv run --project pipelines pv --log-level warning executor run --target prod --drain
+      - name: Clock
+        id: clock
+        run: echo "hour=$(date -u +%H)" >> "$GITHUB_OUTPUT"
+      - name: Residual check (daily at 04 UTC, or on request)
+        if: steps.clock.outputs.hour == '04' || inputs.residuals
+        run: uv run --project pipelines pv --log-level warning residuals check --target prod
+      - name: Delete the pv-executor key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/gcp.json"

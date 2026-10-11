@@ -41,4 +41,5 @@ access: 7 step(s)
   render ACCESS_AUD from the Access application into infra/cloudflare/wrangler.production.jsonc, then npm run deploy
 data: 1 step(s)
   npm run seed:prod (remote D1 seed and principal mapping, 41 export objects, lake self-test and table, snapshot expiration, pv load --target prod, counts and controls)
-github: P1 (executor.yml secrets), not built yet
+github: 1 step(s) (asks first)
+  gh is not logged in: run gh auth login, then setup again

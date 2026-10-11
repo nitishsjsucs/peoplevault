@@ -27,6 +27,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Cloudflare Access in front of the deployed Worker, R2, D1, KV and Workflows on Cloudflare | written, not yet executed |
 | Production executor, residual check and Basin Catalog self-test | written, not yet executed |
 | Production deletion eval profile (`pv eval deletion --profile prod`) | written, not yet executed |
+| Scheduled production executor (GitHub Actions `executor.yml`, hourly, with the daily residual check) | written, not yet executed (needs the push and `npm run setup:prod -- --only github`) |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
 
@@ -102,7 +103,7 @@ flowchart LR
 | Recovery windows | modeled from the 48 h setting (labeled modeled) | observed with time travel queries; fail-safe modeled |
 | Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake`, managed snapshot expiration |
 | Audit copy | D1 only; stream disabled | D1 (a Basin Pipelines copy is planned, P1) |
-| Executor | `pv serve` thread | `pv executor run --target prod` from the owner's machine, impersonating `pv-executor` |
+| Executor | `pv serve` thread | `pv executor run --target prod` from the owner's machine (impersonating `pv-executor`), or hourly in GitHub Actions (`executor.yml`, with a `pv-executor` key held only as a repository secret) |
 | Production API calls | recorded-response contract tests and `--dry-run` golden plans only | live, after setup |
 
 ## Local quickstart
@@ -123,6 +124,8 @@ npm run stop:local
 ## Production setup
 
 Everything a script can do is in `npm run setup:prod` (idempotent; `-- --dry-run` prints the plan) and `npm run doctor -- --prod` (prints exactly what is missing, with the fix for each line). The steps only the owner can do (accounts, Workers Paid, Zero Trust onboarding, tokens, logins, billing) are listed in [docs/PRODUCTION.md](docs/PRODUCTION.md).
+
+The production executor can run hourly in GitHub Actions (`.github/workflows/executor.yml`, enabled by `npm run setup:prod -- --only github`). GitHub disables scheduled workflows in a public repository after 60 days without repository activity; `npm run doctor -- --prod` reports the workflow's state and the age of its last successful run, and deletions that wait more than 24 hours for the executor fail (and can be retried).
 
 ## Results
 

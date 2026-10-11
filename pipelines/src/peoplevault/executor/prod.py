@@ -1,8 +1,9 @@
 """Production executor context (SPEC.md section 14.2). Status: written, not yet executed.
 
-Runs from the owner's machine as pv-executor by impersonation (BigQuery), against the Basin Catalog through the
-Iceberg REST protocol, and talks to the deployed Worker with the pv-executor Access service token; Access issues the
-JWT at the edge. Every production dbt invocation is followed by bq_controls.verify() and fails closed.
+Runs as pv-executor: from the owner's machine by impersonation, or in the scheduled executor.yml job with the
+pv-executor key (PV_DBT_TARGET=bigquery_actions, GOOGLE_APPLICATION_CREDENTIALS). It works against the Basin Catalog
+through the Iceberg REST protocol and talks to the deployed Worker with the pv-executor Access service token; Access
+issues the JWT at the edge. Every production dbt invocation is followed by bq_controls.verify() and fails closed.
 """
 
 from __future__ import annotations
@@ -31,8 +32,10 @@ def prod_api() -> WorkerApi:
 def prod_dbt(project: str):
     from peoplevault.setup.bq_controls import live_verify
 
+    target = config.prod_dbt_target(project)
+
     def run(args: list[str]) -> bool:
-        if not dbt_run([*args, "--target", "bigquery"]).success:
+        if not dbt_run([*args, "--target", target]).success:
             return False
         return live_verify(project) == []
 

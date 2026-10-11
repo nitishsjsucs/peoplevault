@@ -101,4 +101,19 @@ def format_exception_redacted(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {redact(str(exc))}"
 
 
-__all__ = ["REDACTED", "RedactingFilter", "format_exception_redacted", "install", "redact", "register_names"]
+def install_public_excepthook(stream=None) -> None:
+    """For public logs (the executor.yml job): an uncaught exception prints its type and redacted message only, never
+    a traceback (tracebacks can quote source lines and argument values); Python warnings go through the redacting
+    logger."""
+    import sys
+    import threading
+
+    def write(exc: BaseException) -> None:
+        (stream or sys.stderr).write(f"error: {format_exception_redacted(exc)}\n")
+
+    sys.excepthook = lambda _t, exc, _tb: write(exc)
+    threading.excepthook = lambda a: write(a.exc_value) if a.exc_value is not None else None
+    logging.captureWarnings(True)
+
+
+__all__ = ["REDACTED", "RedactingFilter", "format_exception_redacted", "install", "install_public_excepthook", "redact", "register_names"]
