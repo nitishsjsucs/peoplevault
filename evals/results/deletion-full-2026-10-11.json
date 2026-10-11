@@ -1,7 +1,7 @@
 {
   "command": "npm run eval:deletion",
   "date": "2026-10-11",
-  "git_sha": "14acb3ec679860eb80f00818f9d2cdf965179c5a",
+  "git_sha": "52a0aeb06a06546c35ab04174ed06e03e20e425f",
   "git_dirty": false,
   "environment": "local (Miniflare, DuckDB, pyiceberg SqlCatalog)",
   "versions": {
@@ -94,7 +94,7 @@
     "scanned": {
       "r2_objects": 51,
       "kv_keys": 156,
-      "d1_tables": 14,
+      "d1_tables": 15,
       "warehouse_tables": 19,
       "lake_tables": 5
     }
@@ -252,7 +252,7 @@
         "cleared/modeled": 110
       }
     },
-    "lake_expire": "lake expire: snapshots 13 -> 1, orphan files removed 80",
+    "lake_expire": "lake expire: snapshots 15 -> 1, orphan files removed 101",
     "residual_check": "residuals check: {'pending_before': 212, 'updated': 212, 'cleared': 212, 'errors': 0}"
   },
   "warmup": {
@@ -264,15 +264,15 @@
   },
   "audit_chain": {
     "ok": true,
-    "length": 1365,
+    "length": 1398,
     "windows": 14
   },
   "audit_copy": {
     "table": "governance.audit_events",
-    "rows": 1368,
-    "copied_this_run": 1368,
-    "last_seq": 1368,
-    "chain_length": 1365,
+    "rows": 1401,
+    "copied_this_run": 1401,
+    "last_seq": 1401,
+    "chain_length": 1398,
     "last_hash_matches": true,
     "lag_after_export": 1
   },
@@ -293,9 +293,9 @@
     }
   },
   "timing_ms": {
-    "workflow_p50": 33940.5,
-    "workflow_p95": 55768.0,
-    "total_run": 256826
+    "workflow_p50": 65834.0,
+    "workflow_p95": 109986.0,
+    "total_run": 417079
   },
   "gate": {
     "passed": true,
