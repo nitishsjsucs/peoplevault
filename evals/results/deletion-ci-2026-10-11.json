@@ -1,0 +1,286 @@
+{
+  "command": "npm run eval:deletion:ci",
+  "date": "2026-10-11",
+  "git_sha": "e23b6dcebbf1d93e762c7c0e7aa4d871698ce547",
+  "git_dirty": false,
+  "environment": "local (Miniflare, DuckDB, pyiceberg SqlCatalog)",
+  "versions": {
+    "wrangler": "4.149.0",
+    "dbt-core": "1.12.5",
+    "dbt-duckdb": "1.11.0",
+    "duckdb": "1.5.6",
+    "pyiceberg": "0.12.0"
+  },
+  "profile": "ci",
+  "kind": "deletion",
+  "requests": {
+    "total": 25,
+    "by_status": {
+      "completed_with_residuals": 16,
+      "failed": 5,
+      "held": 4
+    },
+    "by_kind": {
+      "dsr": 13,
+      "retention": 12
+    },
+    "cohorts": {
+      "R": 12,
+      "R_held": 2,
+      "D": 6,
+      "H": 2,
+      "F": 5,
+      "variants": 0
+    }
+  },
+  "assets_registered": 13,
+  "coverage": {
+    "value": 1.0,
+    "display": "100.0%",
+    "applicable_pairs": 157,
+    "clean_pairs": 157,
+    "by_category": {
+      "source_exports": {
+        "value": 1.0,
+        "display": "100.0%",
+        "applicable_pairs": 16,
+        "clean_pairs": 16
+      },
+      "warehouse_tables": {
+        "value": 1.0,
+        "display": "100.0%",
+        "applicable_pairs": 32,
+        "clean_pairs": 32
+      },
+      "historical_snapshots": {
+        "value": 1.0,
+        "display": "100.0%",
+        "applicable_pairs": 32,
+        "clean_pairs": 32
+      },
+      "identity_mappings": {
+        "value": 1.0,
+        "display": "100.0%",
+        "applicable_pairs": 32,
+        "clean_pairs": 32
+      },
+      "derived_datasets": {
+        "value": 1.0,
+        "display": "100.0%",
+        "applicable_pairs": 25,
+        "clean_pairs": 25
+      },
+      "application_caches": {
+        "value": 1.0,
+        "display": "100.0%",
+        "applicable_pairs": 20,
+        "clean_pairs": 20
+      }
+    },
+    "scope": "R and D requests that were not held; system verdicts"
+  },
+  "oracle": {
+    "oracle_coverage": {
+      "value": 1.0,
+      "display": "100.0%",
+      "applicable_pairs": 157,
+      "clean_pairs": 157
+    },
+    "agreement": 1.0,
+    "false_clean": 0,
+    "false_clean_pairs": 0,
+    "missed_locations": 0,
+    "false_residue": 0,
+    "scanned": {
+      "r2_objects": 45,
+      "kv_keys": 370,
+      "d1_tables": 11,
+      "warehouse_tables": 15,
+      "lake_tables": 3
+    }
+  },
+  "applicability_agreement": {
+    "value": 1.0,
+    "pairs": 192,
+    "agree": 192,
+    "disagreements": []
+  },
+  "holds": {
+    "held_requests": 4,
+    "held_subjects": 4,
+    "held_data_intact": 4
+  },
+  "faults": {
+    "scenarios": 5,
+    "detected": 5,
+    "by_store": {
+      "r2": {
+        "detected": 1,
+        "scenarios": 1
+      },
+      "warehouse": {
+        "detected": 1,
+        "scenarios": 1
+      },
+      "iceberg": {
+        "detected": 1,
+        "scenarios": 1
+      },
+      "kv": {
+        "detected": 1,
+        "scenarios": 1
+      },
+      "d1": {
+        "detected": 1,
+        "scenarios": 1
+      }
+    },
+    "undetected_by_design": 0,
+    "variants": [],
+    "note": "planted residues of designed types; detection shows the probes reach every store and location type, not that they would find any possible copy"
+  },
+  "retention": {
+    "export_objects_deleted": 3,
+    "export_objects_minimized_for_hold": 5,
+    "extracts_expired": 3,
+    "retention_requests": 10,
+    "retention_held": 2,
+    "raw_rows_expired": {
+      "hris_employees": 5970,
+      "leave_requests": 0,
+      "payroll_compensation": 2006,
+      "performance_reviews": 983
+    },
+    "lake_rows_expired_employee_monthly": 7035,
+    "expected": {
+      "export_objects_expired": 8,
+      "export_objects_deleted": 3,
+      "export_objects_minimized_for_hold": 5,
+      "expired_export_keys": [
+        "exports/hris/employees/dt=2026-07-06/employees.jsonl",
+        "exports/hris/employees/dt=2026-07-13/employees.jsonl",
+        "exports/hris/employees/dt=2026-07-20/employees.jsonl",
+        "exports/hris/employees/dt=2026-07-27/employees.jsonl",
+        "exports/hris/employees/dt=2026-08-03/employees.jsonl",
+        "exports/payroll/compensation/period=2025-10/compensation.csv",
+        "exports/payroll/compensation/period=2025-11/compensation.csv",
+        "exports/performance/reviews/cycle=2024H2/reviews.jsonl"
+      ],
+      "minimized_export_keys": [
+        "exports/hris/employees/dt=2026-07-06/employees.jsonl",
+        "exports/hris/employees/dt=2026-07-13/employees.jsonl",
+        "exports/hris/employees/dt=2026-07-20/employees.jsonl",
+        "exports/hris/employees/dt=2026-07-27/employees.jsonl",
+        "exports/hris/employees/dt=2026-08-03/employees.jsonl"
+      ],
+      "raw_rows_expired": {
+        "hris": 5970,
+        "payroll": 2006,
+        "performance": 983
+      },
+      "extracts_expired": 3,
+      "lake_rows_expired_employee_monthly": 7035,
+      "retention_requests": 10,
+      "retention_held": 2
+    },
+    "matches_expected": {
+      "export_objects_deleted": true,
+      "export_objects_minimized_for_hold": true,
+      "extracts_expired": true,
+      "retention_requests": true,
+      "retention_held": true,
+      "raw_rows_expired": true,
+      "lake_rows_expired_employee_monthly": true
+    }
+  },
+  "residuals": {
+    "by_kind": {
+      "iceberg_snapshots": {
+        "cleared/observed": 16
+      },
+      "iceberg_orphan_files": {
+        "cleared/observed": 16
+      },
+      "bq_time_travel": {
+        "modeled/modeled": 181
+      },
+      "bq_fail_safe": {
+        "modeled/modeled": 181
+      },
+      "kv_propagation": {
+        "cleared/modeled": 16
+      }
+    },
+    "before_lake_expiry": {
+      "bq_fail_safe": {
+        "modeled/modeled": 181
+      },
+      "bq_time_travel": {
+        "modeled/modeled": 181
+      },
+      "iceberg_orphan_files": {
+        "pending/observed": 16
+      },
+      "iceberg_snapshots": {
+        "pending/observed": 16
+      },
+      "kv_propagation": {
+        "cleared/modeled": 16
+      }
+    },
+    "lake_expire": "lake expire: snapshots 8 -> 1, orphan files removed 39",
+    "residual_check": "residuals check: {'pending_before': 32, 'updated': 32, 'cleared': 32, 'errors': 0}"
+  },
+  "warmup": {
+    "requested": 420,
+    "ok": 420,
+    "failed": 0,
+    "kv_keys_after_warmup": 421,
+    "extracts": 6
+  },
+  "audit_chain": {
+    "ok": true,
+    "length": 969,
+    "windows": 10
+  },
+  "audit_copy": {
+    "table": "governance.audit_events",
+    "rows": 971,
+    "copied_this_run": 971,
+    "last_seq": 971,
+    "chain_length": 969,
+    "last_hash_matches": true,
+    "lag_after_export": 1
+  },
+  "report": {
+    "coverage": {
+      "value": 0.9324324324324325,
+      "display": "93.2%",
+      "applicablePairs": 222,
+      "cleanPairs": 207
+    },
+    "requests": {
+      "total": 25,
+      "byStatus": {
+        "completed_with_residuals": 16,
+        "failed": 5,
+        "held": 4
+      }
+    }
+  },
+  "timing_ms": {
+    "workflow_p50": 14711.0,
+    "workflow_p95": 19860.0,
+    "total_run": 200688
+  },
+  "gate": {
+    "passed": true,
+    "checks": {
+      "false_clean_zero": true,
+      "all_faults_detected": true,
+      "held_data_intact": true,
+      "coverage_100": true,
+      "every_category_applicable": true
+    }
+  }
+}
