@@ -229,6 +229,7 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
 
     # applicability agreement (system present/not_present vs truth)
     agree = total_app = 0
+    disagreements: list[dict] = []  # asset and both answers only (no identifiers), so each one can be explained
     for r in scored_requests:
         subj = req_subject[r["id"]]
         for row in rows_by_req[r["id"]]:
@@ -239,6 +240,8 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
                 continue
             total_app += 1
             agree += int(want == row["applicability"])
+            if want != row["applicability"]:
+                disagreements.append({"asset_id": row["asset_id"], "system": row["applicability"], "truth": want})
 
     # holds
     held_subjects = [e for e in cohort_ids if truth[e]["hold_matter"]]
@@ -314,7 +317,7 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
         "coverage": {**_coverage(clean, len(pairs)), "by_category": by_cat, "scope": "R and D requests that were not held; system verdicts"},
         "oracle": {"oracle_coverage": _coverage(oracle_clean, len(pairs)), "agreement": (agreement / len(pairs)) if pairs else None, "false_clean": false_clean_pairs + missed,
                    "false_clean_pairs": false_clean_pairs, "missed_locations": missed, "false_residue": false_residue, "scanned": dict(found.scanned)},
-        "applicability_agreement": {"value": (agree / total_app) if total_app else None, "pairs": total_app, "agree": agree},
+        "applicability_agreement": {"value": (agree / total_app) if total_app else None, "pairs": total_app, "agree": agree, "disagreements": disagreements},
         "holds": {"held_requests": len(held_requests), "held_subjects": len(held_subjects), "held_data_intact": intact},
         "faults": {"scenarios": len(designed), "detected": len(detected), "by_store": by_store, "undetected_by_design": sum(1 for f in fault_rows if f["variant"] and not f["finding_at_location"]),
                    "variants": [{"variant": f["scenario"], "finding_at_location": f["finding_at_location"]} for f in fault_rows if f["variant"]],
@@ -374,6 +377,8 @@ def render_md(r: dict) -> str:
     lines += [
         f"- Oracle coverage: {o['oracle_coverage']['display']}; agreement {o['agreement']}; false_clean {o['false_clean']}; false_residue {o['false_residue']}",
         f"- Faults: {r['faults']['detected']} of {r['faults']['scenarios']} planted residues of designed types detected; {r['faults']['undetected_by_design']} out-of-design variants undetected by design",
+        f"- Applicability agreement with ground truth: {r['applicability_agreement']['agree']} of {r['applicability_agreement']['pairs']} pairs"
+        + "".join(f"; {d['asset_id']} system {d['system']}, truth {d['truth']}" for d in r["applicability_agreement"].get("disagreements", [])),
         f"- Holds: {r['holds']['held_requests']} held requests, held data intact for {r['holds']['held_data_intact']}",
         f"- Gate: {'passed' if r['gate']['passed'] else 'FAILED'} {r['gate']['checks']}",
     ]

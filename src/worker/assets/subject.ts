@@ -1,6 +1,8 @@
 // Subject identifiers, loaded inside each Workflow step from D1 and never returned from a step (SPEC.md 12.1).
 // While the subject's identity_map row exists it is the source; after identity erasure (step 14) and until
 // redact-request purges it, the same fields come from this request's own `<requestId>:erase` task payload.
+// Only the subject's own identifiers: the object is written into executor task payloads, so any other person's
+// identifier here (for example a manager's direct reports) would sit in D1 while that person's own deletion verifies.
 
 export interface SubjectIdentifiers {
   employeeId: string;
@@ -10,7 +12,6 @@ export interface SubjectIdentifiers {
   warehouseKey: string;
   analyticsId: string;
   subjectRef: string;
-  managerOf: string[];
 }
 
 interface IdentityRow {
@@ -33,7 +34,6 @@ export async function loadSubject(db: D1Database, requestId: string): Promise<Su
   if (req.employee_id) {
     const row = await db.prepare("SELECT employee_id, work_email, full_name, employee_ref, warehouse_key, analytics_id, subject_ref FROM identity_map WHERE employee_id = ?").bind(req.employee_id).first<IdentityRow>();
     if (row) {
-      const { results } = await db.prepare("SELECT employee_id FROM identity_map WHERE manager_employee_id = ? ORDER BY employee_id").bind(row.employee_id).all<{ employee_id: string }>();
       return {
         employeeId: row.employee_id,
         workEmail: row.work_email,
@@ -42,7 +42,6 @@ export async function loadSubject(db: D1Database, requestId: string): Promise<Su
         warehouseKey: row.warehouse_key,
         analyticsId: row.analytics_id,
         subjectRef: row.subject_ref,
-        managerOf: results.map((r) => r.employee_id),
       };
     }
   }

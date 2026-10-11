@@ -50,8 +50,8 @@ describe("operation budget (1,000 external operations per invocation; design lim
       expect(out.ops, name).toBeLessThanOrEqual(STEP_BUDGET);
     }
     expect(total).toBeLessThanOrEqual(INSTANCE_BUDGET);
-    // KV probe: one list page, five bulk gets of at most 100 keys, three D1 reads for the subject's tokens
-    expect(perStep["verify-kv"]).toBe(1 + Math.ceil(420 / 100) + 3);
+    // KV probe: one list page, five bulk gets of at most 100 keys, two D1 reads for the subject's tokens (request, identity row)
+    expect(perStep["verify-kv"]).toBe(1 + Math.ceil(420 / 100) + 2);
   });
 
   it("KV bulk reads use chunks of at most 100 keys", async () => {
@@ -71,7 +71,7 @@ describe("operation budget (1,000 external operations per invocation; design lim
     const ident = await identityOf(subject("hrbp-02", "in_unit", 1).employee_ref);
     const tokens = { employeeId: ident.employee_id, workEmail: ident.work_email, fullName: ident.full_name, employeeRef: ident.employee_ref, warehouseKey: ident.warehouse_key, analyticsId: ident.analytics_id };
     await probeKv(spy, subjectMatchers(tokens, { includeFullName: true }));
-    await eraseKvCaches(spy, { ...tokens, subjectRef: ident.subject_ref, managerOf: [] });
+    await eraseKvCaches(spy, { ...tokens, subjectRef: ident.subject_ref });
     expect(sizes.length).toBeGreaterThan(4);
     expect(Math.max(...sizes)).toBeLessThanOrEqual(100);
   });
