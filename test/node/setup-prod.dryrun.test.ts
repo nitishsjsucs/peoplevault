@@ -26,7 +26,7 @@ const ENV_FULL: Record<string, string> = {
 
 function empty(): SetupState {
   return {
-    accountId: null, loggedIn: false, teamDomain: null, subdomain: null, buckets: [], d1: [], kv: [], queues: [], catalogEnabled: false, workerId: null,
+    accountId: null, loggedIn: false, teamDomain: null, subdomain: null, buckets: [], d1: [], kv: [], queues: [], workflows: [], catalogEnabled: false, workerId: null,
     workerSecrets: [], accessApp: null, serviceTokens: [], aiGateway: null, resources: {}, workerSecretsFile: [], renderedText: null,
     gcpMissing: [{ name: "gcloud", fix: "brew install --cask gcloud-cli" }], dataLoaded: false, github: NO_GITHUB,
   };
@@ -48,13 +48,13 @@ function complete(): SetupState {
   const s: SetupState = {
     accountId: "acct-0123", loggedIn: true, teamDomain: "nitish-pv.cloudflareaccess.com", subdomain: "nitish-pv", buckets: ["pv-source-exports", "pv-derived", "pv-lake"],
     d1: [{ name: "pv-control", uuid: "11111111-2222-3333-4444-555555555555" }], kv: [{ id: "0123456789abcdef0123456789abcdef", title: "pv-cache" }],
-    queues: ["pv-retention-sweep", "pv-retention-dlq"], catalogEnabled: true, workerId: "w-1",
+    queues: ["pv-retention-sweep", "pv-retention-dlq"], workflows: ["pv-subject-deletion", "pv-retention-sweep"], catalogEnabled: true, workerId: "w-1",
     workerSecrets: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"],
     accessApp: { id: "app-1", aud: "aud-123" }, serviceTokens: tokens,
     aiGateway: { id: "peoplevault", collect_logs: false, cache_ttl: 0, rate_limiting_interval: 60, rate_limiting_limit: 10, rate_limiting_technique: "fixed" },
     resources: {
       d1_id: "11111111-2222-3333-4444-555555555555", kv_id: "0123456789abcdef0123456789abcdef", policy_tags: TAGS, audit_copy_table: true, audit_copy_expiration: true,
-      created_buckets: ["pv-source-exports", "pv-derived", "pv-lake"], created_queues: ["pv-retention-sweep", "pv-retention-dlq"], worker_deployed: true, ai_gateway_created: true,
+      created_buckets: ["pv-source-exports", "pv-derived", "pv-lake"], created_queues: ["pv-retention-sweep", "pv-retention-dlq"], worker_deployed: true, created_workflows: ["pv-subject-deletion", "pv-retention-sweep"], ai_gateway_created: true,
     },
     workerSecretsFile: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"], renderedText: null, gcpMissing: [], dataLoaded: true,
     github: { authed: true, repo: REPO, secrets: [...GITHUB_SECRETS], variables: { PV_PROD_ENABLED: "true" }, workflowState: "active", lastSuccess: "2026-10-10T03:07:00Z" },
@@ -163,6 +163,10 @@ describe("setup:prod --dry-run", () => {
     expect(preflight(s, completeEnv())[0]!.fix).toContain("record it in .secrets/prod-resources.json");
     expect(preflight(complete(), completeEnv())).toEqual([]);
     expect(planSetup(complete(), completeEnv(), null).map((x) => x.id)).not.toContain("cloudflare:record");
+    // Workflow names are account-wide: another repo's pv-subject-deletion is never deployed over
+    const other = empty();
+    Object.assign(other, { accountId: "acct-0123", loggedIn: true, workflows: ["pv-subject-deletion"] });
+    expect(preflight(other, {}).map((m) => m.item)).toContain("conflict: Workflow pv-subject-deletion exists but this repo has no record of deploying it");
   });
 
   it("the AI Gateway: created with no logs and no cache, repaired when its settings drift, never adopted without a record", () => {

@@ -1,6 +1,6 @@
 // Same-named Cloudflare resources this repo has no record of (SPEC.md section 30.3.9). The Cloudflare account is shared
-// with three other repos, so setup:prod never adopts a bucket, database, namespace, queue, Worker or AI Gateway with one of this
-// repo's names unless .secrets/prod-resources.json records that this repo created it; it stops and names the conflict.
+// with three other repos, so setup:prod never adopts a bucket, database, namespace, queue, Workflow, Worker or AI Gateway with one
+// of this repo's names unless .secrets/prod-resources.json records that this repo created it; it stops and names the conflict.
 import type { ProdResources } from "./prod-files.ts";
 
 export const BUCKETS = ["pv-source-exports", "pv-derived", "pv-lake"];
@@ -8,12 +8,16 @@ export const QUEUES = ["pv-retention-sweep", "pv-retention-dlq"];
 export const D1_NAME = "pv-control";
 export const KV_TITLE = "pv-cache";
 export const WORKER_NAME = "peoplevault";
+/** Workflow names are account-wide; the first deploy creates both. */
+export const WORKFLOWS = ["pv-subject-deletion", "pv-retention-sweep"];
 
 export interface AccountResources {
   buckets: string[];
   d1: { name: string; uuid: string }[];
   kv: { id: string; title: string }[];
   queues: string[];
+  /** names from `wrangler workflows list --json` (absent when not read) */
+  workflows?: string[];
   workerId: string | null;
   /** an AI Gateway named peoplevault exists (P1 schema-drift triage) */
   aiGateway?: boolean;
@@ -37,6 +41,8 @@ export function nameConflicts(a: AccountResources, r: ProdResources): Conflict[]
   if (kv && r.kv_id !== kv.id) out.push({ item: `KV namespace ${kv.title} exists but its id is not the recorded kv_id`, fix: record(`"kv_id": "<its id>"`) });
   const createdQueues = new Set(r.created_queues ?? []);
   for (const q of QUEUES) if (a.queues.includes(q) && !createdQueues.has(q)) out.push({ item: `Queue ${q} exists but this repo has no record of creating it`, fix: record(`"created_queues": [..., "${q}"]`) });
+  const createdWorkflows = new Set(r.created_workflows ?? []);
+  for (const w of WORKFLOWS) if ((a.workflows ?? []).includes(w) && !createdWorkflows.has(w)) out.push({ item: `Workflow ${w} exists but this repo has no record of deploying it`, fix: record(`"created_workflows": [..., "${w}"]`) });
   if (a.workerId && !r.worker_deployed) out.push({ item: `Worker ${WORKER_NAME} exists but this repo has no record of deploying it`, fix: record(`"worker_deployed": true`) });
   if (a.aiGateway && !r.ai_gateway_created) out.push({ item: `AI Gateway ${WORKER_NAME} exists but this repo has no record of creating it`, fix: record(`"ai_gateway_created": true`) });
   return out;

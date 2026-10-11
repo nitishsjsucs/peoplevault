@@ -359,6 +359,28 @@ describe("doctor --prod: Cloudflare name conflicts on the shared account", () =>
     const recorded = (await run({ ".secrets/prod-resources.json": JSON.stringify({ created_buckets: ["pv-lake"] }) })).find((x) => x.name === "name conflicts")!;
     expect(recorded.status).toBe("ok");
   });
+
+  it("a Workflow with this repo's name (account-wide) that the first deploy did not record is a conflict", async () => {
+    const res = (result: unknown) => new Response(JSON.stringify({ success: true, errors: [], result }), { status: 200 });
+    const run = (files: Record<string, string>) =>
+      prodChecks(
+        deps({
+          env: { CLOUDFLARE_ACCOUNT_ID: "acct" },
+          files,
+          commands: {
+            "wrangler whoami --json": ok(JSON.stringify({ loggedIn: true, accounts: [{ id: "acct", name: "a" }] })),
+            "wrangler auth token --json": ok(JSON.stringify({ token: "oauth" })),
+            "wrangler d1 list --json": ok(JSON.stringify([])),
+            "wrangler workflows list --json": ok(JSON.stringify([{ id: "w", name: "pv-retention-sweep", script_name: "someone-else" }])),
+          },
+          routes: { "GET /accounts/acct/r2/buckets": res({ buckets: [] }), "GET /accounts/acct/storage/kv/namespaces?per_page=100": res([]), "GET /accounts/acct/queues": res([]) },
+        }),
+      );
+    const line = (await run({})).find((x) => x.name === "name conflicts")!;
+    expect(line).toMatchObject({ status: "missing", detail: "Workflow pv-retention-sweep exists but this repo has no record of deploying it" });
+    const recorded = (await run({ ".secrets/prod-resources.json": JSON.stringify({ created_workflows: ["pv-subject-deletion", "pv-retention-sweep"] }) })).find((x) => x.name === "name conflicts")!;
+    expect(recorded.status).toBe("ok");
+  });
 });
 
 describe("doctor --prod: the AI Gateway", () => {

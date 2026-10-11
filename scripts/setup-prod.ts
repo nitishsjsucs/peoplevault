@@ -31,7 +31,7 @@ import { REPO_ROOT, parseJsonOutput, pv, run, wrangler, wranglerBin, type RunRes
 
 export const GROUPS = ["cloudflare", "gcp", "worker", "access", "data", "github"] as const;
 export type Group = (typeof GROUPS)[number];
-import { BUCKETS, QUEUES, isKvTitle, nameConflicts } from "./lib/conflicts.ts";
+import { BUCKETS, QUEUES, WORKFLOWS, isKvTitle, nameConflicts } from "./lib/conflicts.ts";
 export { BUCKETS, QUEUES };
 // Workers Free (SPEC.md section 30, ADR 0007): no Basin Pipelines resources (Workers Paid only; this account returned
 // code 1021). The audit copy governance.audit_events is pulled by `pv audit export`.
@@ -45,6 +45,8 @@ export interface SetupState {
   d1: { name: string; uuid: string }[];
   kv: { id: string; title: string }[];
   queues: string[];
+  /** Workflow names on the account (`wrangler workflows list --json`) */
+  workflows: string[];
   catalogEnabled: boolean;
   workerId: string | null;
   workerSecrets: string[];
@@ -237,6 +239,7 @@ export async function gatherState(d: SetupDeps, env: Record<string, string>): Pr
     d1: [],
     kv: [],
     queues: [],
+    workflows: [],
     catalogEnabled: false,
     workerId: null,
     workerSecrets: [],
@@ -271,6 +274,7 @@ export async function gatherState(d: SetupDeps, env: Record<string, string>): Pr
       s.catalogEnabled = !!cat && /active|enabled/i.test(cat.status ?? "");
     }
     s.d1 = tryJson<{ name: string; uuid: string }[]>((await d.run(d.wrangler, ["d1", "list", "--json"])).stdout, []);
+    s.workflows = tryJson<{ name: string }[]>((await d.run(d.wrangler, ["workflows", "list", "--json"])).stdout, []).map((w) => w.name);
     if (s.renderedText && s.workerId) {
       s.workerSecrets = tryJson<{ name: string }[]>((await d.run(d.wrangler, ["secret", "list", "-c", RENDERED_REL, "--format", "json"])).stdout, []).map((x) => x.name);
     }
@@ -298,7 +302,7 @@ function parseCatalog(text: string): { uri?: string; warehouse?: string } {
 
 async function deploy(): Promise<void> {
   await run(process.execPath, [path.join(REPO_ROOT, "scripts", "deploy-prod.ts")], { quiet: true });
-  writeResources({ worker_deployed: true });
+  writeResources({ worker_deployed: true, created_workflows: [...WORKFLOWS] });
 }
 
 function renderTo(s: SetupState, env: Record<string, string>): void {

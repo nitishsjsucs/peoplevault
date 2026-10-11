@@ -197,7 +197,7 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     if (d.exists(TEMPLATE_PATH) && /"ai"\s*:\s*\{\s*"binding"/.test(d.readFile(TEMPLATE_PATH))) out.push(await aiGatewayCheck(api));
   }
   const R = "Cloudflare resources";
-  const seen: AccountResources = { buckets: [], d1: [], kv: [], queues: [], workerId: null };
+  const seen: AccountResources = { buckets: [], d1: [], kv: [], queues: [], workflows: [], workerId: null };
   if (loggedIn && accountId) {
     const tok = await d.run(d.wrangler, ["auth", "token", "--json"]);
     let oauth = "";
@@ -249,6 +249,12 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
       hasD1 = false;
     }
     out.push(hasD1 ? ok(R, "D1", "pv-control") : missing(R, "D1", "pv-control missing", "npm run setup:prod"));
+    // Workflow names are account-wide too (read-only listing)
+    try {
+      seen.workflows = (jsonFrom((await d.run(d.wrangler, ["workflows", "list", "--json"])).stdout) as { name: string }[]).map((w) => w.name);
+    } catch {
+      seen.workflows = [];
+    }
     // shared account (SPEC.md section 30.3.9): a resource with one of this repo's names that setup did not record
     const recorded = d.exists(".secrets/prod-resources.json") ? (JSON.parse(d.readFile(".secrets/prod-resources.json")) as Record<string, never>) : {};
     const conflicts = nameConflicts(seen, recorded);

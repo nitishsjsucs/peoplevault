@@ -76,6 +76,8 @@ export interface ProdResources {
   created_buckets?: string[];
   created_queues?: string[];
   worker_deployed?: boolean;
+  /** Workflows created by this repo's first deploy (names are account-wide) */
+  created_workflows?: string[];
   /** the AI Gateway `peoplevault` was created by this repo's setup (P1 schema-drift triage) */
   ai_gateway_created?: boolean;
   audit_copy_expiration?: boolean;
