@@ -11,8 +11,9 @@ export function realDeps(): DoctorDeps {
     run: (cmd, args) => run(cmd, args, { allowFail: true, ...(cmd === wranglerBin() ? { env: wranglerEnv() } : {}) }),
     env: process.env,
     fetchImpl: fetch,
-    exists: (p) => existsSync(path.join(REPO_ROOT, p)),
-    readFile: (p) => readFileSync(path.join(REPO_ROOT, p), "utf8"),
+    // repo-relative paths, or absolute ones such as the local model file (path.join would nest those under the repo)
+    exists: (p) => existsSync(path.resolve(REPO_ROOT, p)),
+    readFile: (p) => readFileSync(path.resolve(REPO_ROOT, p), "utf8"),
     portOpen: (port) => portOpen(port),
     nodeVersion: process.version,
     wrangler: wranglerBin(),

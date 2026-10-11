@@ -95,16 +95,36 @@ export async function localChecks(d: DoctorDeps): Promise<CheckResult[]> {
   const busy: string[] = [];
   for (const [name, port] of [["wrangler dev", 8793], ["inspector", 9243], ["shim", 8893]] as const) if (await d.portOpen(port)) busy.push(`${name} ${port}`);
   out.push(busy.length ? warn(L, "ports", `in use: ${busy.join(", ")}`, "npm run stop:local") : ok(L, "ports", "8793, 9243 and 8893 are free"));
-  const d1 = await d.run(d.wrangler, ["d1", "execute", "pv-control", "--local", "--json", "--command", "SELECT COUNT(*) AS n FROM identity_map"]);
+  const d1 = await d.run(d.wrangler, ["d1", "execute", "pv-control", "--local", "--json", "--command", LOCAL_SEED_SQL]);
   let n = -1;
+  let erased = 0;
   try {
-    n = (jsonFrom(d1.stdout) as { results: { n: number }[] }[])[0]?.results[0]?.n ?? -1;
+    const row = (jsonFrom(d1.stdout) as { results: { n: number; erased: number }[] }[])[0]?.results[0];
+    n = row?.n ?? -1;
+    erased = row?.erased ?? 0;
   } catch {
     n = -1;
   }
-  const seeded = d1.code === 0 && n === 1200 && d.exists("pipelines/.data/warehouse.duckdb") && d.exists("pipelines/.data/lake/catalog.db");
-  out.push(seeded ? ok(L, "local seed", "D1 1,200 identity rows, DuckDB file, lake catalog") : missing(L, "local seed", "not seeded or incomplete", "npm run seed:local -- --fresh"));
+  out.push(localSeedCheck(d1.code === 0 ? n : -1, erased, d.exists("pipelines/.data/warehouse.duckdb") && d.exists("pipelines/.data/lake/catalog.db")));
   return out;
+}
+
+/** Identity rows and completed deletions in local D1 (every completed deletion erases its subject's identity rows). */
+export const LOCAL_SEED_SQL = "SELECT (SELECT COUNT(*) FROM identity_map) AS n, (SELECT COUNT(*) FROM deletion_requests WHERE status IN ('completed', 'completed_with_residuals')) AS erased";
+const SEEDED_EMPLOYEES = 1200;
+
+/** The seed is present when D1 holds the 1,200 seeded identity rows, or fewer by exactly the subjects that completed
+ * deletions erased since (the state every local eval leaves), and the DuckDB file and the lake catalog exist. */
+export function localSeedCheck(identityRows: number, erased: number, filesPresent: boolean): CheckResult {
+  const L = "Local data";
+  const fix = "npm run seed:local -- --fresh";
+  if (identityRows < 0) return missing(L, "local seed", "not seeded (local D1 has no identity_map)", fix);
+  if (!filesPresent) return missing(L, "local seed", "the DuckDB file or the lake catalog is missing", fix);
+  const fmt = (x: number) => x.toLocaleString("en-US");
+  if (identityRows === SEEDED_EMPLOYEES) return ok(L, "local seed", `D1 ${fmt(SEEDED_EMPLOYEES)} identity rows, DuckDB file, lake catalog`);
+  if (identityRows > 0 && identityRows + erased === SEEDED_EMPLOYEES)
+    return ok(L, "local seed", `D1 ${fmt(identityRows)} identity rows (${fmt(SEEDED_EMPLOYEES)} seeded, ${fmt(erased)} erased by completed deletions), DuckDB file, lake catalog`);
+  return missing(L, "local seed", `incomplete: D1 holds ${fmt(identityRows)} identity rows and ${fmt(erased)} completed deletions, not ${fmt(SEEDED_EMPLOYEES)} in all`, fix);
 }
 
 // ---- production ---------------------------------------------------------------------------------------------------
@@ -127,8 +147,13 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
   out.push(accountId ? ok(A, "account id", "set") : missing(A, "account id", "CLOUDFLARE_ACCOUNT_ID not set and not exactly one account", "add CLOUDFLARE_ACCOUNT_ID=<id> to .secrets/prod.env"));
   const tokenFix = "create PV_CF_API_TOKEN (docs/PRODUCTION.md, Accounts step 7) and add it to .secrets/prod.env";
   let subdomain: string | null = null;
-  if (!env.PV_CF_API_TOKEN || !accountId) out.push(missing(A, "PV_CF_API_TOKEN", "not set", tokenFix));
-  else {
+  // what the "Live checks" skip line points to when no subdomain is known
+  let subdomainFix = loggedIn ? tokenFix : "npx wrangler login";
+  if (!env.PV_CF_API_TOKEN || !accountId) {
+    out.push(missing(A, "PV_CF_API_TOKEN", "not set", tokenFix));
+    // the wrangler login cannot read Access, so these checks wait for the token (the subdomain is read with the login below)
+    out.push(missing("Access", "Access checks", "skipped until PV_CF_API_TOKEN is set: Zero Trust organization, Access application, 5 service tokens, AI Gateway", tokenFix));
+  } else {
     const api = new CfApi(accountId, env.PV_CF_API_TOKEN, d.fetchImpl);
     const failed: string[] = [];
     let org: { auth_domain: string } | null = null;
@@ -156,6 +181,7 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     }
     out.push(failed.length ? missing(A, "PV_CF_API_TOKEN scopes", `no access to: ${failed.join(", ")}`, tokenFix) : ok(A, "PV_CF_API_TOKEN scopes", "Access and the Workers subdomain readable"));
     out.push(org?.auth_domain ? ok(A, "Zero Trust organization", org.auth_domain) : missing(A, "Zero Trust organization", "none", "Zero Trust onboarding in the dashboard (docs/PRODUCTION.md step 5)"));
+    if (!subdomain && !failed.includes("workers subdomain")) subdomainFix = `https://dash.cloudflare.com/${accountId}/workers/onboarding`;
     out.push(
       subdomain
         ? ok(A, "workers.dev subdomain", `${subdomain}.workers.dev`)
@@ -183,6 +209,20 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     if (!oauth) out.push(missing(R, "wrangler OAuth token", "unavailable", "npx wrangler login"));
     else {
       const api = new CfApi(accountId, oauth, d.fetchImpl);
+      if (!env.PV_CF_API_TOKEN) {
+        // without the API token the workers.dev subdomain is read with the wrangler login (wrangler deploy reads it so)
+        try {
+          subdomain = await api.workersSubdomain();
+          if (!subdomain) subdomainFix = `https://dash.cloudflare.com/${accountId}/workers/onboarding`;
+          out.push(
+            subdomain
+              ? ok(A, "workers.dev subdomain", `${subdomain}.workers.dev (read with the wrangler login)`)
+              : missing(A, "workers.dev subdomain", "none registered (Workflows cannot deploy without one)", subdomainFix),
+          );
+        } catch {
+          out.push(missing(A, "workers.dev subdomain", "not readable with the wrangler login", tokenFix));
+        }
+      }
       const buckets = new Set((await api.r2Buckets().catch(() => ({ buckets: [] }))).buckets.map((b) => b.name));
       seen.buckets = [...buckets];
       const needB = ["pv-source-exports", "pv-derived", "pv-lake"].filter((b) => !buckets.has(b));
@@ -194,8 +234,11 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
       seen.queues = [...qs];
       const needQ = ["pv-retention-sweep", "pv-retention-dlq"].filter((q) => !qs.has(q));
       out.push(needQ.length ? missing(R, "Queues", `missing: ${needQ.join(", ")}`, "npm run setup:prod") : ok(R, "Queues", "2 of 2"));
-      const cat = await api.catalog("pv-lake").catch(() => null);
-      out.push(cat && /active|enabled/i.test(cat.status ?? "") ? ok(R, "Basin Catalog", "enabled on pv-lake") : missing(R, "Basin Catalog", "not enabled on pv-lake (or status unreadable)", "npx wrangler basin catalog enable pv-lake"));
+      if (!buckets.has("pv-lake")) out.push(missing(R, "Basin Catalog", "not enabled: the bucket pv-lake does not exist yet", "npm run setup:prod (creates pv-lake, enables the catalog and records its URI)"));
+      else {
+        const cat = await api.catalog("pv-lake").catch(() => null);
+        out.push(cat && /active|enabled/i.test(cat.status ?? "") ? ok(R, "Basin Catalog", "enabled on pv-lake") : missing(R, "Basin Catalog", "not enabled on pv-lake (or status unreadable)", "npm run setup:prod (enables the catalog and records its URI)"));
+      }
     }
     const d1 = await d.run(d.wrangler, ["d1", "list", "--json"]);
     let hasD1 = false;
@@ -246,7 +289,12 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
         const res = await d.fetchImpl(target, { redirect: "manual" });
         const loc = res.headers.get("location") ?? "";
         const byAccess = (res.status >= 300 && res.status < 400 && loc.includes("cloudflareaccess.com")) || (res.status === 403 && !(res.headers.get("content-type") ?? "").includes("application/json"));
-        out.push(byAccess ? ok(V, name, "unauthenticated request answered by Access") : missing(V, name, `answered by the Worker or something else (HTTP ${res.status})`, "protect the Worker with the Access application (docs/PRODUCTION.md, Access)"));
+        // workers.dev answers a name with no Worker behind it with 404: "error code: 1042" in plain text, or an HTML page
+        // "There is nothing here yet" (seen for peoplevault.nitish-ratakonda.workers.dev on 2026-10-11, before any deploy)
+        const noWorker = res.status === 404 && /error code: 1042|There is nothing here yet/.test(await res.text().catch(() => ""));
+        if (byAccess) out.push(ok(V, name, "unauthenticated request answered by Access"));
+        else if (noWorker) out.push(missing(V, name, `no Worker deployed at ${origin} (HTTP 404, Cloudflare error 1042)`, "npm run setup:prod (deploys the Worker behind the Access application)"));
+        else out.push(missing(V, name, `answered by the Worker or something else (HTTP ${res.status})`, "protect the Worker with the Access application (docs/PRODUCTION.md, Access)"));
       } catch {
         out.push(missing(V, name, "Worker unreachable", "npm run deploy"));
       }
@@ -266,7 +314,7 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
         out.push(missing(V, `persona ${persona}`, "request failed", "npm run deploy"));
       }
     }
-  }
+  } else out.push(missing(V, "Live checks", "skipped until the workers.dev subdomain is known: edge and console protection, 4 persona round trips", subdomainFix));
   const P = "Google Cloud";
   const gcp = await d.run("uv", ["run", "--project", "pipelines", "pv", "doctor", "gcp", "--json"]);
   try {

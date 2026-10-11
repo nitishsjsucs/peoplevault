@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CF_API, CfApi } from "../../scripts/lib/cf-api.ts";
-import { aiGatewayCheck, auditCopyCheck, exitCode, freePlanUsage, githubChecks, localChecks, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
+import { LOCAL_SEED_SQL, aiGatewayCheck, auditCopyCheck, exitCode, freePlanUsage, githubChecks, localChecks, localSeedCheck, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
 import { GITHUB_SECRETS, readGithubState, type GithubState } from "../../scripts/lib/github.ts";
 import { REPO_ROOT, type RunResult } from "../../scripts/lib/run.ts";
 
@@ -30,7 +30,7 @@ function deps(over: Partial<DoctorDeps> & { files?: Record<string, string>; comm
     "uv sync --project pipelines --locked --check": ok(""),
     "uv python find 3.12": ok("/usr/bin/python3.12"),
     "llama-server --version": ok("version: 0.5.0 (build 11146, commit 7fe450e19)"),
-    "wrangler d1 execute pv-control --local --json --command SELECT COUNT(*) AS n FROM identity_map": ok(JSON.stringify([{ results: [{ n: 1200 }] }])),
+    [`wrangler d1 execute pv-control --local --json --command ${LOCAL_SEED_SQL}`]: ok(JSON.stringify([{ results: [{ n: 1200, erased: 0 }] }])),
     "wrangler whoami --json": ok(JSON.stringify({ loggedIn: false })),
     "uv run --project pipelines pv doctor gcp --json": ok(JSON.stringify([{ group: "Google Cloud", name: "gcloud", status: "missing", detail: "not installed", fix: "brew install --cask gcloud-cli" }])),
     ...over.commands,
@@ -80,13 +80,23 @@ describe("doctor (local)", () => {
   });
 
   it("warns on Node 25 and busy ports, and is missing an unseeded store, with fixes", async () => {
-    const r = await localChecks(deps({ nodeVersion: "v25.9.0", portOpen: async (p) => p === 8793, commands: { "wrangler d1 execute pv-control --local --json --command SELECT COUNT(*) AS n FROM identity_map": fail } }));
+    const r = await localChecks(deps({ nodeVersion: "v25.9.0", portOpen: async (p) => p === 8793, commands: { [`wrangler d1 execute pv-control --local --json --command ${LOCAL_SEED_SQL}`]: fail } }));
     const by = Object.fromEntries(r.map((x) => [x.name, x]));
     expect(by.node).toMatchObject({ status: "warn", fix: "nvm install 24 && nvm use 24" });
     expect(by.ports).toMatchObject({ status: "warn", fix: "npm run stop:local" });
     expect(by["local seed"]).toMatchObject({ status: "missing", fix: "npm run seed:local -- --fresh" });
     expect(exitCode(r)).toBe(1);
     nonOkHaveFixes(r);
+  });
+
+  it("local seed: the 1,200 seeded identity rows, or fewer by exactly the subjects completed deletions erased", () => {
+    expect(localSeedCheck(1200, 0, true)).toMatchObject({ status: "ok", detail: "D1 1,200 identity rows, DuckDB file, lake catalog" });
+    // the state the committed ci eval leaves: 16 completed deletions erased 16 subjects' identity rows
+    expect(localSeedCheck(1184, 16, true)).toMatchObject({ status: "ok", detail: "D1 1,184 identity rows (1,200 seeded, 16 erased by completed deletions), DuckDB file, lake catalog" });
+    expect(localSeedCheck(1184, 0, true)).toMatchObject({ status: "missing", fix: "npm run seed:local -- --fresh" });
+    expect(localSeedCheck(0, 0, true).status).toBe("missing");
+    expect(localSeedCheck(-1, 0, true)).toMatchObject({ status: "missing", detail: "not seeded (local D1 has no identity_map)" });
+    expect(localSeedCheck(1200, 0, false)).toMatchObject({ status: "missing", detail: "the DuckDB file or the lake catalog is missing" });
   });
 
   it("flags .dev.vars with names other than secrets.required and drifted node_modules", async () => {
@@ -168,6 +178,51 @@ describe("doctor --prod", () => {
     expect(open.find((x) => x.name === "edge protection")).toMatchObject({ status: "missing" });
     // the console's index.html served to an unauthenticated browser means the static assets bypass Access
     expect(open.find((x) => x.name === "console protection")).toMatchObject({ status: "missing", detail: "answered by the Worker or something else (HTTP 200)" });
+  });
+});
+
+describe("doctor --prod before setup (the state of the shared account on 2026-10-11)", () => {
+  const notHere = () => new Response("<!DOCTYPE html><title>Page not found</title><h1>There is nothing here yet</h1>", { status: 404, headers: { "content-type": "text/html" } });
+  const res = (result: unknown) => new Response(JSON.stringify({ success: true, errors: [], result }), { status: 200 });
+  const loggedIn = (routes: Record<string, string | Response>) =>
+    prodChecks(
+      deps({
+        env: {},
+        commands: {
+          "wrangler whoami --json": ok(JSON.stringify({ loggedIn: true, accounts: [{ id: "acct", name: "a" }] })),
+          "wrangler auth token --json": ok(JSON.stringify({ token: "oauth" })),
+          "wrangler d1 list --json": ok(JSON.stringify([])),
+        },
+        routes: {
+          "GET /accounts/acct/r2/buckets": res({ buckets: [] }),
+          "GET /accounts/acct/storage/kv/namespaces?per_page=100": res([]),
+          "GET /accounts/acct/queues": res([]),
+          ...routes,
+        },
+      }),
+    );
+
+  it("without PV_CF_API_TOKEN: one Access line says what waits for it, and the subdomain is read with the wrangler login", async () => {
+    const r = await loggedIn({ "GET /accounts/acct/workers/subdomain": res({ subdomain: "nitish-pv" }), "https://peoplevault.nitish-pv.workers.dev/api/v1/me": notHere(), "https://peoplevault.nitish-pv.workers.dev/": notHere() });
+    const by = Object.fromEntries(r.map((x) => [x.name, x]));
+    expect(by["Access checks"]).toMatchObject({ group: "Access", status: "missing", detail: "skipped until PV_CF_API_TOKEN is set: Zero Trust organization, Access application, 5 service tokens, AI Gateway" });
+    expect(by["workers.dev subdomain"]).toMatchObject({ status: "ok", detail: "nitish-pv.workers.dev (read with the wrangler login)" });
+    // workers.dev answers 404 "There is nothing here yet" (error 1042) for a name with no Worker: deploy, not "add Access"
+    expect(by["edge protection"]).toMatchObject({ status: "missing", detail: "no Worker deployed at https://peoplevault.nitish-pv.workers.dev (HTTP 404, Cloudflare error 1042)" });
+    expect(by["console protection"]!.fix).toBe("npm run setup:prod (deploys the Worker behind the Access application)");
+    expect(by["persona hr_partner"]).toMatchObject({ status: "missing", detail: "service token not recorded" });
+    expect(by["Basin Catalog"]).toMatchObject({ status: "missing", detail: "not enabled: the bucket pv-lake does not exist yet", fix: "npm run setup:prod (creates pv-lake, enables the catalog and records its URI)" });
+    nonOkHaveFixes(r);
+  });
+
+  it("a plain-text 1042 is recognized too, and a subdomain the login cannot read skips the live checks with the token's fix", async () => {
+    const plain = () => new Response("error code: 1042", { status: 404, headers: { "content-type": "text/plain" } });
+    const r = await loggedIn({ "GET /accounts/acct/workers/subdomain": res({ subdomain: "nitish-pv" }), "https://peoplevault.nitish-pv.workers.dev/api/v1/me": plain(), "https://peoplevault.nitish-pv.workers.dev/": plain() });
+    expect(r.find((x) => x.name === "edge protection")!.detail).toContain("no Worker deployed");
+    const unreadable = Object.fromEntries((await loggedIn({})).map((x) => [x.name, x]));
+    expect(unreadable["workers.dev subdomain"]).toMatchObject({ status: "missing", detail: "not readable with the wrangler login" });
+    expect(unreadable["Live checks"]).toMatchObject({ status: "missing", fix: expect.stringContaining("create PV_CF_API_TOKEN") });
+    expect(unreadable["edge protection"]).toBeUndefined();
   });
 });
 
