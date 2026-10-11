@@ -164,18 +164,35 @@ function classColumns(cls: string): string[] {
     .map(([c]) => c);
 }
 
-function checkClassVisibility(row: Record<string, unknown>, cls: TaggedClass, vis: string, s: SubjectEntry): void {
+/** The columns of a class that the case's named query returns (profile, or identity lookup). */
+function projectedColumns(queryId: string, cls: TaggedClass): string[] {
+  const q = POLICY.queries[queryId];
+  expect(q, `query ${queryId}`).toBeDefined();
+  return q!.columns.filter((col) => col.class === cls).map((col) => col.name);
+}
+
+function checkClassVisibility(row: Record<string, unknown>, cls: TaggedClass, vis: string, s: SubjectEntry, queryId: string): void {
   const cols = classColumns(cls);
   const present = cols.filter((c) => c in row);
   const rep = REPRESENTATIVE[cls];
   if (vis === "deny") {
     expect(present, `${cls} columns must be absent`).toEqual([]);
   } else if (vis === "allow") {
-    expect(row).toHaveProperty(rep);
-    expect(row[rep]).toEqual(s.truth[rep]);
+    // every column of the class the query returns is present and equals the truth, not only the representative
+    const projected = projectedColumns(queryId, cls);
+    expect(projected).toContain(rep);
+    expect(present.sort()).toEqual([...projected].sort());
+    for (const c of present) {
+      expect(s.truth, `truth for ${c}`).toHaveProperty(c);
+      expect(row[c], `${c} must equal the true value`).toEqual(s.truth[c]);
+    }
   } else if (vis === "mask_nullify") {
-    expect(present.length).toBeGreaterThan(0);
-    for (const c of present) expect(row[c], `${c} must be nulled`).toBeNull();
+    const projected = projectedColumns(queryId, cls);
+    expect(projected.length).toBeGreaterThan(0);
+    for (const c of projected) {
+      expect(row, `${c} must be present (masked, not dropped)`).toHaveProperty(c);
+      expect(row[c], `${c} must be nulled`).toBeNull();
+    }
   } else if (vis === "mask_date_year") {
     expect(row[rep]).toBe(`${String(s.truth[rep]).slice(0, 4)}-01-01`);
   }
@@ -206,7 +223,7 @@ async function runCase(c: Case): Promise<void> {
     if (c.action === "identity_lookup") row = (body.rows as Record<string, unknown>[]).find((r) => r.employee_ref === s!.employee_ref);
     else row = body.profile as Record<string, unknown>;
     expect(row, `${c.id} subject row`).toBeDefined();
-    checkClassVisibility(row!, cls as TaggedClass, vis, s!);
+    checkClassVisibility(row!, cls as TaggedClass, vis, s!, `${c.purpose}.${c.action === "identity_lookup" ? "identity_lookup" : "profile"}`);
   }
 
   const rows = (body.rows ?? []) as Record<string, unknown>[];

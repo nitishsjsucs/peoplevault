@@ -37,3 +37,22 @@ def test_cases_fail_when_the_ceiling_is_broken(world_wh):
 
     with pytest.raises(AssertionError):
         run_case(ctx, leaky, case)
+
+
+@pytest.mark.parametrize(("case_id", "mutate"), [
+    # a wrong value in a non-representative column of an allowed class
+    ("C-employee_relations-compensation", lambda r: {**r, "bonus_target_pct": 99.0}),
+    ("C-team_management-performance", lambda r: {**r, "review_text": "altered"}),
+    # a masked class column dropped instead of nulled
+    ("C-employee_relations-health_leave", lambda r: {k: v for k, v in r.items() if k != "leave_reason"}),
+])
+def test_c_cases_check_every_column_of_the_class(world_wh, case_id, mutate):
+    ctx = WorldContext()
+    case = next(c for c in load_cases() if c.id == case_id)
+
+    def wrong(purpose, qid, params):
+        return [mutate(r) for r in run_named(world_wh, purpose, qid, params)]
+
+    run_case(ctx, lambda p, q, params: run_named(world_wh, p, q, params), case)
+    with pytest.raises(AssertionError):
+        run_case(ctx, wrong, case)

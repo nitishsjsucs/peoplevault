@@ -105,16 +105,27 @@ def _lookup(run: Runner, purpose: str, s: dict) -> list[dict]:
     return run(purpose, f"{purpose}.identity_lookup", {"q": s["truth"]["full_name"][:6]})
 
 
-def _class_visibility(row: dict, cls: str, vis: str, s: dict) -> None:
+def _projected(purpose: str, qname: str, cls: str) -> list[str]:
+    """The columns of a class that the named query returns."""
+    cols = set(ctx_cols(cls))
+    return [c for c in policy().queries[purpose][qname].columns if c in cols]
+
+
+def _class_visibility(row: dict, cls: str, vis: str, s: dict, purpose: str, qname: str) -> None:
     cols = ctx_cols(cls)
     present = [c for c in cols if c in row]
     rep = REPRESENTATIVE[cls]
     if vis == "deny":
         _check(present == [], f"{cls} columns present: {present}")
     elif vis == "allow":
-        _check(_norm(row.get(rep)) == s["truth"][rep], f"{rep} does not equal the true value")
+        # every column of the class the query returns equals the truth, not only the representative
+        projected = _projected(purpose, qname, cls)
+        _check(rep in projected and sorted(present) == sorted(projected), f"{cls} columns {present}, expected {projected}")
+        wrong = [c for c in present if c not in s["truth"] or _norm(row[c]) != s["truth"][c]]
+        _check(wrong == [], f"{wrong} do not equal the true values")
     elif vis == "mask_nullify":
-        _check(len(present) > 0 and all(row[c] is None for c in present), f"{cls} not nulled")
+        projected = _projected(purpose, qname, cls)
+        _check(len(projected) > 0 and all(c in row and row[c] is None for c in projected), f"{cls} not nulled (or dropped instead of masked)")
     elif vis == "mask_date_year":
         _check(_norm(row.get(rep)) == s["truth"][rep][:4] + "-01-01", f"{rep} not masked to January 1")
 
@@ -138,7 +149,7 @@ def run_case(ctx: WorldContext, run: Runner, case: Case) -> None:
         else:
             rows = _profile(ctx, run, principal, purpose, s)
         _check(len(rows) == 1, f"expected the subject row, got {len(rows)}")
-        _class_visibility(rows[0], cls, vis, s)
+        _class_visibility(rows[0], cls, vis, s, purpose, "identity_lookup" if action == "identity_lookup" else "profile")
         return
     if action == "read_profile":
         rows = _profile(ctx, run, principal, purpose, s)

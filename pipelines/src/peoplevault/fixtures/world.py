@@ -47,6 +47,15 @@ def _name(e: dict) -> str:
     return f"{e['first']} {e['last']}"
 
 
+PHONE = "+1-555-0150"
+BONUS_TARGET_PCT = 10.0
+REVIEW_TEXT = "Met expectations with steady delivery across the cycle."
+
+
+def _personal_email(e: dict) -> str:
+    return f"{e['first'].lower()}{e['last'].lower()}77@example.test"
+
+
 def _active(e: dict, on: str) -> bool:
     return e["hire"] <= on and (not e.get("termination") or e["termination"] > on)
 
@@ -58,7 +67,7 @@ def export_objects(world: dict) -> list[SourceObject]:
     for e in emps:
         hris.append(json.dumps({
             "employee_id": e["id"], "full_name": _name(e), "work_email": _email(e),
-            "personal_email": f"{e['first'].lower()}{e['last'].lower()}77@example.test", "phone": "+1-555-0150",
+            "personal_email": _personal_email(e), "phone": PHONE,
             "birth_date": e["birth"], "gender": e["gender"], "ethnicity": e["ethnicity"], "hire_date": e["hire"],
             "termination_date": e.get("termination"), "employment_status": "terminated" if e.get("termination") else "active",
             "job_title": e["title"], "job_level": e["level"], "org_unit": e["unit"], "location": "Austin",
@@ -71,7 +80,7 @@ def export_objects(world: dict) -> list[SourceObject]:
     w.writerow(["employee_id", "pay_period_end", "base_salary", "bonus_target_pct", "currency"])
     for e in emps:
         if _active(e, period_end):
-            w.writerow([e["id"], period_end, e["salary"], 10.0, "USD"])
+            w.writerow([e["id"], period_end, e["salary"], BONUS_TARGET_PCT, "USD"])
     leave = []
     n = 0
     for e in emps:
@@ -89,7 +98,7 @@ def export_objects(world: dict) -> list[SourceObject]:
             n += 1
             reviews.append(json.dumps({
                 "review_id": f"RV-9{n:05d}", "employee_id": e["id"], "cycle": world["review_cycle"], "rating": e["rating"],
-                "review_text": "Met expectations with steady delivery across the cycle.", "reviewer_employee_id": e.get("manager"),
+                "review_text": REVIEW_TEXT, "reviewer_employee_id": e.get("manager"),
             }))
     return [
         SourceObject(f"exports/hris/employees/dt={d}/employees.jsonl", "hris", d, "\n".join(hris) + "\n"),
@@ -147,9 +156,15 @@ def subjects(world: dict) -> dict:
         refs = ps.all(e_id)
         return {
             "employee_ref": refs["employee_ref"], "analytics_id": refs["analytics_id"], "subject_ref": refs["subject_ref"],
+            # every column of a tagged class that a purpose query can return, so the C cases compare each one
             "truth": {
-                "full_name": _name(e), "work_email": _email(e), "birth_date": e["birth"], "base_salary": float(e["salary"]) if _active(e, "2026-09-30") else None,
-                "rating": e.get("rating") if _active(e, "2026-06-30") else None, "leave_type": (e.get("leave") or [None])[0], "gender": e["gender"],
+                "full_name": _name(e), "work_email": _email(e), "personal_email": _personal_email(e), "phone": PHONE, "birth_date": e["birth"],
+                "base_salary": float(e["salary"]) if _active(e, "2026-09-30") else None,
+                "bonus_target_pct": BONUS_TARGET_PCT if _active(e, "2026-09-30") else None,
+                "rating": e.get("rating") if _active(e, "2026-06-30") else None,
+                "review_text": REVIEW_TEXT if e.get("rating") and _active(e, "2026-06-30") else None,
+                "leave_type": (e.get("leave") or [None])[0], "leave_reason": (e.get("leave") or [None, None])[1],
+                "accommodation_note": (e.get("leave") or [None, None, None])[2], "gender": e["gender"], "ethnicity": e["ethnicity"],
                 "org_unit": e["unit"], "employment_status": "terminated" if e.get("termination") else "active",
                 "is_restricted": bool(e.get("restricted", False)), "deleted": bool(e.get("deleted", False)), "held": e.get("held"),
             },
