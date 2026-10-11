@@ -9,7 +9,7 @@ import { activeHolds, placeHold, releaseHold, type HoldRow } from "../holds/hold
 import { identityByRef } from "../identity/refs.ts";
 import { decide, type Action } from "../policy/pdp.ts";
 import { deletionReport, REPORT_FAILURES_MAX } from "../reports/deletion-report.ts";
-import { utcToday } from "../retention/rules.ts";
+import { retentionRunAsOf, utcToday } from "../retention/rules.ts";
 import { startOrDefer } from "../admission.ts";
 import { ActiveRequestExists, getRequest, insertRequest, nextInstanceId, publicRequest, type DeletionRequestRow } from "../requests.ts";
 
@@ -204,7 +204,9 @@ privacy.post(RET_RUN, async (c) => {
   if (denied) return denied;
   const body = RetentionRunBody.safeParse((await c.req.json().catch(() => ({}))) ?? {});
   if (!body.success) return deny(c, "privacy_compliance", "run_retention", RET_RUN, 400, "invalid_body");
-  const asOf = body.data.as_of ?? c.get("cfg").retentionAsOf ?? utcToday();
+  const chosen = retentionRunAsOf(body.data.as_of, c.get("cfg"), utcToday());
+  if ("error" in chosen) return deny(c, "privacy_compliance", "run_retention", RET_RUN, 400, chosen.error);
+  const { asOf } = chosen;
   const max = body.data.max_subjects;
   const runId = max !== undefined ? `retention-${asOf}-max${max}` : `retention-${asOf}`;
   try {
@@ -213,7 +215,7 @@ privacy.post(RET_RUN, async (c) => {
     if (/already[ _]exists?/i.test(String(e))) return deny(c, "privacy_compliance", "run_retention", RET_RUN, 409, "run_exists");
     throw e;
   }
-  await audit(c, { purpose: "privacy_compliance", action: "run_retention", route: RET_RUN, decision: "allow", reason: "ok", detail: { max_subjects: max ?? null } });
+  await audit(c, { purpose: "privacy_compliance", action: "run_retention", route: RET_RUN, decision: "allow", reason: "ok", detail: { as_of: asOf, max_subjects: max ?? null } });
   return c.json({ runId, asOf }, 202);
 });
 

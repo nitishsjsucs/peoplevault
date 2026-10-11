@@ -59,6 +59,7 @@ describe("loadConfig", () => {
     ["bigquery needs the gateway key", { GCP_GATEWAY_SA_KEY: "" }, /GCP_GATEWAY_SA_KEY/],
     ["production rejects the test-vector master key", { PV_PSEUDONYM_MASTER_KEY: vectors.master_key_b64 }, /test-vector/],
     ["production rejects a short master key", { PV_PSEUDONYM_MASTER_KEY: btoa("short-key-16byte") }, /32 bytes/],
+    ["production refuses a fixed retention date", { RETENTION_AS_OF: "2099-12-31" }, /RETENTION_AS_OF/],
     ["local-jwks requires PV_ENV=local", { AUTH_MODE: "local-jwks" }, /PV_ENV=local/],
   ])("%s", (_name, patch, msg) => {
     expect(() => loadConfig({ ...prod, ...patch })).toThrow(ConfigError);

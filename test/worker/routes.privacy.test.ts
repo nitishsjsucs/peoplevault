@@ -25,6 +25,15 @@ describe("privacy routes", () => {
     expect(unknown.status).toBe(404);
   });
 
+  it("a retention run with a future as_of is refused and audited", async () => {
+    const { app } = worldApp();
+    const res = await call(app, "privacy-01", "POST", "/api/v1/privacy/retention/run", { as_of: "2099-12-31" });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("as_of_in_future");
+    const last = await env.DB.prepare("SELECT action, decision, reason FROM audit_events ORDER BY seq DESC LIMIT 1").first();
+    expect(last).toEqual({ action: "run_retention", decision: "deny", reason: "as_of_in_future" });
+  });
+
   it("retry instance naming", () => {
     expect(nextInstanceId("abc", "abc")).toBe("abc-r1");
     expect(nextInstanceId("abc", "abc-r1")).toBe("abc-r2");

@@ -58,3 +58,16 @@ export function cutoffFor(part: AssetPart, asOf: string): string | null {
 export function utcToday(now = new Date()): string {
   return isoDate(now);
 }
+
+/** The as_of date of a retention run started through the API. A later date moves every cutoff forward, so one
+ * request would purge source exports, raw rows and lake history ahead of the schedule (the per-subject daily caps do
+ * not apply to expiry): a future date is refused everywhere, and production takes no date from the request at all. */
+export function retentionRunAsOf(
+  requested: string | undefined,
+  cfg: { env: "local" | "production"; retentionAsOf: string | null },
+  today: string,
+): { asOf: string } | { error: "as_of_not_allowed" | "as_of_in_future" } {
+  if (requested !== undefined && cfg.env === "production") return { error: "as_of_not_allowed" };
+  if (requested !== undefined && requested > today) return { error: "as_of_in_future" };
+  return { asOf: requested ?? cfg.retentionAsOf ?? today };
+}

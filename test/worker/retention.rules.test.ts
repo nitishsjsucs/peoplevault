@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cycleEnd, exportBasisDate, isPast, minusDays, minusMonths, minusYears, monthEnd } from "../../src/worker/retention/rules.ts";
+import { cycleEnd, exportBasisDate, isPast, minusDays, minusMonths, minusYears, monthEnd, retentionRunAsOf } from "../../src/worker/retention/rules.ts";
 
 const AS_OF = "2026-09-30";
 const shift = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
@@ -29,5 +29,21 @@ describe("retention boundary rule (inclusive cutoff)", () => {
     expect(monthEnd("2026-02")).toBe("2026-02-28");
     expect(cycleEnd("2025H1")).toBe("2025-06-30");
     expect(minusMonths("2026-03-31", 1)).toBe("2026-02-28");
+  });
+});
+
+describe("the as_of date of a retention run started through the API", () => {
+  const local = { env: "local" as const, retentionAsOf: "2026-09-30" };
+  const prod = { env: "production" as const, retentionAsOf: null };
+  it("locally accepts today or a past date (the eval's fixed date) and refuses a future one", () => {
+    expect(retentionRunAsOf("2026-09-30", local, "2026-10-11")).toEqual({ asOf: "2026-09-30" });
+    expect(retentionRunAsOf("2026-10-11", local, "2026-10-11")).toEqual({ asOf: "2026-10-11" });
+    expect(retentionRunAsOf("2026-10-12", local, "2026-10-11")).toEqual({ error: "as_of_in_future" });
+    expect(retentionRunAsOf(undefined, local, "2026-10-11")).toEqual({ asOf: "2026-09-30" });
+  });
+  it("production takes no date from the request and uses today", () => {
+    expect(retentionRunAsOf("2026-09-30", prod, "2026-10-11")).toEqual({ error: "as_of_not_allowed" });
+    expect(retentionRunAsOf("2099-12-31", prod, "2026-10-11")).toEqual({ error: "as_of_not_allowed" });
+    expect(retentionRunAsOf(undefined, prod, "2026-10-11")).toEqual({ asOf: "2026-10-11" });
   });
 });

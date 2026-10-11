@@ -105,6 +105,8 @@ export function loadConfig(envIn: Env | Record<string, unknown>): Config {
     throw new ConfigError("PV_PSEUDONYM_MASTER_KEY is not valid base64");
   }
   if (pvEnv.data === "production") {
+    // a fixed (and possibly future) retention date would move every cutoff; production always uses today's date
+    if (asOf !== null) throw new ConfigError("RETENTION_AS_OF must be empty in production (retention uses today's UTC date)");
     if (masterKey.length < 32) throw new ConfigError("PV_PSEUDONYM_MASTER_KEY must decode to at least 32 bytes in production");
     if (hex(masterKey) === TEST_VECTOR_MASTER_KEY_HEX) {
       throw new ConfigError("PV_PSEUDONYM_MASTER_KEY equals the published test-vector key; production refuses it");
