@@ -96,6 +96,8 @@ export interface QueryDef {
   limit: number | null;
   orderBy: string[] | null;
   columns: QueryColumn[];
+  /** Generated named-query SQL: DuckDB with $name parameters, BigQuery with @name and a {project} placeholder. */
+  sql: { duckdb: string; bigquery: string };
 }
 
 export interface CompiledPolicy {

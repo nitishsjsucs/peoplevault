@@ -1,0 +1,15 @@
+snapshots:
+  - name: dim_employee_history
+    relation: ref('stg_hris_history')
+    description: >
+      SCD2 history of employee attributes, replayed over the 13 weekly HRIS exports by the loader
+      (one `dbt snapshot` per export date). Protected: row access policies; merge-based after creation.
+    config:
+      schema: pv_snapshots
+      unique_key: employee_key
+      strategy: check
+      check_cols: [org_unit, job_level, job_title, manager_key, employment_status, location]
+      post_hook: ["{{ pv_row_access_policies() }}"]
+      persist_docs: { relation: true, columns: true }
+    data_tests:
+      - no_suppressed_subjects

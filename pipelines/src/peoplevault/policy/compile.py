@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 from peoplevault import config
+from peoplevault.policy import sqlgen
 from peoplevault.policy.model import CATEGORIES, PERSONAS, UNTAGGED_CLASSES, Policy, load_policy
 
 COMPILED_JSON = "policy/compiled/policy.json"
@@ -47,6 +48,7 @@ def _query_entry(policy: Policy, purpose: str, name: str) -> dict:
             {"name": col, "class": policy.column_class[col], "visibility": policy.visibility_of(purpose, col)}
             for col in q.columns
         ],
+        "sql": {"duckdb": sqlgen.query_sql(policy, purpose, q, "duckdb"), "bigquery": sqlgen.query_sql(policy, purpose, q, "bigquery")},
     }
 
 
@@ -149,13 +151,7 @@ def compile_all(policy_path: Path | None = None) -> dict[str, str]:
 
 def _generators():
     """Additional generators (dbt purpose models, routines, BigQuery infrastructure) register here."""
-    gens = []
-    try:
-        from peoplevault.policy import sqlgen
-
-        gens.append(sqlgen.generate)
-    except ImportError:
-        pass
+    gens = [sqlgen.generate]
     try:
         from peoplevault.policy import bqinfra
 
@@ -200,6 +196,6 @@ def check(root: Path | None = None) -> list[str]:
         for f in sorted(base.rglob("*")):
             if f.is_file():
                 rel = f.relative_to(root).as_posix()
-                if rel not in expected and not rel.startswith("infra/bigquery/migrations/"):
+                if rel not in expected and not rel.startswith("infra/bigquery/migrations/") and rel != "infra/bigquery/protected_schemas.json":
                     problems.append(f"stale generated file: {rel}")
     return problems

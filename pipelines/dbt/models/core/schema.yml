@@ -1,0 +1,73 @@
+version: 2
+
+# Every tagged-class column of a table-like model declares exactly its policy tag (checked both ways by
+# test_policy_tags_complete.py): with persist_docs columns: true, dbt-bigquery writes policyTags for every
+# documented column, and an empty list for a documented column that declares none.
+models:
+  - name: dim_employee
+    description: Current identified records keyed by employee_key (protected, merge-only).
+    data_tests:
+      - no_suppressed_subjects
+    columns:
+      - name: employee_key
+        data_tests: [not_null, unique]
+      - name: employee_ref
+        data_tests: [not_null, unique]
+      - name: analytics_id
+        data_tests: [not_null, unique]
+      - name: subject_ref
+        data_tests: [not_null, unique]
+      - name: full_name
+        policy_tags: ["{{ var('pv_policy_tags')['direct_identifier'] }}"]
+      - name: work_email
+        policy_tags: ["{{ var('pv_policy_tags')['direct_identifier'] }}"]
+      - name: personal_email
+        policy_tags: ["{{ var('pv_policy_tags')['direct_identifier'] }}"]
+      - name: phone
+        policy_tags: ["{{ var('pv_policy_tags')['direct_identifier'] }}"]
+      - name: birth_date
+        policy_tags: ["{{ var('pv_policy_tags')['date_of_birth'] }}"]
+      - name: gender
+        policy_tags: ["{{ var('pv_policy_tags')['protected_attribute'] }}"]
+      - name: ethnicity
+        policy_tags: ["{{ var('pv_policy_tags')['protected_attribute'] }}"]
+      - name: is_restricted
+        data_tests: [not_null]
+  - name: fct_compensation
+    description: Payroll periods per employee (protected, merge-only).
+    data_tests:
+      - no_suppressed_subjects
+      - pv_unique_combination:
+          arguments:
+            columns: [employee_key, pay_period_end]
+    columns:
+      - name: employee_key
+        data_tests: [not_null]
+      - name: base_salary
+        policy_tags: ["{{ var('pv_policy_tags')['compensation'] }}"]
+      - name: bonus_target_pct
+        policy_tags: ["{{ var('pv_policy_tags')['compensation'] }}"]
+  - name: fct_leave
+    description: Leave requests (protected, merge-only).
+    data_tests:
+      - no_suppressed_subjects
+    columns:
+      - name: leave_id
+        data_tests: [not_null, unique]
+      - name: leave_type
+        policy_tags: ["{{ var('pv_policy_tags')['health_leave'] }}"]
+      - name: leave_reason
+        policy_tags: ["{{ var('pv_policy_tags')['health_leave'] }}"]
+      - name: accommodation_note
+        policy_tags: ["{{ var('pv_policy_tags')['health_leave'] }}"]
+  - name: fct_performance
+    description: Performance reviews (protected, merge-only).
+    data_tests:
+      - no_suppressed_subjects
+    columns:
+      - name: review_id
+        data_tests: [not_null, unique]
+      - name: rating
+        policy_tags: ["{{ var('pv_policy_tags')['performance'] }}"]
+      - name: review_text
+        policy_tags: ["{{ var('pv_policy_tags')['performance'] }}"]

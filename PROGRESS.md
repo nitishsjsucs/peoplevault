@@ -4,7 +4,7 @@ Tracks the build against the commit plan in SPEC.md section 26. Updated in every
 
 ## Position
 
-Commit 9 of 25 (P0) done: `feat(auth): Access JWT verification, principals and local dev login`.
+Commit 10 done (spec plan item 11, moved ahead of item 10): `feat(warehouse): dbt models, snapshot, marts and generated purpose views`.
 
 ## Done
 
@@ -19,16 +19,22 @@ Commit 9 of 25 (P0) done: `feat(auth): Access JWT verification, principals and l
 | 7 | `feat(synth): deterministic generator with exact and golden counts` | `pv synth`: 1,200 employees (1,000 active, 72 + 128 terminated), 12 org units, 120 managers, 24 restricted, 132 + 1 opaque principals, 2 matters with 6 held subjects, 60/40/30 attribute changes, 41 export objects, 93-month history in 8 yearly files, D1 seed SQL, truth (subjects, cohorts, 420-entry KV warm-up plan); suffix-free first names and prefix-free last names; golden `data/expected_counts.json` (retention: 8 objects past retention, 3 deleted and 5 minimized for holds, 3 extracts, 70 + 2 held full, 10 + 2 held ci); boundary-aware token matchers (`verify/tokens.py`); tests for counts, determinism, golden counts, retention boundary, token collisions and identifier-free principals |
 | 8 | `feat(d1): control-plane migrations and seed` | migrations 0001 to 0004 (principals, identity_map, deletion_requests with the one-active-request partial unique index, results, holds, suppression, residuals, retention runs, executor tasks, audit events); `npm run dev:keys` (writes exactly the `secrets.required` names); `scripts/lib/run.ts` (no-shell spawn, wrangler env without Worker var names); `npm run seed:local` steps 1 to 4 and the D1/R2 part of step 7 (verified locally: 133 principals, 1,200 identity rows, 6 holds, 41 objects in 29 s); schema and dev-keys tests |
 | 9 | `feat(auth): Access JWT verification, principals and local dev login` | jose RS256 verification with remote JWKS (team certs URL, fetched once) and local JWKS, every 401 code (`missing_token`, `expired`, `not_yet_valid`, `bad_signature`, `bad_audience`, `bad_issuer`, `bad_algorithm` incl. `alg: none` and HS256 confusion, `unknown_kid`, `malformed`), user vs service identity, D1 principal resolution (403 `unknown_principal`, `principal_disabled`), cookie only in local mode, CSRF header, loopback-only `/dev/login`, `/dev/logout`, `/dev/principals`, `/api/v1/me`, `npm run dev:token`; committed test-only RS256 keys |
+| 10 | `feat(warehouse): dbt models, snapshot, marts and generated purpose views` | staging views (suppression-aware), core `dim_employee` and three facts, SCD2 snapshot from an ephemeral pseudonymous input, marts `attrition_features`, `team_roster` (incremental merge) and `headcount_monthly` (the only rebuilt table, k-anonymity 5); every protected model incremental `merge`, `full_refresh: false`, `on_schema_change: ignore`, row access post-hook; generated purpose views per purpose (DuckDB mask expressions, BigQuery raw columns plus data policies, authorized view grants), generated `create_purpose_routines()` (BigQuery table functions, DuckDB table macros), generated row access macro, generic tests (`no_direct_identifiers`, `k_anonymity`, `no_suppressed_subjects`); named query SQL for both dialects in the compiled policy; `infra/bigquery/protected_schemas.json` baseline with the migration rule; tests for materializations, policy tags both ways, golden BigQuery SQL and a full build on an empty DuckDB |
 
 ## Next
 
-10. `feat(pdp): fixture world, purpose-scoped decision point and 100 authorization cases`
+11. `feat(load): loaders, identity xref, snapshot replay, suppression, Iceberg table` (spec item 12), then 12. `feat(pdp): fixture world, purpose-scoped decision point and 100 authorization cases` (spec item 10)
 
 ## Check status
 
-At commit 9: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 71 passed, 0 failed; `npm run test:py` 93 passed, 0 failed; `ruff check pipelines` clean; `pv policy check` clean.
+At commit 10: `npm run typecheck` passes; `npm run types:check` passes (with and without `.dev.vars`); `npm test` 71 passed, 0 failed; `npm run test:py` 109 passed, 0 failed; `ruff check pipelines` clean; `pv policy check` clean.
 
 ## Deviations from SPEC.md
+
+- Commit order: the warehouse (spec item 11) and loaders (spec item 12) land before the fixture world and authorization cases (spec item 10), because `pv fixtures build` loads a DuckDB through the real loaders and dbt.
+- The SCD2 snapshot uses `strategy: check` over the attribute columns (org unit, level, title, manager key, status, location) instead of `timestamp` on `export_date`: with every employee in every weekly export, a timestamp on the export date would version every employee every week. The history input is an ephemeral, pseudonymous model, so the snapshot holds no direct identifiers.
+- Policy tags in schema YAML use `{{ var('pv_policy_tags')['<class>'] }}` directly: dbt does not expose project macros when rendering schema YAML (checked: "'pv_policy_tag' is undefined"), so the `pv_policy_tag()` macro was dropped.
+- Purpose table functions read only their own purpose dataset's views (which are authorized on the source datasets), so no routine authorization on `pv_core` is needed; the generated BigQuery SQL has no dataset `AccessEntry` of type `ROUTINE`.
 
 - Policy action `read_legal_holds` added for `GET /api/v1/privacy/legal-holds` (the spec's Action list had no read action for holds; it is granted to `privacy_officer` under `legal_hold_management` only).
 - `AssetDef.parts` is a list of part objects (name, location, format, reference columns, retention) instead of plain strings, so per-part retention and reference columns live in the policy; `referenceColumns` is kept at asset level as the union.

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "policyHash": "3383ed2147711cc9e7550f043bb33e7f3c53f1fed22e9c877a2af24ecb4ac760",
+  "policyHash": "76fb3a0f9d189ca7f43eede4b3ce3bce3b4ccd11da168f8644bdb2680d54a5a8",
   "personas": {
     "hr_partner": {
       "label": "HR Business Partner",
@@ -144,6 +144,7 @@
     "base_salary": "compensation",
     "birth_date": "date_of_birth",
     "bonus_target_pct": "compensation",
+    "created_at": "job",
     "currency": "job",
     "cycle": "job",
     "dbt_scd_id": "job",
@@ -180,6 +181,7 @@
     "phone": "direct_identifier",
     "rating": "performance",
     "rating_band": "coarsened",
+    "request_id": "job",
     "review_id": "job",
     "review_text": "performance",
     "reviewer_employee_id": "direct_identifier",
@@ -323,7 +325,11 @@
           "class": "job",
           "visibility": "allow"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, location, employment_status, hire_date, termination_date, is_restricted from pv_purpose_employee_relations.employees_in_org_units($org_units) where ($cursor = '' or employee_ref > $cursor) order by employee_ref limit $limit",
+        "bigquery": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, location, employment_status, hire_date, termination_date, is_restricted from `{project}.pv_purpose_employee_relations.employees_in_org_units`(@org_units) where (@cursor = '' or employee_ref > @cursor) order by employee_ref limit @limit"
+      }
     },
     "employee_relations.profile": {
       "id": "employee_relations.profile",
@@ -473,7 +479,11 @@
           "class": "health_leave",
           "visibility": "mask_nullify"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select employee_ref, full_name, work_email, personal_email, phone, birth_date, hire_date, termination_date, employment_status, job_title, job_level, org_unit, location, is_restricted, base_salary, bonus_target_pct, currency, rating, review_text, cycle, leave_type, leave_category, leave_reason, accommodation_note from pv_purpose_employee_relations.profile($org_units, $employee_ref)",
+        "bigquery": "select employee_ref, full_name, work_email, personal_email, phone, birth_date, hire_date, termination_date, employment_status, job_title, job_level, org_unit, location, is_restricted, base_salary, bonus_target_pct, currency, rating, review_text, cycle, leave_type, leave_category, leave_reason, accommodation_note from `{project}.pv_purpose_employee_relations.profile`(@org_units, @employee_ref)"
+      }
     },
     "team_management.list": {
       "id": "team_management.list",
@@ -536,7 +546,11 @@
           "class": "job",
           "visibility": "allow"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, employment_status from pv_purpose_team_management.direct_reports($manager_key) where ($cursor = '' or employee_ref > $cursor) order by employee_ref limit $limit",
+        "bigquery": "select employee_ref, full_name, work_email, job_title, job_level, org_unit, employment_status from `{project}.pv_purpose_team_management.direct_reports`(@manager_key) where (@cursor = '' or employee_ref > @cursor) order by employee_ref limit @limit"
+      }
     },
     "team_management.profile": {
       "id": "team_management.profile",
@@ -641,7 +655,11 @@
           "class": "job",
           "visibility": "allow"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select employee_ref, full_name, work_email, hire_date, employment_status, job_title, job_level, org_unit, location, base_salary, bonus_target_pct, currency, rating, review_text, cycle from pv_purpose_team_management.report_profile($manager_key, $employee_ref)",
+        "bigquery": "select employee_ref, full_name, work_email, hire_date, employment_status, job_title, job_level, org_unit, location, base_salary, bonus_target_pct, currency, rating, review_text, cycle from `{project}.pv_purpose_team_management.report_profile`(@manager_key, @employee_ref)"
+      }
     },
     "workforce_analytics.list": {
       "id": "workforce_analytics.list",
@@ -732,7 +750,11 @@
           "class": "protected_attribute",
           "visibility": "allow"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from pv_purpose_workforce_analytics.employees where ($cursor = '' or analytics_id > $cursor) order by analytics_id limit $limit",
+        "bigquery": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from `{project}.pv_purpose_workforce_analytics.employees` where (@cursor = '' or analytics_id > @cursor) order by analytics_id limit @limit"
+      }
     },
     "workforce_analytics.profile": {
       "id": "workforce_analytics.profile",
@@ -826,7 +848,11 @@
           "class": "protected_attribute",
           "visibility": "allow"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from pv_purpose_workforce_analytics.employees where analytics_id = $analytics_id",
+        "bigquery": "select analytics_id, org_unit, job_level, job_title, location, employment_status, hire_year, tenure_years, age_band, salary_band, rating_band, birth_date, gender, ethnicity from `{project}.pv_purpose_workforce_analytics.employees` where analytics_id = @analytics_id"
+      }
     },
     "workforce_analytics.attrition_features": {
       "id": "workforce_analytics.attrition_features",
@@ -904,7 +930,11 @@
           "class": "job",
           "visibility": "allow"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select analytics_id, month, org_unit, job_level, salary_band, rating_band, tenure_years, age_band, gender, terminated_in_month from pv_purpose_workforce_analytics.attrition_features where month = $month and ($cursor = '' or analytics_id > $cursor) order by analytics_id limit $limit",
+        "bigquery": "select analytics_id, month, org_unit, job_level, salary_band, rating_band, tenure_years, age_band, gender, terminated_in_month from `{project}.pv_purpose_workforce_analytics.attrition_features` where month = @month and (@cursor = '' or analytics_id > @cursor) order by analytics_id limit @limit"
+      }
     },
     "workforce_analytics.headcount_monthly": {
       "id": "workforce_analytics.headcount_monthly",
@@ -944,7 +974,11 @@
           "class": "coarsened",
           "visibility": "allow"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select month, org_unit, job_level, headcount from pv_purpose_workforce_analytics.headcount_monthly order by month, org_unit, job_level",
+        "bigquery": "select month, org_unit, job_level, headcount from `{project}.pv_purpose_workforce_analytics.headcount_monthly` order by month, org_unit, job_level"
+      }
     },
     "privacy_compliance.identity_lookup": {
       "id": "privacy_compliance.identity_lookup",
@@ -998,7 +1032,11 @@
           "class": "job",
           "visibility": "allow"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select employee_ref, full_name, work_email, org_unit, employment_status from pv_purpose_privacy_compliance.identity_lookup($q) order by full_name",
+        "bigquery": "select employee_ref, full_name, work_email, org_unit, employment_status from `{project}.pv_purpose_privacy_compliance.identity_lookup`(@q) order by full_name"
+      }
     },
     "legal_hold_management.identity_lookup": {
       "id": "legal_hold_management.identity_lookup",
@@ -1052,7 +1090,11 @@
           "class": "job",
           "visibility": "allow"
         }
-      ]
+      ],
+      "sql": {
+        "duckdb": "select employee_ref, full_name, work_email, org_unit, employment_status from pv_purpose_legal_hold_management.identity_lookup($q) order by full_name",
+        "bigquery": "select employee_ref, full_name, work_email, org_unit, employment_status from `{project}.pv_purpose_legal_hold_management.identity_lookup`(@q) order by full_name"
+      }
     }
   },
   "categories": [
@@ -1135,7 +1177,9 @@
       "subjectColumn": "employee_id",
       "referenceColumns": [
         "manager_employee_id",
-        "reviewer_employee_id"
+        "manager_key",
+        "reviewer_employee_id",
+        "reviewer_key"
       ],
       "parts": [
         {
@@ -1143,7 +1187,8 @@
           "location": null,
           "format": null,
           "referenceColumns": [
-            "manager_employee_id"
+            "manager_employee_id",
+            "manager_key"
           ],
           "retention": {
             "days": 56,
@@ -1175,7 +1220,8 @@
           "location": null,
           "format": null,
           "referenceColumns": [
-            "reviewer_employee_id"
+            "reviewer_employee_id",
+            "reviewer_key"
           ],
           "retention": {
             "days": 540,

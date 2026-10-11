@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: attrition_features
+    description: Pseudonymous monthly features (protected, merge-only).
+    data_tests:
+      - no_suppressed_subjects
+      - pv_unique_combination:
+          arguments:
+            columns: [analytics_id, month]
+    columns:
+      - name: analytics_id
+        data_tests: [not_null]
+      - name: gender
+        policy_tags: ["{{ var('pv_policy_tags')['protected_attribute'] }}"]
+  - name: team_roster
+    description: One row per employee with a manager (protected, merge-only).
+    data_tests:
+      - no_suppressed_subjects
+    columns:
+      - name: employee_key
+        data_tests: [not_null, unique]
+      - name: full_name
+        policy_tags: ["{{ var('pv_policy_tags')['direct_identifier'] }}"]
+  - name: headcount_monthly
+    description: Aggregate headcount by month, org unit and level; restricted population excluded; cells under 5 suppressed.
+    columns:
+      - name: headcount
+        data_tests:
+          - k_anonymity:
+              arguments:
+                min_k: 5

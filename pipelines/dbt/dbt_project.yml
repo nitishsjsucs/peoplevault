@@ -21,11 +21,31 @@ vars:
     performance: projects/ci/locations/us/taxonomies/0/policyTags/performance
     health_leave: projects/ci/locations/us/taxonomies/0/policyTags/health_leave
     protected_attribute: projects/ci/locations/us/taxonomies/0/policyTags/protected_attribute
-  # GCP project used to build service account emails in row access policies (BigQuery only).
-  pv_gcp_project: "{{ env_var('PV_GCP_PROJECT', 'ci-parse-only') }}"
+  # Date used for coarsened columns (age band, tenure); matches RETENTION_AS_OF locally.
+  pv_as_of: "2026-09-30"
+
+on-run-end:
+  - "{{ create_purpose_routines() }}"
 
 models:
   peoplevault:
     +persist_docs:
       relation: true
       columns: true
+    staging:
+      +schema: pv_raw
+      +materialized: view
+      +persist_docs:
+        relation: true
+        columns: false
+    core:
+      +schema: pv_core
+    marts:
+      +schema: pv_marts
+    purpose:
+      # Views never declare policy_tags (column-level access control applies to tables; views use the tags of
+      # their underlying tables), and columns: false stops dbt-bigquery from patching policyTags onto views.
+      +materialized: view
+      +persist_docs:
+        relation: true
+        columns: false

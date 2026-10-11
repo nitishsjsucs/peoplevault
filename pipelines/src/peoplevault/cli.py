@@ -72,6 +72,34 @@ def policy_check() -> None:
     click.echo("policy check: generated files match policy/policy.yaml")
 
 
+@main.group()
+def warehouse() -> None:
+    """Warehouse utilities."""
+
+
+@warehouse.command("protected-schemas")
+@click.option("--write", is_flag=True, help="write the baseline (only for a new repository; later changes need migrations)")
+def protected_schemas(write: bool) -> None:
+    """Builds every model into an empty DuckDB and compares protected table columns to the committed baseline."""
+    import tempfile
+    from pathlib import Path
+
+    from peoplevault.policy import protected
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cols = protected.build_empty_warehouse(Path(tmp) / "empty.duckdb")
+    if write:
+        protected.SCHEMAS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        protected.SCHEMAS_FILE.write_text(protected.render_baseline(cols))
+        click.echo(f"wrote {protected.SCHEMAS_FILE}")
+        return
+    expected = protected.expected_columns()
+    bad = [t for t in protected.PROTECTED_MODELS.values() if cols.get(t) != expected.get(t)]
+    if bad:
+        raise click.ClickException("protected table columns changed without a migration: " + ", ".join(bad))
+    click.echo("protected schemas match the baseline plus migrations")
+
+
 @main.command(name="dbt", context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
 @click.argument("dbt_args", nargs=-1, type=click.UNPROCESSED)
 def dbt_cmd(dbt_args: tuple[str, ...]) -> None:

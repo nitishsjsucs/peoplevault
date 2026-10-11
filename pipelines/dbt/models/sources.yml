@@ -1,0 +1,18 @@
+version: 2
+
+# Tables written by the loaders (`pv load`), not by dbt. pv_raw holds landed exports with keys computed by the
+# loader (employee_key, manager_key or reviewer_key, subject_ref); pv_restricted holds the identity xref and the
+# suppression list synced from D1. Both datasets are executor-only in production.
+sources:
+  - name: pv_raw
+    schema: pv_raw
+    tables:
+      - name: hris_employees
+      - name: payroll_compensation
+      - name: leave_requests
+      - name: performance_reviews
+  - name: pv_restricted
+    schema: pv_restricted
+    tables:
+      - name: identity_xref
+      - name: suppression

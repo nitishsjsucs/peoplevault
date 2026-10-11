@@ -81,7 +81,7 @@ columns:
     [hire_date, termination_date, employment_status, job_title, job_level, org_unit, location, is_restricted,
      leave_category, start_date, end_date, cycle, pay_period_end, currency, export_date,
      # record and bookkeeping columns (never embed an identifier token)
-     leave_id, review_id, status, month, snapshot_year, terminated_in_month, _loaded_at,
+     leave_id, review_id, status, month, snapshot_year, terminated_in_month, _loaded_at, request_id, created_at,
      dbt_scd_id, dbt_updated_at, dbt_valid_from, dbt_valid_to]
   coarsened: [salary_band, rating_band, age_band, hire_year, tenure_years, headcount]
   pseudonym: [employee_key, employee_ref, analytics_id, subject_ref, manager_key, manager_ref, reviewer_key]
@@ -237,10 +237,10 @@ assets:
     erase: dml_delete
     subject_column: employee_id
     parts:
-      - { name: pv_raw.hris_employees, reference_columns: [manager_employee_id], retention: { days: 56, basis: export_date } }
+      - { name: pv_raw.hris_employees, reference_columns: [manager_employee_id, manager_key], retention: { days: 56, basis: export_date } }
       - { name: pv_raw.payroll_compensation, reference_columns: [], retention: { days: 300, basis: export_date } }
       - { name: pv_raw.leave_requests, reference_columns: [], retention: { days: 365, basis: export_date } }
-      - { name: pv_raw.performance_reviews, reference_columns: [reviewer_employee_id], retention: { days: 540, basis: export_date } }
+      - { name: pv_raw.performance_reviews, reference_columns: [reviewer_employee_id, reviewer_key], retention: { days: 540, basis: export_date } }
   - id: wh.core
     category: warehouse_tables
     store: warehouse
