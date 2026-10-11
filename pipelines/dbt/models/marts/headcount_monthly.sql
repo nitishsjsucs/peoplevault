@@ -2,7 +2,7 @@
     Restricted population excluded at build; cells under 5 suppressed (k-anonymity test). Erasure recomputes it. -#}
 {{ config(materialized='table') }}
 select
-  cast(date_trunc('month', c.pay_period_end) as date) as month,
+  cast({{ dbt.date_trunc('month', 'c.pay_period_end') }} as date) as month,
   d.org_unit,
   d.job_level,
   count(*) as headcount

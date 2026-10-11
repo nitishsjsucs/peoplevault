@@ -14,7 +14,7 @@ with latest_rating as (
 )
 select
   d.analytics_id,
-  cast(date_trunc('month', c.pay_period_end) as date) as month,
+  cast({{ dbt.date_trunc('month', 'c.pay_period_end') }} as date) as month,
   d.org_unit,
   d.job_level,
   c.salary_band,
@@ -23,7 +23,7 @@ select
   d.age_band,
   d.gender,
   coalesce(d.termination_date is not null
-           and d.termination_date >= cast(date_trunc('month', c.pay_period_end) as date)
+           and d.termination_date >= cast({{ dbt.date_trunc('month', 'c.pay_period_end') }} as date)
            and d.termination_date <= c.pay_period_end, false) as terminated_in_month,
   d.is_restricted,
   d.subject_ref

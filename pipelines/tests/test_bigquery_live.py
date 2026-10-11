@@ -51,3 +51,25 @@ def test_time_travel_read_as_executor(project):
 
     rows = BqWarehouse(project).query(f"SELECT COUNT(*) AS n FROM `{project}.peoplevault_core.dim_employee` FOR SYSTEM_TIME AS OF TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 MINUTE)")
     assert rows[0]["n"] > 0
+
+
+def test_every_compiled_model_passes_a_bigquery_dry_run(project, tmp_path):
+    """Each model compiled for the production target validates on BigQuery (dry runs read and bill nothing), so a
+    dialect error, such as DuckDB's date_trunc argument order, fails here before seed:prod's dbt build."""
+    from peoplevault import bqjob
+    from peoplevault.dbtrun import run
+    from peoplevault.warehouse.bq import BqWarehouse
+
+    res = run(["compile", "--target", "bigquery", "--target-path", str(tmp_path)])
+    assert res.success, res.exception
+    root = tmp_path / "compiled" / "peoplevault" / "models"
+    models = sorted(p for p in root.rglob("*.sql") if not any(part.endswith(".yml") for part in p.relative_to(root).parts))
+    assert models
+    client = BqWarehouse(project).client
+    errors = {}
+    for p in models:
+        try:
+            bqjob.dry_run(client, p.read_text())
+        except Exception as e:  # noqa: BLE001 - collect every failing model, not only the first
+            errors[str(p.relative_to(root))] = type(e).__name__
+    assert errors == {}, errors

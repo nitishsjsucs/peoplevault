@@ -32,6 +32,15 @@ def run_query(client, sql: str, params: list | None = None, *, max_bytes: int = 
     return client.query(sql, job_config=job_config(params, max_bytes=max_bytes, labels=labels), job_id_prefix=JOB_ID_PREFIX)
 
 
+def dry_run(client, sql: str):
+    """Validates `sql` on BigQuery without running it (a dry run reads and bills nothing) and returns the job, whose
+    `total_bytes_processed` is the estimate. Used by the live suite to catch dialect errors before `seed:prod`."""
+    from google.cloud import bigquery
+
+    cfg = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False, maximum_bytes_billed=MAX_BYTES_BILLED, labels=dict(LABELS))
+    return client.query(sql, job_config=cfg, job_id_prefix=JOB_ID_PREFIX)
+
+
 def load_kwargs() -> dict:
     """Keyword arguments for `load_table_from_json` and friends: the job id prefix (load jobs read no bytes)."""
     return {"job_id_prefix": JOB_ID_PREFIX}

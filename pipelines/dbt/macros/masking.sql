@@ -7,7 +7,7 @@
   {%- elif visibility == 'mask_nullify' -%}
     (case when 1 = 0 then {{ column }} end)
   {%- elif visibility == 'mask_date_year' -%}
-    cast(date_trunc('year', {{ column }}) as date)
+    cast({{ dbt.date_trunc('year', column) }} as date)
   {%- else -%}
     {{ exceptions.raise_compiler_error("deny columns are never selected: " ~ column) }}
   {%- endif -%}
