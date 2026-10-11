@@ -49,10 +49,10 @@ describe("readme:results", () => {
 
   it("renders the audit verification windows and the audit copy when the result has them", () => {
     const f = deletionFile();
-    f.data.audit_chain = { ok: true, length: 963, windows: 10 };
+    f.data.audit_chain = { ok: true, length: 963, windows: 10, window: 100 };
     f.data.audit_copy = { table: "governance.audit_events", rows: 970, copied_this_run: 970, last_seq: 970, chain_length: 963, last_hash_matches: true, lag_after_export: 2 };
     const text = renderResults([f]);
-    expect(text).toContain("verified over 963 events (10 windows of at most 100)");
+    expect(text).toContain("verified over 963 events (10 windows of at most 100 events)");
     expect(text).toContain("Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 970 rows, 970 copied by this run; last hash equals D1's at seq 970");
   });
 
@@ -65,15 +65,19 @@ describe("readme:results", () => {
         prefilter_identical: { objects: 41, subjects: 3, comparisons: 123 },
         measurements_ms: {
           erase_step_at_cap: { ...m(1.8), objects: 6, mib: 3.62 }, revision2_hris_erase_every_line_parsed: { ...m(13.9), objects: 13 }, probe_step_at_cap_clean: { ...m(0.9), mib: 1.81 },
-          probe_step_at_cap_every_line: m(1.7), audit_verify_window_100: m(1.5), audit_export_page_500: m(0.6), kv_probe_420_values: m(0.3), erase_all_exports_prefiltered: m(4.2),
+          probe_step_at_cap_every_line: m(1.7), audit_verify_window_50: m(1.5), audit_export_page_500: m(0.6), kv_probe_420_values: m(0.3), erase_all_exports_prefiltered: m(4.2),
         },
-        design: { target_ms_here: 2.5, edge_factor: 3, free_cpu_limit_ms: 10 }, largest_step_ms: 1.8, within_target: true,
+        design: { target_ms_here: 2.5, edge_factor: 3, free_cpu_limit_ms: 10 }, largest_step_median_ms: 1.8, largest_step_fastest_run_ms: 0.9, within_target: true,
       },
     };
     const text = renderResults([f]);
     expect(text).toContain("**CPU of the Worker's hot paths** (`npm run bench:cpu`, 2026-10-10; local (Node v25.9.0 on darwin arm64, Apple M3); 8 cores, 1-minute load average 2.5 at the start)");
     expect(text).toContain("123 comparisons over all 41 generated export objects");
-    expect(text).toContain("Largest step-sized path: 1.8 ms (fastest warm run; largest median 1.8 ms) on this machine; at 3 times (edge cores and cold isolates) 5.40 ms against Free's 10 ms (within the design target of 2.5 ms here");
+    expect(text).toContain("Audit verification window of 50 events: 1.5 ms (fastest run 0.75 ms)");
+    expect(text).toContain("Largest step-sized path, judged on warm medians (SPEC.md section 30.2): 1.8 ms on this machine (largest fastest run 0.9 ms); at 3 times (edge cores and cold isolates) 5.40 ms against Free's 10 ms, within the design target of 2.5 ms here (7.5 ms at 3 times, a 25% margin)");
+    // the verdict follows the median, never the fastest run
+    const over = renderResults([{ ...f, data: { ...f.data, largest_step_median_ms: 2.626, largest_step_fastest_run_ms: 2.196 } }]);
+    expect(over).toContain("2.626 ms on this machine (largest fastest run 2.196 ms); at 3 times (edge cores and cold isolates) 7.88 ms against Free's 10 ms, over the design target of 2.5 ms here");
   });
 
   it("renders the schema-drift triage with the model that produced every number, and its neurons and days", () => {

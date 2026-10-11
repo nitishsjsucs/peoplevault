@@ -33,7 +33,7 @@ Every Free daily allowance applies per account: Workflow steps (3,000 a day), KV
    - Plan-time discovery of R2 and KV moves into the erase steps.
    - The D1 probe matches tokens inside SQLite (`instr`), so only candidate rows reach the Worker.
    - No step or request makes more than 40 D1 queries (Free allows 50).
-   - Audit chain verification is windowed at 100 events per request. Report totals are computed with SQL `GROUP BY`.
+   - Audit chain verification is windowed at 50 events per request (100 in the first redesign; lowered after the committed `npm run bench:cpu` median for 100 events, 2.626 ms, missed the 2.5 ms design target). Report totals are computed with SQL `GROUP BY`.
    - The BigQuery client makes at most 20 polls and 10 pages and sets `maximumBytesBilled`.
 
    The redesigned worst case measures 1.83 ms on this Mac. Allowing three times that for edge hardware and cold isolates still leaves 45% of the 10 ms limit unused.

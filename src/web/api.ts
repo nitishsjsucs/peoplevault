@@ -1,6 +1,7 @@
 // Same-origin JSON client for the Worker API (SPEC.md sections 11.5 and 13). The console holds no token: the browser
 // sends the CF_Authorization cookie (set by Cloudflare Access, or by /dev/login locally). Every mutating call and the
 // identity lookup send the CSRF header, and lookups are POST bodies, so names and email prefixes never reach a URL.
+import { AUDIT_VERIFY_WINDOW } from "../shared/limits.ts";
 
 export const CSRF_HEADER = "X-PV-Requested-With";
 export const CSRF_VALUE = "peoplevault";
@@ -211,7 +212,7 @@ export interface VerifyWindow {
   checked: number;
   brokenAtSeq?: number;
 }
-export const getVerifyWindow = (afterSeq: number) => api<VerifyWindow>(`/api/v1/privacy/audit/verify${query({ after_seq: afterSeq, limit: 100 })}`);
+export const getVerifyWindow = (afterSeq: number) => api<VerifyWindow>(`/api/v1/privacy/audit/verify${query({ after_seq: afterSeq, limit: AUDIT_VERIFY_WINDOW })}`);
 
 export interface ChainResult {
   ok: boolean;
@@ -224,7 +225,7 @@ export interface ChainResult {
 }
 
 /**
- * Verifies the whole chain one window at a time (Workers Free: at most 100 events per request, SPEC.md section
+ * Verifies the whole chain one window at a time (Workers Free: at most 50 events per request, SPEC.md section
  * 30.3.2): follows `nextAfterSeq` until `complete` and checks that each window starts on the previous window's last
  * hash, so the windows cannot be stitched from different chains.
  */

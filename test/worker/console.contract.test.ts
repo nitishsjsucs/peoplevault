@@ -79,7 +79,7 @@ describe("console contract: the routes the console calls and the fields it reads
     const audit = (await get(app, cookie, "/api/v1/privacy/audit")) as { events: unknown[]; cursor: unknown };
     has(audit, ["events", "cursor"]);
     has(audit.events[0], ["seq", "ts", "actor", "actor_kind", "persona", "purpose", "action", "route", "subject_ref", "request_id", "decision", "reason", "row_count", "hash"]);
-    const w = await get(app, cookie, "/api/v1/privacy/audit/verify?after_seq=0&limit=100");
+    const w = await get(app, cookie, "/api/v1/privacy/audit/verify?after_seq=0&limit=50");
     has(w, ["ok", "afterSeq", "anchorHash", "from", "to", "lastHash", "nextAfterSeq", "complete", "checked"]);
     expect(w.ok).toBe(true);
   });

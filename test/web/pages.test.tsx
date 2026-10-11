@@ -232,14 +232,15 @@ describe("audit log", () => {
     const { calls } = fakeApi({
       ...signedIn("privacy_officer"),
       "GET /api/v1/privacy/audit": { events: [EVENT], cursor: null },
-      "GET /api/v1/privacy/audit/verify?after_seq=0&limit=100": { ok: true, afterSeq: 0, anchorHash: "0".repeat(64), from: 1, to: 100, lastHash: "h100", nextAfterSeq: 100, complete: false, checked: 100 },
-      "GET /api/v1/privacy/audit/verify?after_seq=100&limit=100": { ok: true, afterSeq: 100, anchorHash: "h100", from: 101, to: 150, lastHash: "h150", nextAfterSeq: 150, complete: true, checked: 50 },
+      "GET /api/v1/privacy/audit/verify?after_seq=0&limit=50": { ok: true, afterSeq: 0, anchorHash: "0".repeat(64), from: 1, to: 50, lastHash: "h50", nextAfterSeq: 50, complete: false, checked: 50 },
+      "GET /api/v1/privacy/audit/verify?after_seq=50&limit=50": { ok: true, afterSeq: 50, anchorHash: "h50", from: 51, to: 100, lastHash: "h100", nextAfterSeq: 100, complete: false, checked: 50 },
+      "GET /api/v1/privacy/audit/verify?after_seq=100&limit=50": { ok: true, afterSeq: 100, anchorHash: "h100", from: 101, to: 150, lastHash: "h150", nextAfterSeq: 150, complete: true, checked: 50 },
     });
     at("/privacy/audit");
     expect(await screen.findByText("read_audit")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Verify the hash chain" }));
-    expect(await screen.findByRole("status")).toHaveProperty("textContent", "Chain intact: 150 events in 2 windows, last hash h150.");
-    expect(calls.filter((c) => c.path === "/api/v1/privacy/audit/verify")).toHaveLength(2);
+    expect(await screen.findByRole("status")).toHaveProperty("textContent", "Chain intact: 150 events in 3 windows, last hash h150.");
+    expect(calls.filter((c) => c.path === "/api/v1/privacy/audit/verify")).toHaveLength(3);
   });
 
   it("reports a broken chain", async () => {

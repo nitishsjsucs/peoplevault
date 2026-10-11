@@ -64,14 +64,14 @@ describe("audit hash chain", () => {
     expect(statements).toBe(2 * MAX_APPEND_ATTEMPTS);
   });
 
-  it("windowed verification: 100 events per window, each anchored on the previous window's last hash", async () => {
+  it("windowed verification: 50 events per window, each anchored on the previous window's last hash", async () => {
     const log = createAuditLog(env.DB);
     for (let i = 0; i < 230; i++) await log.append({ actor: "t", actorKind: "system", action: "w", decision: "info", reason: `r${i}` });
     const length = (await log.verify()).length;
     const windows: VerifyWindow[] = [];
     let after = 0;
     for (;;) {
-      const w = await log.verifyWindow(after, 100);
+      const w = await log.verifyWindow(after, VERIFY_WINDOW_MAX);
       windows.push(w);
       expect(w.ok).toBe(true);
       if (windows.length > 1) expect(w.anchorHash).toBe(windows[windows.length - 2]!.lastHash);
@@ -80,7 +80,8 @@ describe("audit hash chain", () => {
     }
     expect(windows.reduce((n, w) => n + w.checked, 0)).toBe(length);
     expect(windows.every((w) => w.checked <= VERIFY_WINDOW_MAX)).toBe(true);
-    expect(windows.length).toBe(Math.ceil(length / 100));
+    expect(VERIFY_WINDOW_MAX).toBe(50);
+    expect(windows.length).toBe(Math.ceil(length / VERIFY_WINDOW_MAX));
     expect((await log.verifyWindow(0, 1000)).checked).toBe(VERIFY_WINDOW_MAX);
   });
 

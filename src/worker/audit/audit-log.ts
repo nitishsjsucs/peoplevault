@@ -2,6 +2,7 @@
 // genesis prev_hash = 64 zeros. The insert carries a guard on the current chain head, so concurrent appends retry
 // instead of forking the chain. Fields never hold an employee identifier token: actor is an opaque principal id,
 // subjects appear only as subject_ref, route is a template and detail holds counts and enums.
+import { AUDIT_VERIFY_WINDOW } from "../../shared/limits.ts";
 
 export const GENESIS = "0".repeat(64);
 
@@ -59,8 +60,8 @@ export interface VerifyWindow {
   brokenAtSeq?: number;
 }
 
-/** Workers Free: a request verifies at most 100 events (about 1.3 ms of CPU on the owner's Mac). */
-export const VERIFY_WINDOW_MAX = 100;
+/** Workers Free: a request verifies at most AUDIT_VERIFY_WINDOW (50) events; see `npm run bench:cpu`. */
+export const VERIFY_WINDOW_MAX = AUDIT_VERIFY_WINDOW;
 
 export interface AuditLog {
   /** Appends one event; returns the stored row. */

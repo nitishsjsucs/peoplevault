@@ -2,7 +2,8 @@
 // bundling the repo's own modules with the repo's esbuild and running them over the full generated population
 // (`pv synth` output in data/generated, seed 20261010). Values are warm medians in milliseconds on this machine; edge
 // cores and cold isolates are assumed up to 3 times slower, so the design target is 2.5 ms here (7.5 ms at 3 times,
-// 25% under Free's 10 ms). Before timing anything it checks that the prefiltered transform is byte-identical to the
+// 25% under Free's 10 ms). The verdict is judged on the largest warm median, as SPEC.md section 30.2 defines it; the
+// fastest warm run (the least disturbed by other processes on this machine) is reported next to it, never instead. Before timing anything it checks that the prefiltered transform is byte-identical to the
 // unfiltered one over every generated export object for subjects that include managers and reviewers.
 // Writes evals/results/cpu-<date>.json with command, date, git state and machine.
 import { execFileSync } from "node:child_process";
@@ -10,6 +11,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, w
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { AUDIT_VERIFY_WINDOW } from "../src/shared/limits.ts";
 import { REPO_ROOT } from "./lib/run.ts";
 
 const GENERATED = path.join(REPO_ROOT, "data", "generated");
@@ -176,11 +178,11 @@ async function main(): Promise<void> {
   if (hits !== unerased.reduce((n, text) => n + text.split("\n").filter((l) => l && count(null, l, matchers)).length, 0)) throw new Error("countMatchingLines differs from testing every line");
   const probeWorst = await time(() => unerased.reduce((n, text) => n + b.countMatchingLines(text, matchers), 0));
 
-  // 4. audit chain verification window of 100 events and an export page of 500 rows
+  // 4. audit chain verification window (AUDIT_VERIFY_WINDOW events) and an export page of 500 rows
   const row = (i: number) => ({ id: `id-${i}`, ts: "2026-10-10T00:00:00.000Z", actor: "privacy-01", actor_kind: "human", persona: "privacy_officer", purpose: "privacy_compliance", action: "read_audit", route: "/api/v1/privacy/audit", subject_ref: null, request_id: null, decision: "allow", reason: "ok", row_count: i, detail_json: '{"n":1}' });
   const verify = await time(async () => {
     let prev = "0".repeat(64);
-    for (let i = 0; i < 100; i++) prev = await b.chainHash(prev, (b.hashedFields as (r: unknown) => Record<string, unknown>)(row(i)));
+    for (let i = 0; i < AUDIT_VERIFY_WINDOW; i++) prev = await b.chainHash(prev, (b.hashedFields as (r: unknown) => Record<string, unknown>)(row(i)));
   });
   const page = Array.from({ length: 500 }, (_, i) => ({ seq: i + 1, ...row(i), prev_hash: "a".repeat(64), hash: "b".repeat(64) }));
   const exportPage = await time(() => JSON.parse(JSON.stringify({ rows: page, headSeq: 500 })));
@@ -208,25 +210,26 @@ async function main(): Promise<void> {
       revision2_hris_erase_every_line_parsed: { ...rev2Hris, objects: hris.length },
       probe_step_at_cap_clean: { ...probe, mib: Number((probeBytes / 1_048_576).toFixed(2)) },
       probe_step_at_cap_every_line: probeWorst,
-      audit_verify_window_100: verify,
+      [`audit_verify_window_${AUDIT_VERIFY_WINDOW}`]: verify,
       audit_export_page_500: exportPage,
       kv_probe_420_values: kv,
     },
     design: { target_ms_here: 2.5, edge_factor: 3, free_cpu_limit_ms: 10 },
   };
-  // Every step-sized path. The check uses the fastest warm run (the least disturbed by the other processes on this
-  // machine, which runs other repos' builds); the largest median is reported next to it.
+  // Every step-sized path. The verdict uses the largest warm median (SPEC.md section 30.2); the largest fastest warm run
+  // (the least disturbed by the other processes on this machine, which runs other repos' builds) is reported beside it.
   const steps = [prefiltered, probe, probeWorst, verify, exportPage, kv];
-  const largest = Math.max(...steps.map((x) => x.warm_min_ms));
-  (result as Record<string, unknown>).largest_step_median_ms = Math.max(...steps.map((x) => x.warm_median_ms));
-  (result as Record<string, unknown>).largest_step_ms = largest;
+  const largest = Math.max(...steps.map((x) => x.warm_median_ms));
+  (result as Record<string, unknown>).verdict_basis = "largest warm median (SPEC.md section 30.2)";
+  (result as Record<string, unknown>).largest_step_median_ms = largest;
+  (result as Record<string, unknown>).largest_step_fastest_run_ms = Math.max(...steps.map((x) => x.warm_min_ms));
   (result as Record<string, unknown>).at_edge_factor_ms = Number((largest * 3).toFixed(2));
   // the design target (2.5 ms here, 7.5 ms at three times) keeps a 25% margin under the 10 ms limit
   (result as Record<string, unknown>).within_target = largest <= 2.5;
   (result as Record<string, unknown>).within_free_limit_at_edge_factor = largest * 3 <= 10;
   const file = path.join(REPO_ROOT, "evals", "results", `cpu-${date}.json`);
   writeFileSync(file, JSON.stringify(result, null, 2) + "\n");
-  console.log(JSON.stringify({ file: path.relative(REPO_ROOT, file), largest_step_ms: largest, at_edge_factor_ms: largest * 3, within_target: largest <= 2.5, measurements_ms: result.measurements_ms }, null, 1));
+  console.log(JSON.stringify({ file: path.relative(REPO_ROOT, file), largest_step_median_ms: largest, at_edge_factor_ms: largest * 3, within_target: largest <= 2.5, measurements_ms: result.measurements_ms }, null, 1));
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

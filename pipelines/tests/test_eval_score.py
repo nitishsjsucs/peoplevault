@@ -85,7 +85,7 @@ def test_planned_faults_that_were_not_planted_fail_the_gate():
 
 
 def test_audit_chain_verification_follows_windows():
-    """The eval verifies the chain window by window (100 events per request on Workers Free, SPEC.md 30.3.2)."""
+    """The eval verifies the chain window by window (50 events per request on Workers Free, SPEC.md 30.3.2 as amended)."""
     from peoplevault.evals.deletion import verify_audit_chain
 
     class Resp:
@@ -111,8 +111,8 @@ def test_audit_chain_verification_follows_windows():
             return Resp({"ok": True, "anchorHash": anchor, "from": rows[0] if rows else None, "checked": len(rows), "lastHash": f"h{rows[-1]}" if rows else anchor,
                          "nextAfterSeq": rows[-1] if rows else after, "complete": after + limit >= self.total})
 
-    c = Client(250)
-    assert verify_audit_chain(c) == {"ok": True, "length": 250, "windows": 3}
-    assert c.paths == ["/api/v1/privacy/audit/verify?after_seq=0&limit=100", "/api/v1/privacy/audit/verify?after_seq=100&limit=100", "/api/v1/privacy/audit/verify?after_seq=200&limit=100"]
+    c = Client(120)
+    assert verify_audit_chain(c) == {"ok": True, "length": 120, "windows": 3, "window": 50}
+    assert c.paths == ["/api/v1/privacy/audit/verify?after_seq=0&limit=50", "/api/v1/privacy/audit/verify?after_seq=50&limit=50", "/api/v1/privacy/audit/verify?after_seq=100&limit=50"]
     broken = verify_audit_chain(Client(250, break_anchor_at=100))
     assert broken["ok"] is False and broken["brokenAtSeq"] == 101

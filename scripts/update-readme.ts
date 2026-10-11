@@ -61,7 +61,7 @@ function deletion(f: ResultFile): string[] {
   }
   const aa = d.applicability_agreement;
   lines.push(`- Applicability agreement with ground truth: ${aa.agree} of ${aa.pairs} pairs` + (aa.disagreements?.length ? ` (${aa.disagreements.map((x: Json) => `${x.asset_id}: system ${x.system}, truth ${x.truth}`).join("; ")})` : ""));
-  lines.push(`- Audit hash chain: ${d.audit_chain.ok ? "verified" : "BROKEN"} over ${d.audit_chain.length} events` + (d.audit_chain.windows ? ` (${d.audit_chain.windows} windows of at most 100)` : ""));
+  lines.push(`- Audit hash chain: ${d.audit_chain.ok ? "verified" : "BROKEN"} over ${d.audit_chain.length} events` + (d.audit_chain.windows ? ` (${d.audit_chain.windows} windows${d.audit_chain.window ? ` of at most ${d.audit_chain.window} events` : ""})` : ""));
   if (d.audit_copy) {
     const where = String(d.environment).startsWith("local") ? "pyiceberg SqlCatalog" : "Basin Catalog";
     lines.push(`- Audit copy (\`pv audit export\`, ${where} table \`${d.audit_copy.table}\`): ${d.audit_copy.rows} rows, ${d.audit_copy.copied_this_run} copied by this run; last hash ${d.audit_copy.last_hash_matches ? "equals" : "DIFFERS FROM"} D1's at seq ${d.audit_copy.last_seq}`);
@@ -90,14 +90,16 @@ function cpu(f: ResultFile): string[] {
   const d = f.data;
   const m = d.measurements_ms as Record<string, { warm_median_ms: number; warm_min_ms?: number; objects?: number; mib?: number; per_mib?: number }>;
   const v = (k: string) => `${m[k]!.warm_median_ms} ms` + (m[k]!.warm_min_ms !== undefined ? ` (fastest run ${m[k]!.warm_min_ms} ms)` : "");
+  const verifyKey = Object.keys(m).find((k) => /^audit_verify_window_\d+$/.test(k))!;
+  const largest = d.largest_step_median_ms as number;
   return [
     `**CPU of the Worker's hot paths** (\`${d.command}\`, ${d.date}; ${d.environment}; ${d.machine.cpus} cores, 1-minute load average ${d.machine.load_average_1m} at the start)`,
     "",
     `- Prefiltered transform byte-identical to the unfiltered one: ${d.prefilter_identical.comparisons} comparisons over all ${d.prefilter_identical.objects} generated export objects`,
     `- Erase step at the 4 MiB cap (${m.erase_step_at_cap!.objects} HRIS objects, ${m.erase_step_at_cap!.mib} MiB): ${v("erase_step_at_cap")}; the revision 2 HRIS step that parsed every line of ${m.revision2_hris_erase_every_line_parsed!.objects} objects: ${v("revision2_hris_erase_every_line_parsed")}`,
     `- Probe step at the 2 MiB cap (${m.probe_step_at_cap_clean!.mib} MiB): ${v("probe_step_at_cap_clean")} after a clean erasure, ${v("probe_step_at_cap_every_line")} with the subject still in every object`,
-    `- Audit verification window of 100 events: ${v("audit_verify_window_100")}; audit export page of 500 rows: ${v("audit_export_page_500")}; KV probe over 420 values: ${v("kv_probe_420_values")}`,
-    `- Largest step-sized path: ${d.largest_step_ms} ms (fastest warm run; largest median ${d.largest_step_median_ms ?? d.largest_step_ms} ms) on this machine; at ${d.design.edge_factor} times (edge cores and cold isolates) ${d.at_edge_factor_ms ?? (d.largest_step_ms * d.design.edge_factor).toFixed(2)} ms against Free's ${d.design.free_cpu_limit_ms} ms (${d.within_target ? "within" : "over"} the design target of ${d.design.target_ms_here} ms here, which keeps a 25% margin). Miniflare enforces no CPU limit; production readings come from the canary deletion and the doctor's CPU p99 line`,
+    `- Audit verification window of ${verifyKey.replace("audit_verify_window_", "")} events: ${v(verifyKey)}; audit export page of 500 rows: ${v("audit_export_page_500")}; KV probe over 420 values: ${v("kv_probe_420_values")}`,
+    `- Largest step-sized path, judged on warm medians (SPEC.md section 30.2): ${largest} ms on this machine (largest fastest run ${d.largest_step_fastest_run_ms ?? d.largest_step_ms} ms); at ${d.design.edge_factor} times (edge cores and cold isolates) ${(largest * d.design.edge_factor).toFixed(2)} ms against Free's ${d.design.free_cpu_limit_ms} ms, ${largest <= d.design.target_ms_here ? "within" : "over"} the design target of ${d.design.target_ms_here} ms here (${(d.design.target_ms_here * d.design.edge_factor).toFixed(1)} ms at ${d.design.edge_factor} times, a 25% margin). Miniflare enforces no CPU limit; production readings come from the canary deletion and the doctor's CPU p99 line`,
   ];
 }
 

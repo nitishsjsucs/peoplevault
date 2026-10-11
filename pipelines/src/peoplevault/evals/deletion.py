@@ -74,9 +74,9 @@ def _wait_requests(client: LocalClient, ids: set[str], timeout_s: int, *, poll_s
         time.sleep(poll_s)
 
 
-def verify_audit_chain(client, principal: str = "privacy-01", *, limit: int = 100, max_windows: int = 100_000) -> dict:
+def verify_audit_chain(client, principal: str = "privacy-01", *, limit: int = 50, max_windows: int = 100_000) -> dict:
     """Follows the windowed verification route (SPEC.md section 30.3.2): at most `limit` events per request, each window
-    anchored on the previous window's last hash, until `complete`. Returns {ok, length, windows[, brokenAtSeq]}."""
+    anchored on the previous window's last hash, until `complete`. Returns {ok, length, windows, window[, brokenAtSeq]}."""
     after, length, windows, last_hash = 0, 0, 0, None
     while windows < max_windows:
         r = client.request(principal, "GET", f"/api/v1/privacy/audit/verify?after_seq={after}&limit={limit}")
@@ -84,14 +84,14 @@ def verify_audit_chain(client, principal: str = "privacy-01", *, limit: int = 10
         w = r.json()
         windows += 1
         if last_hash is not None and w["anchorHash"] != last_hash:
-            return {"ok": False, "length": length, "windows": windows, "brokenAtSeq": w.get("from") or after}
+            return {"ok": False, "length": length, "windows": windows, "window": limit, "brokenAtSeq": w.get("from") or after}
         if not w["ok"]:
-            return {"ok": False, "length": length + int(w.get("checked", 0)), "windows": windows, "brokenAtSeq": w.get("brokenAtSeq")}
+            return {"ok": False, "length": length + int(w.get("checked", 0)), "windows": windows, "window": limit, "brokenAtSeq": w.get("brokenAtSeq")}
         length += int(w["checked"])
         if w["complete"]:
-            return {"ok": True, "length": length, "windows": windows}
+            return {"ok": True, "length": length, "windows": windows, "window": limit}
         if w["nextAfterSeq"] <= after:
-            return {"ok": False, "length": length, "windows": windows, "brokenAtSeq": after}
+            return {"ok": False, "length": length, "windows": windows, "window": limit, "brokenAtSeq": after}
         after, last_hash = w["nextAfterSeq"], w["lastHash"]
     raise RuntimeError("audit chain verification did not finish")
 

@@ -239,7 +239,7 @@ privacy.get(AUDIT_ROUTE, async (c) => {
   return c.json({ events: results, cursor: results.length === 200 ? results[results.length - 1]!.seq : null });
 });
 
-// Windowed chain verification (SPEC.md section 30.3.2): at most 100 events per request, anchored on the hash of row
+// Windowed chain verification (SPEC.md section 30.3.2): at most 50 events per request, anchored on the hash of row
 // `after_seq`; clients follow `nextAfterSeq` until `complete` and check that each window's `anchorHash` equals the
 // previous window's `lastHash`.
 const AUDIT_VERIFY = "/api/v1/privacy/audit/verify";

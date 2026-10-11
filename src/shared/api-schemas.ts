@@ -1,5 +1,6 @@
 // zod request schemas for the HTTP API (SPEC.md section 13). Bodies are validated before any decision runs.
 import { z } from "zod";
+import { AUDIT_VERIFY_WINDOW } from "./limits.ts";
 
 const ref = (prefix: string) => z.string().regex(new RegExp(`^${prefix}_[a-z2-7]{26}$`));
 
@@ -14,7 +15,7 @@ export const RetentionRunBody = z
   .strict();
 export const ClaimBody = z.object({ phases: z.array(z.enum(["erase", "identity", "retention"])).min(1), max: z.number().int().min(1).max(25).default(25), lease_seconds: z.number().int().min(30).max(3600).default(600) }).strict();
 /** GET /api/v1/privacy/audit/verify?after_seq&limit (SPEC.md section 30.3.2) */
-export const AuditVerifyQuery = z.object({ after_seq: z.coerce.number().int().min(0), limit: z.coerce.number().int().min(1).max(100) }).strict();
+export const AuditVerifyQuery = z.object({ after_seq: z.coerce.number().int().min(0), limit: z.coerce.number().int().min(1).max(AUDIT_VERIFY_WINDOW) }).strict();
 /** GET /api/v1/privacy/reports/deletion?from&to&limit&cursor: failures are paged, at most 100 per page */
 export const ReportQuery = z
   .object({
