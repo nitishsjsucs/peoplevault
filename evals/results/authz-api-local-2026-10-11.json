@@ -1,7 +1,7 @@
 {
   "command": "pv authz api --target local --allow-writes",
   "date": "2026-10-11",
-  "git_sha": "97df132819a4d17dcbcc68f6a536b82118adc10b",
+  "git_sha": "0583c696cf672204ec1b9d64959f1729672f9168",
   "git_dirty": false,
   "environment": "local (Miniflare, DuckDB, pyiceberg SqlCatalog)",
   "versions": {
