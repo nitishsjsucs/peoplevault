@@ -2,6 +2,8 @@
 
 Design spec, revision 2, written 2026-10-10 before any code exists (revision 1 plus the fixes from review 1; section 29 is the review log). This file is the contract for the build session. Nothing else is in the repository yet.
 
+Revision 3 (2026-10-10, after commit 38): production runs on the Cloudflare Workers Free plan, in a Cloudflare account and a Google Cloud project (`master-magnet-444903-u4`) shared with three other repos. Section 30 holds the facts, the audit, the redesign and the usage budget, and overrides any earlier text it contradicts; ADR 0007 records the decision; section 26 lists the migration commits that come first for builder 3.
+
 - Local path: `~/Developer/projects/peoplevault`. Remote: `github.com/nitishsjsucs/peoplevault` (public, empty, default branch not yet set; checked with `gh repo view` on 2026-10-10).
 - Author of record: Nitish Chowdary. Git identity in this repo only: `user.name "nitishsjsucs"`, `user.email "227862909+nitishsjsucs@users.noreply.github.com"`. No `Co-Authored-By` trailer on any commit. Nobody pushes from the build session; the owner publishes.
 - Built from scratch. No code from any earlier implementation anywhere is read or reused.
@@ -54,7 +56,7 @@ Single source of truth: `policy/policy.yaml` (personas, purposes, classes, asset
 7. Retention: a daily sweep enforces per-asset retention periods, minimizes rather than deletes objects that contain held subjects, and turns terminated employees past retention into subject deletion requests through a Queue.
 8. Legal holds that suspend deletion and retention for held subjects, tracked and reported separately.
 9. Residual tracking that is honest about what deletion does not remove: Iceberg snapshots and orphaned files, BigQuery time travel and fail-safe, D1 Time Travel, KV propagation. Each residual has an expected clear time and an observed state.
-10. Audit: a hash-chained D1 audit log for every access decision and lifecycle action, deletion receipts hashed into the chain, a deletion coverage report, and (P1) in production a copy of every audit event streamed through Basin Pipelines into a Basin Catalog Iceberg table.
+10. Audit: a hash-chained D1 audit log for every access decision and lifecycle action, deletion receipts hashed into the chain, a deletion coverage report, and an exactly-once copy of every audit event in the Iceberg table `governance.audit_events` (Basin Catalog in production, SqlCatalog locally), pulled by `pv audit export` (section 30.3.3; Basin Pipelines is Workers Paid only).
 11. Two fully specified paths: a local path that works offline and in CI, and a production path that runs the moment credentials exist, with an idempotent `npm run setup:prod` and a `npm run doctor` that prints exactly what is missing. Production code that cannot run in the build session is covered by `--dry-run` golden tests and recorded-response contract tests, and the README labels it "written, not yet executed" until Nitish runs it.
 
 ### Non-goals (v1)
@@ -77,12 +79,12 @@ Every resume claim is covered by P0. The build ships P0 completely, records the 
 | P0 | P1 |
 |---|---|
 | Policy file, compiler, generated artifacts, drift check | `executor.yml` (scheduled production executor in GitHub Actions, with the log and scheduling hardening in section 20) |
-| Pseudonymization (TS and Python) with shared vectors | Basin Pipelines audit stream (`AUDIT_STREAM` binding, stream, sink, pipeline) |
+| Pseudonymization (TS and Python) with shared vectors | Audit copy into `governance.audit_events` by `pv audit export` (replaces the Basin Pipelines stream of revision 2, which is Workers Paid only; section 30.3.3) |
 | Synthetic generator with exact counts, token-collision constraints and golden counts | `npm run authz:prod` (the 100 cases through Access with service tokens) |
 | D1 migrations, opaque principals, identity records | `seed:prod` KV warm-up and extracts through the deployed API |
 | Access JWT verification (remote and local JWKS), dev login, PDP, hand-authored fixture world, 100 authz cases | React UI (privacy console, purpose-scoped employee browser) |
 | dbt project (raw, core, snapshots, marts, purpose views and routines) for DuckDB and BigQuery, merge-only for tagged or row-policy tables | Workers AI schema-drift triage through AI Gateway, with llama-server and stub locally |
-| Loaders, suppression, Iceberg `hr_history.employee_monthly` via pyiceberg (SqlCatalog locally, REST catalog in production) | Local export of D1 audit events into a local Iceberg `governance.audit_events` |
+| Loaders, suppression, Iceberg `hr_history.employee_monthly` via pyiceberg (SqlCatalog locally, REST catalog in production) | (absorbed: the audit copy above runs against the local SqlCatalog with the same code) |
 | Warehouse shim (local) and BigQuery REST client (production, with a row normalizer) behind one interface | Production orphan-file verification for Iceberg (needs R2 S3 credentials) |
 | Purpose data API with KV profile cache (suppression-aware), audit hash chain | R2 bucket lock preservation for held subjects; Workload Identity Federation; suppression-aware ingest endpoint |
 | SubjectDeletionWorkflow with conditional R2 rewrites, executor protocol, Python executor, independent verifiers | |
@@ -103,35 +105,37 @@ flowchart LR
     AN["people_analyst"]
     PO["privacy_officer"]
   end
-  ACCESS["Cloudflare Access<br/>adds Cf-Access-Jwt-Assertion<br/>(production only)"]
-  subgraph Worker["Worker: peoplevault (Hono)"]
+  ACCESS["Cloudflare Access (Zero Trust Free)<br/>adds Cf-Access-Jwt-Assertion<br/>(production only)"]
+  subgraph Worker["Worker: peoplevault (Hono) on Workers Free"]
     AUTH["Access JWT verify (jose RS256)<br/>principal from D1"]
     PDP["Policy decision point<br/>persona to purpose, columns, row scope"]
-    API["Purpose data API<br/>privacy API, executor API"]
-    WF1["SubjectDeletionWorkflow"]
+    API["Purpose data API<br/>privacy API, executor API<br/>(incl. audit-export route)"]
+    ADM["Daily admission cap<br/>(16 starts per UTC day in production)"]
+    CRON["Cron 03:00 UTC<br/>reconcile, then retention sweep"]
+    WF1["SubjectDeletionWorkflow<br/>byte-capped cursor steps, 10 ms CPU each"]
     WF2["RetentionSweepWorkflow"]
     QC["Queue consumer"]
-    PROBES["Independent probes<br/>R2, KV, D1"]
+    PROBES["Independent probes<br/>R2 (cursor steps), KV, D1 (in SQLite)"]
     AUDIT["Audit log (hash chain)"]
   end
   D1[("D1 pv-control<br/>principals, identity_map,<br/>requests, holds, tasks, audit")]
   R2X[("R2 pv-source-exports<br/>41 export objects")]
   R2D[("R2 pv-derived<br/>analytics extracts")]
   KV[("KV pv-cache<br/>profile cards, team rosters")]
-  Q[["Queue pv-retention-sweep<br/>+ pv-retention-dlq"]]
-  PIPE["Basin Pipelines stream<br/>pv_audit_events (production, P1)"]
+  Q[["Queue pv-retention-sweep<br/>+ pv-retention-dlq (24 h retention on Free)"]]
   subgraph Python["Python (uv): executor, loaders, verifiers"]
     EXE["Executor loop<br/>claims tasks over HTTPS"]
+    AEX["pv audit export<br/>seq cursor in the Iceberg snapshot summary"]
     VER["Warehouse and lake verifiers"]
     DBT["dbt (dbt-duckdb / dbt-bigquery)"]
     SHIM["Warehouse shim :8893<br/>(local only)"]
   end
   subgraph WH["Warehouse"]
-    BQ[("BigQuery (production)<br/>restricted datasets, authorized views and TVFs,<br/>policy tags, data masking, row access policies")]
+    BQ[("BigQuery (production, shared project)<br/>peoplevault_* datasets, authorized views and TVFs,<br/>policy tags, data masking, row access policies")]
     DUCK[("DuckDB file (local stand-in)")]
   end
   subgraph LAKE["Iceberg archive"]
-    BCAT[("Basin Catalog on R2 pv-lake (production)")]
+    BCAT[("Basin Catalog on R2 pv-lake (production)<br/>hr_history.employee_monthly, governance.audit_events")]
     SQLCAT[("pyiceberg SqlCatalog + local files (local stand-in)")]
   end
   Users --> ACCESS --> AUTH
@@ -141,9 +145,11 @@ flowchart LR
   API -->|"local: named query"| SHIM --> DUCK
   API --> KV
   API --> AUDIT --> D1
-  AUDIT -.-> PIPE -.-> BCAT
-  API -->|"create"| WF1
+  API -->|"create when admitted"| ADM --> WF1
+  CRON --> ADM
+  CRON -->|"RETENTION_CRON=on"| WF2
   WF2 --> Q --> QC -->|"createBatch"| WF1
+  CRON -->|"re-send deferred or orphaned requests"| Q
   WF1 --> R2X & R2D & KV & D1
   WF1 -->|"executor_tasks rows"| D1
   EXE -->|"claim / complete"| API
@@ -151,6 +157,8 @@ flowchart LR
   EXE --> DBT
   EXE --> BQ & DUCK
   EXE --> BCAT & SQLCAT
+  AEX -->|"GET /api/v1/executor/audit-export"| API
+  AEX -->|"one append per run"| BCAT & SQLCAT
   VER --> BQ & DUCK & BCAT & SQLCAT
   WF1 --> PROBES
 ```
@@ -278,7 +286,8 @@ peoplevault/
 │       ├── 0003-verification-independent-of-deletion.md
 │       ├── 0004-no-client-side-snapshot-expiry-on-basin-catalog.md
 │       ├── 0005-audit-subject-ref-retention-exception.md
-│       └── 0006-merge-only-protected-bigquery-tables.md
+│       ├── 0006-merge-only-protected-bigquery-tables.md
+│       └── 0007-production-on-workers-free.md          # revision 3
 ├── policy/
 │   ├── policy.yaml
 │   ├── cases/authz_cases.yaml          # exactly 100 cases
@@ -339,7 +348,7 @@ peoplevault/
 │   │   ├── residuals/residuals.ts
 │   │   ├── audit/
 │   │   │   ├── audit-log.ts            # hash chain append and verify
-│   │   │   ├── audit-stream.ts         # (P1) Basin Pipelines binding in production; P0 ships the disabled mode only
+│   │   │   ├── audit-stream.ts         # (P1) Basin Pipelines binding in production; removed by revision 3 (audit copy via executor export route)
 │   │   │   └── receipts.ts
 │   │   ├── cache/profile-cache.ts
 │   │   ├── reports/deletion-report.ts
@@ -520,20 +529,24 @@ The Worker name is `peoplevault-local` so a mistaken `wrangler deploy` without `
 
 Invocation logs are off (`observability.logs.invocation_logs: false`, accepted by the config schema and by `wrangler deploy --dry-run` without warnings): Workers Logs records the method and URL of every request by default and keeps them 7 days on Workers Paid, which would be an untracked copy of request data. Console logs stay on and never contain identifiers (`logging.test.ts`).
 
-`env-extra.d.ts` declares `interface Env { AUDIT_STREAM?: Pipeline }` (and the same inside `namespace Cloudflare`), because there is deliberately no local `pipelines` binding: Miniflare's local pipeline binding is a no-op (`miniflare/dist/src/workers/pipelines/pipeline.worker.js` is `async send(_data) {}`), so binding it locally would pretend to stream. `AUDIT_STREAM_MODE=disabled` makes the health endpoint report `auditStream: "disabled_local"`.
+`env-extra.d.ts` declares `interface Env { AUDIT_STREAM?: Pipeline }` (and the same inside `namespace Cloudflare`), because there is deliberately no local `pipelines` binding: Miniflare's local pipeline binding is a no-op (`miniflare/dist/src/workers/pipelines/pipeline.worker.js` is `async send(_data) {}`), so binding it locally would pretend to stream. `AUDIT_STREAM_MODE=disabled` makes the health endpoint report `auditStream: "disabled_local"`. Revision 3 removes the declaration, the binding and the var with the Basin Pipelines stream (section 30.3.3); health reports `auditCopy: "executor_export"`.
 
 ### 6.2 `infra/cloudflare/wrangler.production.template.jsonc`
 
-Same shape with these differences: `"name": "peoplevault"`, `"workers_dev": true`; `"main": "../../src/worker/index.ts"` and `"migrations_dir": "../../migrations"`, because wrangler resolves both relative to the config file's own directory (checked with wrangler 4.149.0: `wrangler deploy --dry-run -c infra/cloudflare/<template>` with `"main": "src/worker/index.ts"` fails with 'The entry-point file at "src/worker/index.ts" was not found', and with `../../` it passes; `wrangler d1 migrations list --local -c infra/cloudflare/<config>` finds migrations only with `../../migrations`); real resource ids (placeholders `__D1_ID__`, `__KV_ID__`); `"secrets": { "required": ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"] }` (production secrets only: with `secrets.required`, deploy adds an inherit binding for every listed secret and refuses to deploy a Worker that does not exist yet unless the values come from `--secrets-file`, per `secrets-validation.ts` in wrangler 4.149.0, so the local-only secret names must not be listed here); the same `observability` block with `invocation_logs: false`; `"limits": { "cpu_ms": 300000 }` (Workflows docs: raise per-step CPU up to 5 minutes on Workers Paid); (P1) `"pipelines": [{ "binding": "AUDIT_STREAM", "stream": "__STREAM_ID__" }]` (the docs deprecate the `pipeline` key in favor of `stream`); and production vars:
+Same shape with these differences: `"name": "peoplevault"`, `"workers_dev": true`; `"main": "../../src/worker/index.ts"` and `"migrations_dir": "../../migrations"`, because wrangler resolves both relative to the config file's own directory (checked with wrangler 4.149.0: `wrangler deploy --dry-run -c infra/cloudflare/<template>` with `"main": "src/worker/index.ts"` fails with 'The entry-point file at "src/worker/index.ts" was not found', and with `../../` it passes; `wrangler d1 migrations list --local -c infra/cloudflare/<config>` finds migrations only with `../../migrations`); real resource ids (placeholders `__D1_ID__`, `__KV_ID__`); `"secrets": { "required": ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"] }` (production secrets only: with `secrets.required`, deploy adds an inherit binding for every listed secret and refuses to deploy a Worker that does not exist yet unless the values come from `--secrets-file`, per `secrets-validation.ts` in wrangler 4.149.0, so the local-only secret names must not be listed here); the same `observability` block with `invocation_logs: false`; no `limits` block and no `pipelines` binding (revision 3: `limits` is only supported for the Standard usage model and Basin Pipelines is Workers Paid only, section 30); and production vars:
 
 ```
-PV_ENV=production, AUTH_MODE=access, WAREHOUSE_MODE=bigquery, AUDIT_STREAM_MODE=disabled (pipelines once P1 lands),
-ACCESS_TEAM_DOMAIN=https://<team>.cloudflareaccess.com, ACCESS_AUD=<application AUD tag>,
-GCP_PROJECT_ID, BQ_LOCATION=US, BQ_GATEWAY_SA_EMAIL,
+PV_ENV=production, AUTH_MODE=access, WAREHOUSE_MODE=bigquery,
+ACCESS_TEAM_DOMAIN=https://old-truth-a7dc.cloudflareaccess.com, ACCESS_AUD=<application AUD tag>,
+GCP_PROJECT_ID=master-magnet-444903-u4, BQ_LOCATION=US, BQ_GATEWAY_SA_EMAIL (peoplevault-gateway@...),
 BQ_PURPOSE_SA_EMPLOYEE_RELATIONS, BQ_PURPOSE_SA_TEAM_MANAGEMENT, BQ_PURPOSE_SA_WORKFORCE_ANALYTICS,
-BQ_PURPOSE_SA_PRIVACY_COMPLIANCE, BQ_PURPOSE_SA_LEGAL_HOLD_MANAGEMENT,
-KV_PROPAGATION_WAIT=70 seconds, EXECUTOR_WAIT_TIMEOUT=24 hours
+BQ_PURPOSE_SA_PRIVACY_COMPLIANCE, BQ_PURPOSE_SA_LEGAL_HOLD_MANAGEMENT (peoplevault-<x>-reader@...),
+KV_PROPAGATION_WAIT=70 seconds, EXECUTOR_WAIT_TIMEOUT=24 hours,
+DAILY_DELETION_STARTS=16, RETENTION_DAILY_MAX=8, RETENTION_CRON=off (on after the production eval),
+R2_ERASE_STEP_BYTES=4194304, R2_PROBE_STEP_BYTES=2097152
 ```
+
+The local `wrangler.jsonc` declares the same five new vars with `""` (unlimited), `""`, `"on"` and the same byte caps, and drops `AUDIT_STREAM_MODE`.
 
 Secrets (production): `PV_PSEUDONYM_MASTER_KEY`, `GCP_GATEWAY_SA_KEY` (JSON). They are written once by `setup:prod` into `.secrets/worker-secrets.env` (mode 600, gitignored) and uploaded with every deploy by `wrangler deploy --secrets-file .secrets/worker-secrets.env` (flag present in 4.149.0; "applies additively", so omitted secrets are not deleted). `wrangler secret put` is not used: before the first deploy it would prompt to create the Worker, and with `secrets.required` a first deploy without the values fails.
 
@@ -1210,9 +1223,9 @@ All routes under `/api/v1` require a verified Access JWT except `GET /api/health
 
 ### 14.1 `SubjectDeletionWorkflow` (binding `DELETION`, instance id = request id)
 
-Params `{ requestId: string }`. Step outputs contain counts, asset ids, booleans and timestamps only, never identifiers (local dev exposes step outputs in instance status as `__LOCAL_DEV_STEP_OUTPUTS`, seen in the spike, and production retains instance state for 30 days on Workers Paid). Identifiers are loaded from D1 inside each step that needs them. `create` passes `retention: { successRetention: "30 days", errorRetention: "30 days" }`.
+Params `{ requestId: string }`. Step outputs contain counts, asset ids, booleans and timestamps only, never identifiers (local dev exposes step outputs in instance status as `__LOCAL_DEV_STEP_OUTPUTS`, seen in the spike, and production retains instance state for 3 days on Workers Free). Identifiers are loaded from D1 inside each step that needs them. `create` passes `retention: { successRetention: "3 days", errorRetention: "3 days" }` (revision 3: Free keeps completed instances at most 3 days and `retention` can only shorten it; receipts live in D1). Because a finished instance disappears after 3 days, `load-request` ends an instance without changes when its request is terminal or names another instance (section 30.3.4).
 
-Operation budget: the KV limits page says a Worker invocation can make up to 1,000 operations to external services (its example counts KV and R2 reads against one shared cap; a KV bulk get of up to 100 keys counts as 1). Miniflare does not enforce it, and the docs do not say whether a Workflow step or the whole instance is the invocation, so the design assumes the conservative reading: every KV, R2 and D1 call counts, at most 500 per step and at most 900 per instance. Each store's erase and probe run in their own steps, KV values are read with bulk `CACHE.get(keys[], "text")` in chunks of 100 (Miniflare rejects 101 keys with "You can request a maximum of 100 keys"), and `ops.budget.test.ts` runs a full fixture deletion through `withOpBudget` and asserts both limits, with a margin test at the full population's key and object counts (420 KV entries, 47 R2 objects).
+Operation budget: the KV limits page says a Worker invocation can make up to 1,000 operations to external services (its example counts KV and R2 reads against one shared cap; a KV bulk get of up to 100 keys counts as 1). Miniflare does not enforce it, and the docs do not say whether a Workflow step or the whole instance is the invocation, so the design assumes the conservative reading: every KV, R2 and D1 call counts, at most 500 per step and at most 900 per instance. Revision 3 (Workers Free, section 30.3.1) adds per-step caps on decoded R2 bytes (4 MiB for erasure, 2 MiB for probes, so each step stays under Free's 10 ms of CPU), at most 40 D1 statements per step (Free allows 50 queries per invocation) and no external fetch; the step table below is the revision 2 plan, and section 30.3.1 gives the Free plan's 30-step plan that replaces steps 4 to 5d, 12a and the probes inside 14 and 17. Each store's erase and probe run in their own steps, KV values are read with bulk `CACHE.get(keys[], "text")` in chunks of 100 (Miniflare rejects 101 keys with "You can request a maximum of 100 keys"), and `ops.budget.test.ts` runs a full fixture deletion through `withOpBudget` and asserts both limits, with a margin test at the full population's key and object counts (420 KV entries, 47 R2 objects).
 
 | # | Step name | Kind | Does |
 |---|---|---|---|
@@ -1263,7 +1276,7 @@ Matching is boundary-aware, never bare substring, because substring matching on 
 | R2 | `verify/r2-probe.ts` | every object in `pv-source-exports` and `pv-derived` (full listing, not only registered prefixes): key name, custom metadata, every line |
 | KV | `verify/kv-probe.ts` | every key name and every value in `CACHE` (bulk reads) |
 | D1 | `verify/d1-probe.ts` | every TEXT column of every table from `sqlite_master`, minus the stage exclusions and internal tables in 14.1; unreadable table = `error` |
-| Warehouse | `verify/warehouse_scan.py` | every BASE TABLE in every dataset or schema the executor can list (BigQuery `INFORMATION_SCHEMA.SCHEMATA`, `TABLES`, `COLUMNS` per dataset; DuckDB `information_schema`), every STRING column, with the matchers above (`REGEXP_CONTAINS` / exact equality). In BigQuery the executor lists every dataset in the project because it holds project-level `roles/bigquery.metadataViewer` and `roles/bigquery.dataViewer` (15.2): BigQuery lists only datasets the caller can access (dataset listing docs), so a `scratch` dataset created by someone else would otherwise be invisible |
+| Warehouse | `verify/warehouse_scan.py` | every BASE TABLE in every dataset or schema the executor can list (BigQuery `INFORMATION_SCHEMA.SCHEMATA`, `TABLES`, `COLUMNS` per dataset; DuckDB `information_schema`), every STRING column, with the matchers above (`REGEXP_CONTAINS` / exact equality). In BigQuery the executor lists every dataset in the project because it holds project-level `roles/bigquery.metadataViewer` and `roles/bigquery.dataViewer` (15.2): BigQuery lists only datasets the caller can access (dataset listing docs), so a `scratch` dataset created by someone else would otherwise be invisible. Revision 3 (shared project): no project-level data roles, so the scan covers the datasets the executor can list whose ids start with `peoplevault_` (section 30.3.8) |
 | Iceberg current | `verify/lake_scan.py` | current snapshot of every table in every namespace, every string column |
 | Iceberg residual | `verify/lake_scan.py` | every retained snapshot (`scan(snapshot_id=...)`), and locally every Parquet file under each table location that no retained snapshot references |
 
@@ -1277,7 +1290,7 @@ A finding at a location that maps to no registered asset is `unregistered_residu
 | `iceberg_orphan_files` | observed: at erase time the executor records the paths of data files that contained the subject; pending while any of those files still exists (the probe found 2 such files left after expiry); cleared by the orphan purge in `pv lake expire` | modeled: Basin expiration "removes old table snapshots and any unreferenced data files". Client-side expiry is refused in production (ADR 0004) because files of snapshots removed by a client are "not previously referenced by a snapshot" from the managed job's view and would never be cleaned. Observed orphan scanning is P1 (needs R2 S3 credentials) |
 | `bq_time_travel` | modeled: `deleted_at + 48h`, labeled "DuckDB has no time travel; modeled from the BigQuery dataset setting" | observed: right after the erase (identity still known) the executor counts the subject's rows `FOR SYSTEM_TIME AS OF TIMESTAMP_MILLIS(@deleted_ms - 1000)` and records that count; later `pv residuals check` runs the same time travel read without tokens (`SELECT COUNT(*)`). Success means the pre-deletion version is still recoverable (`pending`). Only the documented out-of-window error counts as `cleared`: the time travel docs give it as "Table `ID` was created at time which is before its allowed time travel interval", and the classifier matches that message with `reason: invalid` against a recorded fixture. Any other error (for example `accessDenied`) is `error`, never cleared. This works only because `pv-executor` holds `bigquery.rowAccessPolicies.overrideTimeTravelRestrictions` through the custom role in 15.2: the docs say that for a table that has or had row access policies only principals with that permission can read history, and others get access denied; the permission is in `roles/bigquery.admin`, `roles/bigquery.studioAdmin` and `roles/iam.databasesAdmin`, not in `roles/owner` or `dataOwner`. Applies to every table touched by DML and the rebuilt `headcount_monthly` (`CREATE OR REPLACE` keeps previous contents in time travel; aggregate rows only). `test_bigquery_live.py::test_time_travel_read_as_executor` reads a row-policy table at now minus 1 minute as the executor |
 | `bq_fail_safe` | modeled: time travel end + 7 days | modeled: fail-safe is 7 days, not configurable, not queryable |
-| `d1_time_travel` | not recorded (Miniflare) | modeled: identity deletion + 30 days (D1 Time Travel is always on; 30 days on Workers Paid) |
+| `d1_time_travel` | not recorded (Miniflare) | modeled: identity deletion + 7 days (D1 Time Travel is always on; 7 days on Workers Free, 30 on Paid; revision 3) |
 | `kv_propagation` | recorded with the 1 s local wait, cleared at verification | recorded with the 70 s wait, cleared at verification |
 
 `pv residuals check` runs in production from Nitish's machine (P0) or daily through the P1 executor workflow, and posts state changes to `POST /api/v1/executor/residuals` (executor principal only; body is residual ids, states, evidence and timestamps, no identifiers).
@@ -1298,6 +1311,8 @@ Not a residual kind, by design: Workers Logs. Invocation logs are disabled in bo
 
 Queue consumer (`pv-retention-sweep`, batch 25): `DELETION.createBatch({ instances })` (object form; the array form is deprecated in the types). Per-instance errors for ids that already exist are acked; other errors call `message.retry()`; after 3 retries messages go to `pv-retention-dlq`. Cron `0 3 * * *` creates `retention-<UTC date>` and ignores "already exists".
 
+Revision 3 (Workers Free, section 30.3.4): step 6 admits at most `min(RETENTION_DAILY_MAX, remaining daily cap)` new subjects (8 and 16 in production; unlimited locally, so the evals are unchanged) and sets `admitted_at` on each; the cron first runs `reconcileReceived` (deferred DSRs and requests admitted more than 6 hours ago without an instance, oldest first, re-sent through the queue, because Free keeps queue and dead-letter messages only 24 hours), and creates the sweep instance only when `RETENTION_CRON=on`. Objects past retention are minimized through the same line-prefiltered, byte-capped cursor steps as erasure.
+
 ### 14.6 Purpose data path (read)
 
 `GET /api/v1/purposes/:purpose/employees/:ref`: verify JWT, resolve principal, `decide`, check the ref has the purpose's ref kind (`er_` for identified purposes, `an_` for `workforce_analytics`; wrong kind is 404) and exists in `identity_map` under that column and is not suppressed (one D1 query joining `identity_map` to `suppression_list` on `subject_ref`; 404 if absent or suppressed), KV get `profile:{purpose}:{ref}`; on miss run `"<purpose>.profile"` with scope parameters through the `WarehouseClient`, `filterColumns`, KV put with TTL, audit allow with `row_count`. The cache stores only the purpose-filtered view.
@@ -1308,7 +1323,8 @@ Suppression closes a refill window: KV is erased at step 7 of the deletion workf
 
 - Receipt (stored in `deletion_requests.summary_json`, hash appended to the audit chain as action `deletion_receipt`): `{ requestId, kind, subjectRef, status, startedAt, completedAt, policyVersion, policyHash, perCategory: { [category]: { applicable, clean, notClean, notPresent, held, aggregateRecompute } }, assets: [...], residuals: [...], holds: [...] }`.
 - Report: requests by status; coverage overall and per category over the window; held bucket; residuals by kind, state and evidence (`observed` or `modeled`); failures with findings (location and match count, never values).
-- Audit stream (P1): production `ctx.waitUntil(env.AUDIT_STREAM.send([event]))` for every appended event (D1 stays the source of truth; stream failures are logged as counts). Locally disabled, reported as such; P0 ships only the disabled mode.
+- Audit copy (P1): revision 2 streamed every event through Basin Pipelines, which is Workers Paid only. Revision 3 pulls instead: `pv audit export` pages `GET /api/v1/executor/audit-export` and appends to `governance.audit_events` exactly once, with its `seq` and hash cursor in the Iceberg snapshot summary (section 30.3.3). D1 stays the source of truth, locally and in production.
+- Chain verification is windowed: `GET /api/v1/privacy/audit/verify?after_seq&limit` checks at most 100 events per request and clients follow `nextAfterSeq` (section 30.3.2); the report is aggregated in SQL.
 
 ---
 
@@ -1318,7 +1334,7 @@ Everything below is generated from `policy/policy.yaml` into `infra/bigquery/*.j
 
 ### 15.1 Project, APIs, location
 
-- One project (Nitish chooses the id, for example `peoplevault-<suffix>`), billing linked. The BigQuery sandbox is not enough: the sandbox docs list DML statements as unsupported, and every table and view in a sandbox expires after 60 days.
+- Revision 3: the shared project `master-magnet-444903-u4` (four repos), billing enabled, every name prefixed `peoplevault`, grants dataset- or resource-scoped (section 30.3.8). Revision 2 text: one project (Nitish chooses the id, for example `peoplevault-<suffix>`), billing linked. The BigQuery sandbox is not enough: the sandbox docs list DML statements as unsupported, and every table and view in a sandbox expires after 60 days.
 - APIs: `bigquery.googleapis.com`, `datacatalog.googleapis.com` (the column-level security docs say it "must remain enabled" for policy tags; Data Catalog search is deprecated but policy tags and taxonomies are not), `bigquerydatapolicy.googleapis.com`, `iamcredentials.googleapis.com`, `iam.googleapis.com`.
 - Location: `US` multi-region for all datasets; taxonomy location `us` (assumed to need to match the datasets; not verified, section 27).
 - Pricing model: on-demand (the editions page lists column-level access control, row-level security and dynamic data masking as available with on-demand pricing and Enterprise editions, not Standard).
@@ -1329,7 +1345,7 @@ Everything below is generated from `policy/policy.yaml` into `infra/bigquery/*.j
 |---|---|
 | `pv-er-reader`, `pv-tm-reader`, `pv-wa-reader`, `pv-pc-reader`, `pv-lh-reader` | `roles/bigquery.jobUser` on the project; `roles/bigquery.dataViewer` on its own `pv_purpose_*` dataset only; policy tag grants from 15.3 |
 | `pv-gateway` | `roles/iam.serviceAccountTokenCreator` on each of the five purpose SAs; nothing else. Key JSON -> Worker secret `GCP_GATEWAY_SA_KEY` |
-| `pv-executor` | `roles/bigquery.jobUser` on the project; `roles/bigquery.dataOwner` on all 10 datasets (dbt creates tables, views, authorized view grants, row access policies; Data Owner includes `bigquery.tables.setCategory` per the docs); project-level `roles/bigquery.metadataViewer` and `roles/bigquery.dataViewer` (lists and reads every dataset, so the verifier finds copies in datasets it did not create; the project is dedicated to PeopleVault); custom role `projects/<p>/roles/pvTimeTravelReader` with the single permission `bigquery.rowAccessPolicies.overrideTimeTravelRestrictions` (custom role support level SUPPORTED on the IAM custom-roles support page, checked in review 1; datasets accept custom roles per the BigQuery IAM docs) granted on `pv_core`, `pv_snapshots` and `pv_marts`, so it can read time travel of row-policy tables; `roles/datacatalog.viewer` on the project (`datacatalog.taxonomies.get`); Fine-Grained Reader on all 6 tags (verification scans read every column); member of `rap_full` on every row-policy table (DML needs `TRUE` filter access per the row-level security docs). No key for laptop use; in P1 a key for `executor.yml` only, stored as a GitHub secret |
+| `pv-executor` (revision 3: `peoplevault-executor`, without the project-level `metadataViewer` and `dataViewer` below and with `roles/datacatalog.viewer` on the taxonomy instead of the project, because the project is shared; section 30.3.8) | `roles/bigquery.jobUser` on the project; `roles/bigquery.dataOwner` on all 10 datasets (dbt creates tables, views, authorized view grants, row access policies; Data Owner includes `bigquery.tables.setCategory` per the docs); project-level `roles/bigquery.metadataViewer` and `roles/bigquery.dataViewer` (lists and reads every dataset, so the verifier finds copies in datasets it did not create; the project is dedicated to PeopleVault); custom role `projects/<p>/roles/pvTimeTravelReader` with the single permission `bigquery.rowAccessPolicies.overrideTimeTravelRestrictions` (custom role support level SUPPORTED on the IAM custom-roles support page, checked in review 1; datasets accept custom roles per the BigQuery IAM docs) granted on `pv_core`, `pv_snapshots` and `pv_marts`, so it can read time travel of row-policy tables; `roles/datacatalog.viewer` on the project (`datacatalog.taxonomies.get`); Fine-Grained Reader on all 6 tags (verification scans read every column); member of `rap_full` on every row-policy table (DML needs `TRUE` filter access per the row-level security docs). No key for laptop use; in P1 a key for `executor.yml` only, stored as a GitHub secret |
 | Nitish's user | Owner (creates everything); `roles/iam.serviceAccountTokenCreator` on `pv-executor` (dbt, loaders and executor impersonate it) and on the five purpose SAs (the BigQuery authz suite impersonates them). Never used directly for dbt or reads of protected tables: Owner is not in any row access policy, so it would see zero rows |
 
 ### 15.3 Taxonomy, policy tags and data policies
@@ -1417,9 +1433,8 @@ Total 37 probes (18 + 4 + 5 + 10), written to the result file as `ceiling_probes
 | Queues | `pv-retention-sweep`, `pv-retention-dlq` | `npx wrangler queues create <name>` |
 | Basin Catalog | on `pv-lake` | `npx wrangler basin catalog enable pv-lake` (note Warehouse and Catalog URI from the output) |
 | Snapshot expiration | `hr_history.employee_monthly` | `npx wrangler basin catalog snapshot-expiration enable pv-lake hr_history employee_monthly --older-than-days 1 --retain-last 1` (after `pv lake init --target prod` creates the table) |
-| Basin stream (P1) | `pv_audit_events` | `npx wrangler basin pipelines streams create pv_audit_events --schema-file infra/cloudflare/audit-stream.schema.json --no-http-enabled` (`--http-enabled` is a boolean defaulting to true; yargs negation form avoids `false` being read as a positional) |
-| Basin sink (P1) | `pv_audit_sink` | `npx wrangler basin pipelines sinks create pv_audit_sink --type r2-data-catalog --bucket pv-lake --namespace governance --table audit_events --catalog-token <PV_R2_CATALOG_TOKEN> --roll-interval 300` (the token can only be passed as an argument: the script spawns wrangler without a shell, never logs argv, and `--dry-run` prints `--catalog-token ***`) |
-| Basin pipeline (P1) | `pv_audit_pipeline` | `npx wrangler basin pipelines create pv_audit_pipeline --sql "INSERT INTO pv_audit_sink SELECT * FROM pv_audit_events"` |
+| Basin stream, sink and pipeline | none (revision 3) | Basin Pipelines is Workers Paid only (creating one on this account returned code 1021); `setup:prod` creates none of them and the doctor checks none. The audit copy `governance.audit_events` is created and appended by `pv audit export --target prod` (section 30.3.3) |
+| Snapshot expiration (audit copy) | `governance.audit_events` | `npx wrangler basin catalog snapshot-expiration enable pv-lake governance audit_events` with the defaults (30 days, keep 5; free), after the first export creates the table; `--token` from `PV_R2_CATALOG_TOKEN` if the command requires it (checked with `--help` at build time) |
 | Secrets | `PV_PSEUDONYM_MASTER_KEY`, `GCP_GATEWAY_SA_KEY` | `.secrets/worker-secrets.env` (mode 600), uploaded by every `npm run deploy` with `--secrets-file` |
 | Access application | `PeopleVault` | Cloudflare API (16.2) or dashboard |
 | Access service tokens | `pv-executor`, `pv-persona-hr`, `pv-persona-manager`, `pv-persona-analyst`, `pv-persona-privacy` | `POST /client/v4/accounts/{account_id}/access/service_tokens` `{ name, duration: "8760h" }` |
@@ -1427,7 +1442,7 @@ Total 37 probes (18 + 4 + 5 + 10), written to the result file as `ceiling_probes
 
 Wrangler 4.149.0 groups these under `wrangler basin` ("Manage Basin products": `sql`, `catalog`, `pipelines`); `basin pipelines` is described as "Manage Cloudflare Pipelines" and the docs title it "Basin Pipelines (formerly known as Cloudflare Pipelines)"; Basin Catalog is "formerly known as R2 Data Catalog". Stream schema types available: `string, int32, int64, float32, float64, bool, timestamp, json, binary, list, struct`.
 
-`infra/cloudflare/audit-stream.schema.json`: `{"fields":[{"name":"seq","type":"int64","required":true},{"name":"id","type":"string","required":true},{"name":"ts","type":"timestamp","required":true},{"name":"actor","type":"string","required":true},{"name":"actor_kind","type":"string","required":true},{"name":"persona","type":"string","required":false},{"name":"purpose","type":"string","required":false},{"name":"action","type":"string","required":true},{"name":"route","type":"string","required":false},{"name":"subject_ref","type":"string","required":false},{"name":"request_id","type":"string","required":false},{"name":"decision","type":"string","required":true},{"name":"reason","type":"string","required":true},{"name":"row_count","type":"int64","required":false},{"name":"prev_hash","type":"string","required":true},{"name":"hash","type":"string","required":true}]}`
+`infra/cloudflare/audit-stream.schema.json` (revision 3 moves it unchanged to `infra/lake/audit-events.schema.json`, the Iceberg schema of the audit copy): `{"fields":[{"name":"seq","type":"int64","required":true},{"name":"id","type":"string","required":true},{"name":"ts","type":"timestamp","required":true},{"name":"actor","type":"string","required":true},{"name":"actor_kind","type":"string","required":true},{"name":"persona","type":"string","required":false},{"name":"purpose","type":"string","required":false},{"name":"action","type":"string","required":true},{"name":"route","type":"string","required":false},{"name":"subject_ref","type":"string","required":false},{"name":"request_id","type":"string","required":false},{"name":"decision","type":"string","required":true},{"name":"reason","type":"string","required":true},{"name":"row_count","type":"int64","required":false},{"name":"prev_hash","type":"string","required":true},{"name":"hash","type":"string","required":true}]}`
 
 ### 16.2 Cloudflare Access
 
@@ -1443,10 +1458,13 @@ The shared production target lists Workers AI and AI Gateway, but no resume clai
 
 When the loader quarantines an export with an unknown column, the Worker route `POST /api/v1/privacy/schema-drift/:id/suggest` asks a model to propose a data class from the column name and 5 synthetic sample values. The suggestion never changes policy: the class becomes `max_severity(rule_class, model_class)` and only a human edit of `policy.yaml` releases the file. Production: `env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", { messages, response_format: { type: "json_schema", ... } }, { gateway: { id: "peoplevault", collectLog: true } })` (`GatewayOptions` fields `id, cacheKey, cacheTtl, skipCache, metadata, collectLog, eventId, requestTimeoutMs, retries` verified in workers-types). Local: llama-server on 8170 with Qwen3-1.7B (OpenAI-compatible `/v1/chat/completions`) or a deterministic stub. Eval (P1): 120 labeled synthetic columns, metric `sensitive_recall`.
 
+Revision 3 (Workers Free): the gateway call uses `collectLog: false` and `skipCache: true` (quarantined sample values may hold identifiers, so the gateway stores nothing), each call is capped at 600 input tokens and `max_tokens: 48` (at most 25.8 neurons on this model), the Worker meters neurons per UTC day in D1 and stops at `AI_DAILY_NEURONS` = 2,000, and the production eval is resumable over 2 days; section 30.3.6 says which model produces which number.
+
 ### 16.4 Plan requirements
 
-- Workers Paid ($5 per month minimum per account) is required: Workers Free allows 10 ms CPU per invocation and 10 ms per Workflow step, which an R2 rewrite of 13 HRIS objects cannot meet, Free allows only 50 subrequests per Workflow instance (10,000 on Paid), and Basin Pipelines (P1) lists only Workers Paid; production config sets `limits.cpu_ms: 300000`.
-- Free allowances cover the rest at this scale (section 23.4).
+- Revision 3: **Workers Free, no Paid feature** (Nitish's decision on 2026-10-10; ADR 0007). Revision 2 required Workers Paid for three reasons, each now designed out (section 30): Workflow steps that needed more than 10 ms of CPU (now byte-capped cursor steps with a line prefilter and D1 matching inside SQLite; the largest step measures 1.83 ms on this Mac), `limits.cpu_ms` (removed; only the Standard usage model supports it), and the Basin Pipelines audit stream (Paid only; replaced by `pv audit export`). The subrequest concern of revision 2 came from an older limits page: Free now allows 1,000 subrequests to Cloudflare services per invocation, and a deletion instance makes about 394.
+- R2 and Basin Catalog need an active R2 subscription (card on file), which this account has; Zero Trust Free needs payment details but is not charged.
+- Every per-account Free allowance is shared with three other repos; section 30.4 budgets this repo at 25% of each.
 
 ---
 
@@ -1454,11 +1472,12 @@ When the loader quarantines an export with an unknown column, the Worker route `
 
 | Production service | Local implementation | What it proves locally | What it cannot prove locally |
 |---|---|---|---|
-| Workers, Workflows, Queues, Cron, D1, R2, KV | Miniflare through `wrangler dev` (8793) and `@cloudflare/vitest-plugin` | real binding APIs, workflow steps, events, sleeps, retries, queue batches | CPU limits, KV global propagation, D1 Time Travel, production retention of instance state |
+| Workers, Workflows, Queues, Cron, D1, R2, KV | Miniflare through `wrangler dev` (8793) and `@cloudflare/vitest-plugin` | real binding APIs, workflow steps, events, sleeps, retries, queue batches, cursor restarts, admission and reconcile | CPU limits, KV global propagation, D1 Time Travel, production retention of instance state, Free daily allowances |
 | Cloudflare Access | RS256 key pair from `npm run dev:keys`, local JWKS, `/dev/login` cookie, executor dev JWT with `common_name` | every verification branch (signature, issuer, audience, expiry, algorithm, kid, user vs service) | that Access issues and forwards the header for this app (checked by the `doctor --prod` edge check and persona round trip; (P1) `authz:prod`) |
 | BigQuery | DuckDB 1.5.6 file + dbt-duckdb + `pv serve` shim on 8893 | SQL logic of every view, function, mask expression, row filter, DML erase, scrubbing, dbt tests; the 48 warehouse authz cases against emulated ceilings | IAM, policy tag enforcement, data masking, row access policies, authorized views, time travel, fail-safe |
 | Basin Catalog (Iceberg REST) | pyiceberg 0.12.0 `SqlCatalog` (SQLite) + local files | copy-on-write delete, filtered overwrite scrubbing, snapshot residual scans, expiry and orphan purge | managed expiration schedule, REST commit compatibility of deletes |
-| Basin Pipelines (P1) | disabled (Miniflare's pipeline binding is a no-op) | the Worker's stream code path with a fake binding in vitest | delivery into `governance.audit_events` |
+| Audit copy (revision 3; Basin Pipelines dropped as Paid only) | `pv audit export --target local` into the SqlCatalog table `governance.audit_events` | the same export code as production: paging, chain-link check, one append per run with the cursor in the snapshot summary, exactly-once reruns | REST commit of the append against the Basin Catalog (first production export) |
+| Workers Free limits (CPU 10 ms, D1 50 queries, daily allowances) | not enforced by Miniflare | per-step byte, statement and call counters in `ops.budget.test.ts`; the budget model test (18.5) | real CPU on edge hardware (canary deletion, section 30.6) |
 | BigQuery REST, Google token endpoints, Cloudflare Access and account APIs | recorded-response contract fixtures (constructed from the official API references, labeled as such, replaced by captured responses after the first production run) and `--dry-run` golden command lists | request shapes, paging, `jobComplete: false` handling, f/v row normalization, error classification, idempotent command plans | that the live services accept those requests |
 | Workers AI, AI Gateway (P1) | llama-server Qwen3-1.7B on 8170, or a deterministic stub | prompt and JSON handling | model quality of the production model, gateway logs |
 | Zero Trust login | none; `/dev/login` (local only) | | |
@@ -1507,9 +1526,9 @@ When the loader quarantines an export with an unknown column, the Worker route `
 | `workflow.deletion.held.test.ts` | held subject: status `held`, nothing erased, 13 `held` results |
 | `r2.rewrite.concurrency.test.ts` | 10 concurrent subject removals over one shared object through `rewriteObject` leave all 10 subjects absent; a stale etag never overwrites; retention minimization racing a deletion keeps both effects |
 | `workflow.deletion.concurrent.test.ts` | 10 fixture deletions created together all end clean; the second DSR for one subject gets 409 |
-| `ops.budget.test.ts` | one full deletion stays within 500 KV+R2+D1 operations per step and 900 per instance; KV bulk reads use chunks of at most 100 keys |
+| `ops.budget.test.ts` | one full deletion stays within 500 KV+R2+D1 operations per step and 900 per instance; KV bulk reads use chunks of at most 100 keys. Revision 3 adds the Free plan caps of 18.5: decoded R2 bytes per step, D1 statements per step (batch statements counted one by one), no external fetch |
 | `audit.identifier-free.test.ts` | after a fixture deletion of a manager, no audit field contains any token of any fixture employee, and the chain verifies |
-| `bigquery-rest.contract.test.ts` | recorded `jobs.query` and `getQueryResults` responses: `jobComplete: false` polling, `pageToken` paging, f/v normalization of INT64, BOOL, DATE, TIMESTAMP, NULL and REPEATED, error classification |
+| `bigquery-rest.contract.test.ts` | recorded `jobs.query` and `getQueryResults` responses: `jobComplete: false` polling, `pageToken` paging, f/v normalization of INT64, BOOL, DATE, TIMESTAMP, NULL and REPEATED, error classification; (revision 3) every request body carries `maximumBytesBilled: "104857600"`, at most 20 polls and 10 pages, at most 34 external fetches per data request |
 | `gcp-auth.contract.test.ts` | recorded Google token endpoint and `generateAccessToken` responses; the signed assertion's claims; the 4-minute cache |
 | `workflow.deletion.residue.test.ts` | unregistered R2 object with the subject's email: status `failed`, `unregistered_residue` finding, identity records and `employee_id` retained |
 | `workflow.deletion.executor-failure.test.ts` | `ok: false` event and a forced `waitForEvent` timeout both end in `failed` |
@@ -1517,13 +1536,13 @@ When the loader quarantines an export with an unknown column, the Worker route `
 | `workflow.retention.test.ts` | expired objects deleted, held-subject objects minimized, extracts expired, retention requests inserted and messages sent, held subjects recorded as `held` |
 | `queue.consumer.test.ts` | `createBatch` object form; already-existing ids acked; other errors retried |
 | `scheduled.test.ts` | cron creates `retention-<date>` once |
-| `audit.chain.test.ts` | append and verify; tampering detected at the right `seq`; concurrent append guard |
-| `audit.stream.test.ts` | `disabled` mode never calls the binding and health reports `disabled_local`; (P1) `pipelines` mode sends to a fake binding |
+| `audit.chain.test.ts` | append and verify; tampering detected at the right `seq`; concurrent append guard; (revision 3) windowed verify of 100 events, tampering detected inside a window and across a window boundary, append gives up after 8 attempts |
+| `audit.stream.test.ts` | revision 3 replaces it with `audit.export.route.test.ts`: executor principal only; exactly the 16 schema fields, never `detail_json`; `seq` order after the cursor; pages of at most 500; one audit event per page; health reports `auditCopy: "executor_export"` |
 | `verify.probes.test.ts` | R2 probe finds tokens in unregistered prefixes, later lines, key names and custom metadata; KV probe in keys and values; D1 probe in an ad hoc table, skips `_cf_*`, `sqlite_*`, `d1_migrations`, reports an unreadable table as `error`; boundary matching does not flag `brian.chen@...` for subject `ian.chen@...` |
 | `config.test.ts` | config validation rules; `/dev/*` returns 404 when `AUTH_MODE=access` and for a non-loopback host under `local-jwks`; production config rejects the test-vector master key |
 | `logging.test.ts` | console output during a full deletion workflow and an identity lookup contains no token |
 
-`node` project: `verify.isolation.test.ts` (no file in `src/worker/verify/` imports from `erase/` or `workflows/`; it reads source files, so it cannot run in workerd), `doctor.test.ts` (each check with a fake command runner and recorded API responses, exact fix commands, exit code), `setup-prod.dryrun.test.ts` (golden ordered command list for an empty account, for a partially set up account and for a complete one; existing resources produce no create commands; secrets and `--catalog-token` values never printed), `cf-api.contract.test.ts` (recorded Access apps, service tokens, organizations, Workers subdomain and account subscriptions responses), `pids.test.ts` (process-group start and stop), `update-readme.test.ts` (only the marked block changes; refuses results without `command`, `date`, `git_sha` and `git_dirty`), `dev-keys.test.ts` (writes exactly the `secrets.required` names).
+`node` project: `verify.isolation.test.ts` (no file in `src/worker/verify/` imports from `erase/` or `workflows/`; it reads source files, so it cannot run in workerd), `doctor.test.ts` (each check with a fake command runner and recorded API responses, exact fix commands, exit code), `setup-prod.dryrun.test.ts` (golden ordered command list for an empty account, for a partially set up account and for a complete one; existing resources produce no create commands; secrets and `--catalog-token` values never printed; revision 3: no `basin pipelines` command and no Workers Paid preflight in any golden, and a same-named resource with no record in `.secrets/prod-resources.json` stops the plan), `cf-api.contract.test.ts` (recorded Access apps, service tokens, organizations, Workers subdomain and account subscriptions responses), `pids.test.ts` (process-group start and stop), `update-readme.test.ts` (only the marked block changes; refuses results without `command`, `date`, `git_sha` and `git_dirty`), `dev-keys.test.ts` (writes exactly the `secrets.required` names).
 
 ### 18.2 Pytest (`pipelines/tests`, markers `bigquery` and `e2e` skipped by default)
 
@@ -1553,7 +1572,7 @@ When the loader quarantines an export with an unknown column, the Worker route `
 | `test_lake_residuals.py` | residual snapshots detected, expiry and orphan purge clear them, `--target prod` expiry refused |
 | `test_verify_scanners.py` | finds copies in unregistered tables, a new schema, an ad hoc Iceberg table, orphan files |
 | `test_verify_isolation.py` | `peoplevault.verify` imports nothing from `executor`, `load`, `lake.ops` |
-| `test_residuals_model.py` | modeled windows (48 h + 7 d, D1 30 d) and evidence labels |
+| `test_residuals_model.py` | modeled windows (48 h + 7 d, D1 7 d on Workers Free since revision 3) and evidence labels |
 | `test_executor_protocol.py` | results carry no identifiers; batching groups the one aggregate rebuild; BigQuery "concurrent update" aborts are retried |
 | `test_logging_redact.py` | the redacting filter removes employee ids, emails, names and pseudonyms from log records, including exception text |
 | `test_oracle_miniflare_state.py` | `pv eval`'s oracle reads an object written with `wrangler r2 object put --local` (body and custom metadata) straight from `.wrangler/state/v3/r2`; fails loudly if the layout differs (pinned to wrangler 4.149.0) |
@@ -1567,7 +1586,7 @@ When the loader quarantines an export with an unknown column, the Worker route `
 | synthetic workforce data | `pv synth`, counts tests | `seed:prod` |
 | purpose-scoped access | PDP + 100 cases; shim allowlist | BigQuery live suite (48 cases + 37 ceiling probes); (P1) `authz:prod` |
 | historical retention | retention rules, sweep workflow tests, eval retention metrics | cron in production |
-| auditable deletion | receipts, hash chain, report, eval | production eval receipts; (P1) Basin Pipelines copy of audit events |
+| auditable deletion | receipts, hash chain, report, eval; local audit copy in SqlCatalog | production eval receipts; exactly-once audit copy in the Basin Catalog table `governance.audit_events` (revision 3; Basin Pipelines dropped as Paid only) |
 | Cloudflare Access | local RS256 JWKS verification (category A) | `doctor --prod` edge check and persona round trip through Access with each persona service token; (P1) `authz:prod` |
 | R2, Workflows | Miniflare workflow tests, eval | production eval |
 | BigQuery access controls, restricted views, column masking | DuckDB emulation only (labeled) | `pv authz warehouse --target bigquery` |
@@ -1579,6 +1598,28 @@ When the loader quarantines an export with an unknown column, the Worker route `
 | legal holds tracked separately | eval held bucket, `held_data_intact` | production eval |
 | Iceberg snapshot cleanup | observed locally (pyiceberg SqlCatalog) | observed via Basin Catalog scans |
 | BigQuery recovery windows | modeled only (labeled) | observed via `FOR SYSTEM_TIME AS OF` |
+
+### 18.5 Free plan budget tests (revision 3, section 30)
+
+These tests pin the Workers Free design so a later change cannot drift back into Paid territory. The allowances live in one module, `scripts/lib/free-budget.ts` (facts F1 to F20 with their URLs, the 25% planning share and the per-path unit costs of section 30.4), which the doctor also reads.
+
+| Project | File | Asserts |
+|---|---|---|
+| node | `free-plan.config.test.ts` | the production template has no `limits`, no `pipelines`, no `durable_objects` and no `migrations` block; exactly one Cron Trigger; the 5 Free vars with exact values (`DAILY_DELETION_STARTS` 16, `RETENTION_DAILY_MAX` 8, `RETENTION_CRON` off, byte caps 4,194,304 and 2,097,152); at most 64 vars plus secrets; `INSTANCE_RETENTION` at most 3 days; the local config declares the same names |
+| node | `free-plan.budget.test.ts` | the budget model's worst-case day stays within the 25% share for every daily and monthly row of 30.4 (Workflow steps, requests, D1 rows read and written, KV reads, writes, deletes and lists, Queue operations, R2 operations, Basin Catalog operations, neurons, seats); for example `DAILY_DELETION_STARTS x stepsPerCompletedDeletion(full population) + sweepSteps <= 750` and `RETENTION_DAILY_MAX x 7 + DAILY_DELETION_STARTS x 7 <= 2,500` Queue operations (so the consumer's `max_retries` 3 is part of the bound); raising a cap past the share fails the test |
+| node | `doctor.test.ts` (extended) | no Workers Paid line; lines for retention cron state, admissions today, audit copy lag, and D1 rows per probe projected at the cap against the share |
+| worker | `ops.budget.test.ts` (extended) | per step: decoded R2 bytes at most the step cap (erase 4 MiB, probe 2 MiB), at most 40 D1 statements, at most 500 calls, 0 fetches; per instance at most 900 calls; at full-population sizes (41 export objects of the generated sizes, 9.25 MiB, plus 6 extracts, 1.21 MiB, built as filler in the test) a completed deletion takes exactly 30 steps (3 erase and 6 probe cursor steps), a verification failure 23 and a held request 3; JSON parsing happens only on lines that contain the subject's id |
+| worker | `workflow.deletion.cursor.test.ts` | an object added or removed between two probe steps changes the listing digest and restarts the probe, so nothing is skipped; an erase restart removes 0 further rows; step outputs never contain a key or a token |
+| worker | `erase.prefilter.test.ts` | the prefiltered transform is byte-identical to the revision 2 transform over every generated export object for subjects that include managers, reviewers and a held-reference conflict |
+| worker | `verify.probes.test.ts` (extended) | the D1 probe with the `instr` prefilter returns the same findings as the full scan over the fixture world plus the 3 eval ad hoc tables; a table count above 19 splits the probe into 2 steps |
+| worker | `admission.test.ts` | the 17th start of a UTC day answers 202 `deferred` without an instance; the next cron admits it first; a request admitted 7 hours ago without an instance (lost message) is re-sent; retries count toward the cap; local config is unlimited |
+| worker | `workflow.deletion.idempotent.test.ts` | an instance for a terminal request, or for a request that names another instance, changes no row |
+| worker | `routes.privacy.report.test.ts` | the SQL report equals the revision 2 JavaScript report over the fixture world and a seeded multi-request state; failures are paged at 100 |
+| pytest | `test_audit_export.py` | first run copies the whole chain; a rerun copies nothing; a concurrent commit makes the second exporter retry without duplicates; a tampered `prev_hash` stops the run with nothing committed; the snapshot summary holds `pv.audit.last_seq` and `pv.audit.last_hash`; local SqlCatalog end to end against the local stack |
+| pytest | `test_bq_bytes_cap.py` | every `QueryJobConfig` the package builds sets `maximum_bytes_billed`; the dbt BigQuery profiles set `maximum_bytes_billed`; Python jobs use `job_id_prefix="peoplevault_"` |
+| pytest | `test_shared_project_names.py` | every generated dataset, service account, custom role, data policy, taxonomy and probe dataset name starts with `peoplevault`; `iam_bindings.json` has no project-level role except `roles/bigquery.jobUser`; `scan_warehouse` keeps only `peoplevault_` datasets |
+| pytest | `test_executor_actions.py` (extended) | production poll intervals: executor 5 s, eval request wait 10 s |
+| pytest (P1) | `test_drift_eval_budget.py` | neurons from token usage at the dated rates of each model; the run stops before a call that could pass the daily cap and resumes from the checkpoint; the result header names the model, `neurons_total` and `days` |
 
 ### 18.4 Authorization case catalog (`policy/cases/authz_cases.yaml`, exactly 100)
 
@@ -1718,20 +1759,24 @@ Rules: no macOS-only commands (scripts are Node or Python, no `sed -i`, no `open
 
 ## 21. Local versus production matrix
 
+Revision 3: production is the Workers Free plan in an account shared with three other repos, and BigQuery lives in the shared project `master-magnet-444903-u4` (section 30).
+
 | Concern | Local (works offline and in CI) | Production (after section 23) |
 |---|---|---|
-| Identity | locally generated RS256 JWKS, `/dev/login` cookie (loopback only), executor dev JWT | Cloudflare Access (Zero Trust Free), team JWKS, service tokens |
-| Worker, Workflows, Queues, Cron | Miniflare via `wrangler dev` 8793, Worker `peoplevault-local` | Workers Paid deployment `peoplevault` on the account's workers.dev subdomain |
-| Control plane | D1 in `.wrangler/state` | D1 `pv-control` (Time Travel 30 days, tracked as residual) |
+| Identity | locally generated RS256 JWKS, `/dev/login` cookie (loopback only), executor dev JWT | Cloudflare Access, Zero Trust Free team `old-truth-a7dc` (5 of 50 seats), team JWKS, 5 service tokens |
+| Worker, Workflows, Queues, Cron | Miniflare via `wrangler dev` 8793, Worker `peoplevault-local` | Workers **Free** deployment `peoplevault` at `https://peoplevault.nitish-ratakonda.workers.dev`; no `limits` block |
+| CPU and per-invocation limits | not enforced by Miniflare; counted in tests (bytes, D1 statements, calls) | 10 ms per request and per Workflow step: byte-capped cursor steps (4 MiB erase, 2 MiB probe), D1 matching inside SQLite, at most 40 D1 statements per step, windowed audit verify |
+| Daily capacity | unlimited (`DAILY_DELETION_STARTS` and `RETENTION_DAILY_MAX` empty, `RETENTION_CRON` on) | at most 16 deletion starts per UTC day, 8 of them retention; deferred and orphaned requests re-admitted by the cron; retention cron off until the production eval is committed |
+| Control plane | D1 in `.wrangler/state` | D1 `pv-control` (Time Travel 7 days on Free, tracked as a residual) |
 | Source exports and extracts | R2 in `.wrangler/state` | R2 `pv-source-exports`, `pv-derived` |
 | Caches | KV in `.wrangler/state` (immediate) | KV `pv-cache` (70 s propagation wait before verification) |
-| Warehouse | DuckDB file, dbt-duckdb, shim 8893 with emulated ceilings | BigQuery US, dbt-bigquery, purpose SAs, authorized views and table functions, policy tags, data masking, row access policies |
+| Warehouse | DuckDB file with `peoplevault_*` schemas, dbt-duckdb, shim 8893 with emulated ceilings | BigQuery US in the shared project, `peoplevault_*` datasets, dbt-bigquery, `peoplevault-*` purpose SAs, authorized views and table functions, policy tags, data masking, row access policies; dataset-scoped grants only; every query byte-capped |
 | Recovery windows | modeled from the 48 h setting (labeled) | observed with time travel queries; fail-safe modeled |
-| Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake`, managed snapshot expiration |
-| Audit copy | D1 only; stream disabled | D1; (P1) plus Basin Pipelines stream into `governance.audit_events` |
-| Executor | `pv serve` thread | `pv executor run --target prod` from Nitish's Mac, impersonating `pv-executor`; (P1) `executor.yml` hourly |
+| Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake` (R2 subscription, Free plan), managed snapshot expiration |
+| Audit copy | `pv audit export --target local` into SqlCatalog `governance.audit_events` | the same command into the Basin Catalog table `governance.audit_events` (exactly once, cursor in the snapshot summary), from `executor.yml` or the production eval; no Basin Pipelines (Paid only) |
+| Executor | `pv serve` thread (0.5 s poll) | `pv executor run --target prod` from Nitish's Mac (5 s poll), impersonating `peoplevault-executor`; (P1) `executor.yml` hourly |
 | Production API calls | recorded-response contract tests and `--dry-run` golden plans only | live, after section 23; README labels each path "written, not yet executed" until it has run |
-| LLM (P1) | llama-server Qwen3-1.7B on 8170 or stub | Workers AI through AI Gateway `peoplevault` |
+| LLM (P1) | llama-server Qwen3-1.7B on 8170 or stub | Workers AI `@cf/meta/llama-3.3-70b-instruct-fp8-fast` through AI Gateway `peoplevault` (no logs, no cache), at most 2,000 neurons per UTC day |
 
 ---
 
@@ -1751,15 +1796,17 @@ Production checks:
 |---|---|---|
 | wrangler login | `npx wrangler whoami --json` (prints `{"loggedIn":false}` and exits 1 when logged out, checked) | `npx wrangler login` |
 | account id | `CLOUDFLARE_ACCOUNT_ID` or the single account in whoami | `export CLOUDFLARE_ACCOUNT_ID=...` |
-| `PV_CF_API_TOKEN` scopes | `GET /client/v4/accounts/{id}/access/apps`, `/access/service_tokens`, `/access/organizations`, `/workers/subdomain`, `/subscriptions` each return 200 | create the token (23.1 step 7) |
+| `PV_CF_API_TOKEN` scopes | `GET /client/v4/accounts/{id}/access/apps`, `/access/service_tokens`, `/access/organizations`, `/workers/subdomain` each return 200 (revision 3: `/subscriptions` and Billing Read dropped) | create the token (23.1 step 7) |
 | Zero Trust org | `GET /client/v4/accounts/{id}/access/organizations` has `auth_domain` | Zero Trust onboarding (23.1) |
-| Workers Paid | `GET /client/v4/accounts/{id}/subscriptions` (needs Billing Read) lists a subscription whose `rate_plan.public_name` or `rate_plan.id` names Workers Paid and whose `state` is `Paid` or `Provisioned`; the exact plan identifier is unverified, so a non-match is `[warn]` and prints the plan names found | upgrade (23.1) |
+| Plan (revision 3) | no Workers Paid check: production runs on Workers Free and needs no plan line (the Billing Read permission is dropped from `PV_CF_API_TOKEN`) | |
+| Free plan usage (revision 3) | `RETENTION_CRON` state in the rendered config (`[warn]` while off); deletion requests admitted today against `DAILY_DELETION_STARTS`; D1 rows per probe (rows in the scanned tables) projected at the cap against the 25% share of 5M rows read; audit copy lag (`headSeq - pv.audit.last_seq`) and age of the last export commit (`[warn]` above 26 hours); (optional) CPU p99 per invocation from Workers analytics when the token has Account Analytics Read, `[warn]` above 7.5 ms | `npm run setup:prod -- --only worker --retention-cron on`; `pv audit export --target prod`; lower `R2_*_STEP_BYTES` |
 | workers.dev subdomain | `GET /client/v4/accounts/{id}/workers/subdomain` (error 10007 means none; Workflows cannot deploy without one) | 23.1 step 3 |
 | R2 buckets, KV, Queues | REST with the wrangler OAuth token (`/r2/buckets`, `/storage/kv/namespaces`, `/queues`) | `npm run setup:prod` |
 | D1 | `npx wrangler d1 list --json` | `npm run setup:prod` |
 | Basin Catalog | REST with the wrangler OAuth token, catalog status of `pv-lake` | `npm run setup:prod` |
 | `PV_R2_CATALOG_TOKEN` | pyiceberg `RestCatalog(...).list_namespaces()` | create R2 token (23.1 step 8) |
-| (P1) stream, sink, pipeline | `wrangler basin pipelines streams list --json`, `sinks list --json`, `list --json` | `npm run setup:prod` |
+| (P1) stream, sink, pipeline | removed in revision 3 (Basin Pipelines is Workers Paid only) | |
+| Cloudflare name conflicts (revision 3) | a resource with one of this repo's names that is not recorded in `.secrets/prod-resources.json` (the account is shared) | rename or record it by hand after checking ownership |
 | production config | `infra/cloudflare/wrangler.production.jsonc` exists, has no `__..._ID__` placeholder, `invocation_logs` is false | `npm run setup:prod` |
 | Worker secrets | `npx wrangler secret list -c infra/cloudflare/wrangler.production.jsonc --format json` has both names | `npm run deploy` |
 | Access app and policies, 5 service tokens | Cloudflare API | `npm run setup:prod` |
@@ -1782,8 +1829,8 @@ Production checks:
 `node scripts/setup-prod.ts [--dry-run] [--only cloudflare|gcp|worker|access|data|github]`. Every step checks before creating, records ids in `.secrets/prod-resources.json`, writes secrets only to `.secrets/` with mode 600, and never prints secret values. `--dry-run` prints the exact commands with secret arguments shown as `***`; `setup-prod.dryrun.test.ts` and `test_setup_gcp_dryrun.py` hold the golden plans.
 
 1. Preflight: the doctor's prerequisite checks (logins, tokens, env, quota project, workers.dev subdomain). If no subdomain exists and `PV_WORKERS_SUBDOMAIN` is set, it asks and then registers it with `PUT /accounts/{id}/workers/subdomain`; otherwise it stops with the list of what is missing.
-2. Cloudflare resources: R2 buckets, D1 database (create only), KV, Queues, Basin Catalog enable on `pv-lake` (records Warehouse and Catalog URI). (P1) stream (records stream id), sink, pipeline.
-3. Google Cloud (`uv run --project pipelines pv setup gcp`): APIs, 7 service accounts, the custom role `pvTimeTravelReader`, IAM (including project-level `metadataViewer` and `dataViewer` and the dataset-level custom role for `pv-executor`, and Token Creator for Nitish's user on `pv-executor` and the five purpose SAs), 10 datasets, `max_time_travel_hours = 48`, taxonomy, tags (resource names recorded under `policy_tags` for `pv dbt --vars`), data policies, and one key: the `pv-gateway` key (created only if none is recorded locally). No `pv-executor` key in P0.
+2. Cloudflare resources: R2 buckets, D1 database (create only), KV, Queues, Basin Catalog enable on `pv-lake` (records Warehouse and Catalog URI). Revision 3: no Basin Pipelines resources (Paid only); a same-named resource with no record stops the step (shared account); snapshot expiration also on `governance.audit_events` after the first export.
+3. Google Cloud (`uv run --project pipelines pv setup gcp`): APIs, 7 service accounts, the custom role `pvTimeTravelReader`, IAM (including project-level `metadataViewer` and `dataViewer` and the dataset-level custom role for `pv-executor`, and Token Creator for Nitish's user on `pv-executor` and the five purpose SAs), 10 datasets, `max_time_travel_hours = 48`, taxonomy, tags (resource names recorded under `policy_tags` for `pv dbt --vars`), data policies, and one key: the `pv-gateway` key (created only if none is recorded locally). No `pv-executor` key in P0. Revision 3 (shared project `master-magnet-444903-u4`, section 30.3.8): every name carries the `peoplevault` prefix (`peoplevault-executor`, `peoplevault-gateway`, `peoplevaultTimeTravelReader`, `peoplevault_*` datasets and data policies); the executor gets no project-level `metadataViewer` or `dataViewer` and `roles/datacatalog.viewer` on the taxonomy instead of the project; the only project-level grant is `roles/bigquery.jobUser`; enables `datacatalog`, `iam` and `iamcredentials` (BigQuery and the data policy API are already on).
 4. Worker: render `infra/cloudflare/wrangler.production.jsonc` from the template and the recorded ids; then apply remote D1 migrations with `-c infra/cloudflare/wrangler.production.jsonc` (rendering must come first); generate `PV_PSEUDONYM_MASTER_KEY` once (never regenerated; losing it breaks pseudonym stability, so setup tells Nitish to copy it to his password manager); write `.secrets/worker-secrets.env` with both secrets; `npm run deploy` (`--secrets-file`, so the first deploy creates the Worker with its secrets).
 5. Access: Access app, policies, 5 service tokens (client secrets captured once into `.secrets/prod.env`), write `ACCESS_AUD` and `ACCESS_TEAM_DOMAIN` into the rendered production config, `npm run deploy` again.
 6. Data: `npm run seed:prod` (remote D1 seed, `wrangler r2 object put --remote` for 41 exports, `pv lake init --target prod` with its self-test table, snapshot expiration on `hr_history.employee_monthly`, `pv load --target prod` including `dbt build --target bigquery` as `pv-executor`, then the row counts against `expected_counts.json` and `bq_controls.verify()`; any zero count or missing control fails the step). (P1) KV warm-up and 6 extracts through the API with persona service tokens.
@@ -1794,45 +1841,42 @@ Production checks:
 
 ## 23. Production setup Nitish must do
 
-Everything a script can do is in `npm run setup:prod`. This section lists, in order, what only Nitish can do (accounts, payment, consent screens, logins, token creation, naming choices) and then the commands to run. The last column says where each fact was checked on 2026-10-10; "(unverified)" marks what could not be confirmed against an official page or the wrangler 4.149.0 source. `docs/PRODUCTION.md` carries this section verbatim and is kept current.
+Revision 3 (2026-10-10). Everything a script can do is in `npm run setup:prod`. This section lists, in order, what only Nitish can do (accounts, payment, consent screens, logins, token creation, naming choices) and then the commands to run. Production stays on **Workers Free**, Google Cloud billing is enabled on the **shared project `master-magnet-444903-u4`**, and the "Done" column says what was already true on 2026-10-10, checked read-only where a command could check it (`wrangler whoami`, `wrangler r2 bucket list`, `d1 list --json`, `kv namespace list`, `queues list`, `workflows list` all empty; `gcloud config list`, `gcloud billing projects describe`, `gcloud services list --enabled`, `bq ls` empty, the ADC file). Nothing was created or changed by the architect; Nitish's operator runs the setup after the gate. `docs/PRODUCTION.md` carries this section verbatim and is kept current.
 
 ### 23.1 Accounts, plans, console steps and tokens
 
-| # | Provider | Step | Where | Cost | Needed for | Checked against |
-|---|---|---|---|---|---|---|
-| 1 | Cloudflare | Create or sign in to an account; turn on two-factor authentication | https://dash.cloudflare.com/sign-up | free | everything on Cloudflare | |
-| 2 | Cloudflare | Upgrade the account to Workers Paid | dashboard, Workers & Pages, Plans (console path unverified) | $5/month minimum per account | Workflow steps need more than Free's 10 ms CPU and 50 subrequests per instance; `limits.cpu_ms`; (P1) Basin Pipelines | Workers pricing, Workflows limits page |
-| 3 | Cloudflare | Register a workers.dev subdomain (pick the name; the Worker becomes `peoplevault.<name>.workers.dev`). Either in the dashboard, or put `PV_WORKERS_SUBDOMAIN=<name>` in `.secrets/prod.env` and let `setup:prod` register it after asking | `https://dash.cloudflare.com/<ACCOUNT_ID>/workers/onboarding` | free | wrangler refuses to deploy Workflows without one ("You need to register a workers.dev subdomain before deploying Workflows"); doctor's edge check URL | wrangler 4.149.0 `cli.js` |
-| 4 | Cloudflare | Open R2 Object Storage once and activate it if the dashboard asks (unverified whether a separate activation is still required) | dashboard, R2 Object Storage | free tier covers this project | R2 buckets and Basin Catalog | |
-| 5 | Cloudflare | Zero Trust onboarding: choose a team name (for example `nitish-pv`, giving `nitish-pv.cloudflareaccess.com`), choose the Free plan, enter payment details (the setup docs say Free is not charged) | dashboard, Zero Trust | $0 (Free plan seat limit of 50 reported by third parties, unverified) | Cloudflare Access in front of the Worker | Cloudflare One setup docs |
-| 6 | Cloudflare | Add One-time PIN as a login method | Zero Trust, Settings, Authentication, Login methods, Add new (path unverified) | free | signing in by email as each persona | Access docs |
-| 7 | Cloudflare | Create an account API token named in `.secrets/prod.env` as `PV_CF_API_TOKEN` (Custom token) with exactly: Access: Apps and Policies Edit; Access: Service Tokens Edit; Access: Organizations, Identity Providers, and Groups Read; Workers Scripts Read; Billing Read. Do not call it `CLOUDFLARE_API_TOKEN`: wrangler would use that variable instead of the OAuth login, and this token cannot create D1, R2 or Queues | My Profile, API Tokens, Create Token | free | Access app, policies and service tokens; doctor's subdomain and Workers Paid checks | API token permissions reference (names); subscriptions API reference (Billing Read) |
-| 8 | Cloudflare | Create an R2 API token with Admin Read & Write; save it as `PV_R2_CATALOG_TOKEN` | R2 Object Storage, Manage API tokens, Create API token | free | pyiceberg REST access to the Basin Catalog Iceberg archive; (P1) the audit sink | Basin Catalog guide |
-| 9 | Cloudflare | `npx wrangler login` in the repo and approve the OAuth consent screen | terminal, browser | free | every wrangler command; doctor's R2, KV, Queues and Basin listings (wrangler OAuth token) | `wrangler whoami --json` |
-| 10 | Google | Google account; create a project (for example `peoplevault-<suffix>`) dedicated to PeopleVault | https://console.cloud.google.com | free | BigQuery; the executor's project-level read grants assume a dedicated project | |
-| 11 | Google | Create or link a billing account to the project | Billing, Link a billing account, or `gcloud billing projects link` | card required; usage expected under $1/month | DML deletes (the BigQuery sandbox has no DML and expires tables after 60 days) | BigQuery sandbox docs |
-| 12 | Google | Budget alert at $5 | Billing, Budgets and alerts | free | cost guard | |
-| 13 | Google | Install the Google Cloud CLI and log in, including the ADC quota project (commands in 23.2) | terminal, browser consent | free | `pv setup gcp`; impersonating `pv-executor`; Data Catalog and data policy calls with user ADC | `brew info --cask gcloud-cli`; Google auth docs |
-| 14 | Google | Only if `pv setup gcp` reports that organization policy `iam.disableServiceAccountKeyCreation` blocks the `pv-gateway` key: use a project outside that organization, or ask for an exception for this project | IAM, Organization policies | free | the Worker's BigQuery credential | |
-| 15 | Choice | Persona sign-in emails, for example Gmail plus-addresses: `PV_ACCESS_ALLOWED_EMAILS=<you>+hr@gmail.com,<you>+mgr@gmail.com,<you>+analyst@gmail.com,<you>+privacy@gmail.com` and `PV_ACCESS_PERSONA_EMAILS=<you>+hr@gmail.com=hrbp-01,<you>+mgr@gmail.com=mgr-001,<you>+analyst@gmail.com=analyst-01,<you>+privacy@gmail.com=privacy-01` | `.secrets/prod.env` | free | signing in as each of the four personas | |
-| 16 | Choice | After the first `setup:prod`, copy `PV_PSEUDONYM_MASTER_KEY` from `.secrets/worker-secrets.env` into a password manager | password manager | free | pseudonym stability; losing it orphans every pseudonym | |
+| # | Provider | Step | Where or command | Cost | Needed for | Done on 2026-10-10 | Checked against |
+|---|---|---|---|---|---|---|---|
+| 1 | Cloudflare | Account `dc93c3bc8aa4f9e09a0d7e7354a80873`; keep two-factor authentication on | https://dash.cloudflare.com | free | everything on Cloudflare | yes (two-factor not checkable read-only) | `wrangler whoami` |
+| 2 | Cloudflare | Stay on Workers Free: do not upgrade to Workers Paid and do not create Basin Pipelines resources | none | $0 | the whole design (section 30) | yes | Nitish's decision; Pipelines creation returned code 1021 |
+| 3 | Cloudflare | workers.dev subdomain `nitish-ratakonda`, so the Worker is `https://peoplevault.nitish-ratakonda.workers.dev` | dashboard, Workers and Pages | free | deploying Workflows; the doctor's edge check | yes | brief |
+| 4 | Cloudflare | R2 activated with a card on file (R2 and Basin Catalog need an R2 subscription, not a Workers plan) | dashboard, R2 | free tier | R2 buckets, Basin Catalog | yes (enabling Basin Catalog on a bucket works on Free) | Nitish's check |
+| 5 | Cloudflare | Zero Trust team `old-truth-a7dc`, Free plan, team domain `https://old-truth-a7dc.cloudflareaccess.com` | dashboard, Zero Trust | $0 (50 seats per account; this repo uses 5) | Access | yes | brief |
+| 6 | Cloudflare | Add One-time PIN as a login method | Zero Trust, Integrations, Identity providers, Add new identity provider, One-time PIN | free | signing in by email as each persona | in progress | One-time PIN docs |
+| 7 | Cloudflare | Account API token `PV_CF_API_TOKEN` (Custom token): Access: Apps and Policies Edit; Access: Service Tokens Edit; Access: Organizations, Identity Providers, and Groups Read; Workers Scripts Read; optionally Account Analytics Read (the doctor's CPU p99 line). No Billing Read any more. Never name it `CLOUDFLARE_API_TOKEN` (wrangler would use it instead of the OAuth login) | My Profile, API Tokens, Create Token | free | Access application, policies and service tokens; doctor | no | API token permissions reference (Account Analytics Read name unverified) |
+| 8 | Cloudflare | R2 API token with Admin Read & Write, saved as `PV_R2_CATALOG_TOKEN` | R2, Manage API tokens, Create API token | free | pyiceberg REST access to `hr_history.employee_monthly` and `governance.audit_events`; snapshot expiration | no | Basin Catalog get-started and manage-catalogs pages |
+| 9 | Cloudflare | `npx wrangler login` | terminal, browser | free | every wrangler command | yes (OAuth as `nitish.ratakonda@sjsu.edu`) | `wrangler whoami` |
+| 10 | Google | Use the shared project `master-magnet-444903-u4` (no new project; four repos share it, so every name of this repo starts with `peoplevault` and every grant is dataset- or resource-scoped) | `gcloud config set project master-magnet-444903-u4` | free | BigQuery | yes (active gcloud project) | `gcloud config list` |
+| 11 | Google | Enable billing on the project. It names billing account `01E865-CB9CA4-66E862` but reports `billingEnabled: false`, so check in the console that the billing account is open, then link it | https://console.cloud.google.com/billing/linkedaccount?project=master-magnet-444903-u4 or `gcloud billing projects link master-magnet-444903-u4 --billing-account=01E865-CB9CA4-66E862` | card required; expected $0 inside the free tier | DML deletes (the sandbox rejects INSERT, MERGE and DELETE and expires tables after 60 days) | no | `gcloud billing projects describe` |
+| 12 | Google | Budget alert on that billing account, scoped to the project, at $1 with 50%, 90% and 100% thresholds | Billing, Budgets and alerts | free | cost guard (the free tier is shared by four repos) | no | not checkable read-only |
+| 13 | Google | gcloud and bq installed and logged in as `nitishsancs@gmail.com`; application default credentials with quota project `master-magnet-444903-u4` | terminal | free | `pv setup gcp`; impersonation; Data Catalog and data policy calls | yes | `gcloud config list`; ADC `quota_project_id` |
+| 14 | Google | APIs: `bigquery.googleapis.com` and `bigquerydatapolicy.googleapis.com` are on; `datacatalog`, `iam` and `iamcredentials` are enabled by `pv setup gcp` (no manual step) | scripted | free | policy tags; impersonation | partly | `gcloud services list --enabled` |
+| 15 | Google | Only if `pv setup gcp` reports that organization policy `iam.disableServiceAccountKeyCreation` blocks the `peoplevault-gateway` key: ask for an exception | IAM, Organization policies | free | the Worker's BigQuery credential | n/a | |
+| 16 | Choice | `.secrets/prod.env` values: `CLOUDFLARE_ACCOUNT_ID=dc93c3bc8aa4f9e09a0d7e7354a80873`, `PV_GCP_PROJECT=master-magnet-444903-u4`, `PV_ACCESS_ALLOWED_EMAILS=nitishsancs@gmail.com,nitishsancs+hr@gmail.com,nitishsancs+mgr@gmail.com,nitishsancs+analyst@gmail.com,nitishsancs+privacy@gmail.com`, `PV_ACCESS_PERSONA_EMAILS=nitishsancs+hr@gmail.com=hrbp-01,nitishsancs+mgr@gmail.com=mgr-001,nitishsancs+analyst@gmail.com=analyst-01,nitishsancs+privacy@gmail.com=privacy-01` | `.secrets/prod.env` (mode 600) | free | Access policies; persona sign-in (5 of 50 seats) | no | |
+| 17 | Choice | After the first `setup:prod`, copy `PV_PSEUDONYM_MASTER_KEY` from `.secrets/worker-secrets.env` into a password manager | password manager | free | pseudonym stability; losing it orphans every pseudonym | no | |
+| 18 | GitHub | `npm run setup:prod -- --only github` (asks before writing): the P1 `executor.yml` secrets; the job now also runs `pv audit export` | terminal | free (public repository) | hourly executor and the audit copy | `gh` login yes; secrets no | `gh auth status` |
+| 19 | Choice | After the production eval result is committed, turn the retention cron on: `npm run setup:prod -- --only worker --retention-cron on` (the 70-subject backlog then drains at 8 a day) | terminal | free | automated retention in production | no | section 30.3.4 |
 
-Not needed for v1: Workers AI and AI Gateway (P1, no resume claim depends on them), the Basin Pipelines stream, sink and pipeline (P1; created by `setup:prod` once that code exists, no extra manual step), and GitHub repository secrets (P1 `executor.yml`; `gh` is already logged in on this Mac and `setup:prod -- --only github` asks before writing).
+Not needed: Workers Paid, Basin Pipelines, a new Google Cloud project, any Workers Logs change, and any Workers AI or AI Gateway setup for v1 (the P1 commit creates the gateway `peoplevault`, 1 of the account's 10, through `setup:prod`).
 
-### 23.2 Local CLIs and logins (wrangler is not logged in and gcloud is not installed on this Mac today; gh is logged in)
+### 23.2 Local CLIs and logins (state on 2026-10-10)
 
 ```bash
-npx wrangler login                                  # browser OAuth
-npx wrangler whoami --json                          # must print "loggedIn": true
-brew install --cask gcloud-cli                      # Google Cloud CLI cask (587.0.0 on 2026-10-10); includes bq
-gcloud init                                         # choose account and project
-gcloud auth login
-gcloud auth application-default login               # user ADC; dbt and the executor impersonate pv-executor on top of it
-gcloud config set project <PROJECT_ID>
-gcloud auth application-default set-quota-project <PROJECT_ID>   # Data Catalog and data policy calls need a quota project
-gcloud billing accounts list
-gcloud billing projects link <PROJECT_ID> --billing-account=<BILLING_ACCOUNT_ID>
-gh auth status                                      # already logged in on this Mac
+npx wrangler whoami                                        # done: OAuth login, account dc93c3bc8aa4f9e09a0d7e7354a80873
+gcloud config list                                         # done: nitishsancs@gmail.com, project master-magnet-444903-u4
+gcloud auth application-default print-access-token         # done: ADC present, quota project master-magnet-444903-u4
+gcloud billing projects describe master-magnet-444903-u4   # billingEnabled is false: step 11
+gh auth status                                             # done
 ```
 
 ### 23.3 Environment file
@@ -1840,56 +1884,55 @@ gh auth status                                      # already logged in on this 
 `.secrets/prod.env` (gitignored, mode 600), read by every production script:
 
 ```
-CLOUDFLARE_ACCOUNT_ID=...
+CLOUDFLARE_ACCOUNT_ID=dc93c3bc8aa4f9e09a0d7e7354a80873
 PV_CF_API_TOKEN=...
 PV_R2_CATALOG_TOKEN=...
-PV_GCP_PROJECT=...
-PV_ACCESS_ALLOWED_EMAILS=...
-PV_ACCESS_PERSONA_EMAILS=...
-PV_WORKERS_SUBDOMAIN=...           # optional; only if setup should register the subdomain
+PV_GCP_PROJECT=master-magnet-444903-u4
+PV_ACCESS_ALLOWED_EMAILS=...       # step 16
+PV_ACCESS_PERSONA_EMAILS=...       # step 16
 # written by setup:prod, never edited by hand:
 PV_CF_ACCESS_CLIENT_ID_EXECUTOR=... / PV_CF_ACCESS_CLIENT_SECRET_EXECUTOR=...
 PV_CF_ACCESS_CLIENT_ID_HR=... (and MANAGER, ANALYST, PRIVACY)
 PV_CATALOG_URI=... / PV_CATALOG_WAREHOUSE=...
 ```
 
-Also written by setup and gitignored: `.secrets/worker-secrets.env` (`PV_PSEUDONYM_MASTER_KEY`, `GCP_GATEWAY_SA_KEY`; uploaded by `npm run deploy`), `.secrets/prod-resources.json` (resource ids, stream id in P1, policy tag resource names), `infra/cloudflare/wrangler.production.jsonc`. No `pv-executor` key exists on the laptop.
+`PV_WORKERS_SUBDOMAIN` is no longer needed (the subdomain exists). Also written by setup and gitignored: `.secrets/worker-secrets.env` (`PV_PSEUDONYM_MASTER_KEY`, `GCP_GATEWAY_SA_KEY`; uploaded by `npm run deploy`), `.secrets/prod-resources.json` (resource ids, policy tag resource names; no stream id any more), `infra/cloudflare/wrangler.production.jsonc`. No executor key exists on the laptop.
 
-### 23.4 Costs
+### 23.4 Costs (Workers Free)
 
 | Item | Cost at this project's scale | Source |
 |---|---|---|
-| Workers Paid | $5/month minimum; includes 10M requests and 30M CPU ms per month; Queues 1M operations; KV 10M reads; D1 25B rows read and 5 GB | Workers pricing page (verified) |
-| Workflows | included: 10M requests, 30M CPU ms, 1 GB-month, 500,000 steps per month on Paid (step and storage billing started 2026-08-10) | Workflows pricing page (verified) |
-| R2 | free tier 10 GB-month, 1M Class A, 10M Class B per month; this project stores under 50 MB | R2 pricing page (verified) |
-| Basin Catalog | 1M catalog operations per month included, then $9 per million; compaction left off; snapshot expiration has no separate charge | Basin pricing pages (verified) |
-| Basin Pipelines (P1) | stream ingress free; 50 GB sink delivery included | Basin Pipelines pricing (verified) |
-| Workers Logs | invocation logs disabled; only identifier-free console logs remain (Workers Logs pricing not re-checked this session) | Workers Logs docs (retention 3 days Free, 7 days Paid) |
-| Zero Trust | Free plan, $0 | setup docs (payment details required, not charged) |
-| BigQuery | 1 TiB of queries and 10 GiB storage free per month (allowance stated on the sandbox page); the full production eval scans a few GB because each referenced table bills at least 10 MB (minimum unverified this session) | BigQuery docs |
-| Workers AI, AI Gateway (P1, not used in v1) | not needed | |
-| Expected total | about $5/month plus well under $1 on Google Cloud | estimate |
+| Workers Free: Workers, Workflows, Queues, D1, KV, Workers Logs | $0; this repo's worst-case day uses at most 65% of a 25% share of each daily allowance (section 30.4) | F1 to F13 |
+| R2 | free tier (10 GB-month, 1M Class A, 10M Class B per month); under 50 MB stored | F14 |
+| Basin Catalog | 1M operations per month included (about 11,000 used at the cap); compaction off; snapshot expiration free | F15 |
+| Zero Trust | Free plan, $0 (payment details on file, not charged); 5 of 50 seats | F19 |
+| BigQuery | inside the free tier of 1 TiB queries and 10 GiB storage per month, shared by four repos; about 30 GB of queries in the eval month; every query capped (100 MiB from the Worker, 1 GiB from Python and dbt) | F20 |
+| Workers AI and AI Gateway (P1) | $0: at most 2,000 of the account's 10,000 free neurons per day; gateway features used are free | F17, F18 |
+| GitHub Actions | $0 (public repository) | |
+| Expected total | $0 per month; the $1 budget alert (step 12) catches surprises | estimate |
 
 ### 23.5 Commands after the logins
 
 ```bash
 npm run doctor -- --prod                                       # lists exactly what is missing, with the fix for each line
 npm run setup:prod -- --dry-run                                # optional: shows the exact plan, secrets masked
-npm run setup:prod                                             # idempotent; re-run until doctor is green
+npm run setup:prod                                             # idempotent; re-run until doctor is green; stops on a same-named resource it did not create
 npm run doctor -- --prod
 # IAM grants take about 30 seconds and policy tag changes up to 30 minutes to propagate (column-level access control docs); wait before the next line
 uv run --project pipelines pv authz warehouse --target bigquery --write-results --ceiling-probes
-uv run --project pipelines pv eval deletion --profile prod
-uv run --project pipelines pv executor run --target prod --drain   # P0: the production executor runs from this Mac (P1 executor.yml automates it)
+uv run --project pipelines pv eval deletion --profile prod     # one DSR alone first (canary), then the other 11; 12 of the day's 16 starts
+uv run --project pipelines pv audit export --target prod       # also run by the eval and by executor.yml
+npm run authz:prod
 # 48 hours later (BigQuery time travel window) and again after 1 day for Basin snapshot expiration
 uv run --project pipelines pv residuals check --target prod
 npm run readme:results
 git add evals/results README.md && git commit -m "docs: production results"
+npm run setup:prod -- --only worker --retention-cron on         # step 19, only after the eval result is committed
 ```
 
 ### 23.6 What the scripts cannot do
 
-Account creation, the Workers Paid upgrade, payment details, Zero Trust onboarding, adding the One-time PIN login method, creating the two Cloudflare tokens, choosing the workers.dev subdomain name (registration itself can be scripted once the name is set), the OAuth consent screens of `wrangler login` and `gcloud auth`, linking billing, the budget alert, any organization policy exception, and accepting any terms of service. Everything else (every resource in sections 15 and 16, secrets, deploys, the Access application, service tokens, seeding, and in P1 GitHub secrets) is scripted and idempotent.
+Turning on two-factor authentication, adding the One-time PIN login method, creating the two Cloudflare tokens, enabling billing and the budget alert on the Google billing account, the OAuth consent screens of `wrangler login` and `gcloud auth`, any organization policy exception, and accepting any terms of service. Everything else (every resource in sections 15, 16 and 30, secrets, deploys, the Access application, service tokens, seeding, the audit copy, the retention cron switch, and in P1 the GitHub secrets and the AI gateway) is scripted and idempotent.
 
 ---
 
@@ -1902,10 +1945,10 @@ Account creation, the Workers Paid upgrade, payment details, Zero Trust onboardi
 5. **Iceberg snapshot cleanup** is observed locally with pyiceberg's SQL catalog on one table (`hr_history.employee_monthly`). Production cleanup depends on Basin Catalog's managed expiration schedule, which is only observable after at least a day.
 6. **BigQuery recovery windows** are modeled locally (DuckDB has no time travel) and observed only in production by `pv-executor`, which needs the custom time travel role (two `pv residuals check` runs 48 hours apart).
 7. **"automated"**: Cron, the retention Workflow, the Queue and the deletion Workflow are automated everywhere; in production the Python executor runs when Nitish runs `pv executor run --target prod --drain` until P1 `executor.yml` lands, and a request waits up to 24 hours for it, then fails. Even with `executor.yml`, GitHub disables schedules in a public repository after 60 days without activity; doctor detects it.
-8. **Spending**: Workers Paid at $5/month is required (Workflow CPU and subrequests). Google Cloud needs billing enabled.
+8. **Spending**: none expected. Production runs on Workers Free (revision 3, section 30), so nothing depends on Workers Paid; Google Cloud billing is enabled on the shared project only because the sandbox has no DML, and every query is byte-capped inside the free tier. Be ready to explain the Free plan design: byte-capped Workflow steps under 10 ms of CPU, the daily admission cap of 16 deletions, the exactly-once audit copy that replaced Basin Pipelines, and the 25% planning share of an account shared with three other repos.
 9. **Long-lived keys**: v1 stores the BigQuery gateway key as a Worker secret. The executor uses no key from the laptop (impersonation); only the P1 Actions job would store a `pv-executor` key as a GitHub secret. A privacy reviewer may ask; Workload Identity Federation is the later hardening.
-10. **Known gaps to be ready for**: new HRIS drops are not suppression-filtered on arrival in R2 (section 1 non-goals); D1 Time Travel keeps deleted identity rows recoverable for 30 days (tracked as a residual); `subject_ref` and opaque principal ids are retained in the audit log by design (ADR 0005).
-11. **Scope relative to revision 1**: 13 registered assets (not 23) in the same six categories, one Iceberg table, and the Basin audit stream, `authz:prod`, `executor.yml` and production KV warm-up moved to P1. The resume text names none of these, so no resume wording changes; the README states the asset count actually built.
+10. **Known gaps to be ready for**: new HRIS drops are not suppression-filtered on arrival in R2 (section 1 non-goals); D1 Time Travel keeps deleted identity rows recoverable for 7 days on Workers Free (tracked as a residual); in the shared Google Cloud project the verifier scans only this repo's `peoplevault_*` datasets; `subject_ref` and opaque principal ids are retained in the audit log by design (ADR 0005).
+11. **Scope relative to revision 1**: 13 registered assets (not 23) in the same six categories, one Iceberg table, and the Basin audit stream, `authz:prod`, `executor.yml` and production KV warm-up moved to P1. The resume text names none of these, so no resume wording changes; the README states the asset count actually built. Revision 3 (Workers Free) also changes no resume phrase: Cloudflare Access, R2 and Workflows all run on the Free plan, and the resume never named Basin Pipelines, Workers Paid or Workers AI.
 12. **Authorship**: commits carry only Nitish's identity. He must be able to explain every module, especially the verification independence argument, the compare-and-swap rewrites, the merge-only rule for protected BigQuery tables and the residual model.
 
 ---
@@ -1934,6 +1977,7 @@ README is written in commit 2 and updated in every commit that changes status, b
 - ADR 0004: no client-side snapshot expiry against Basin Catalog; production relies on managed expiration.
 - ADR 0005: `subject_ref` (keyed HMAC) is retained in audit, holds, suppression and receipts after deletion, for accountability and to prevent re-ingestion; it is never a verification token. Principal ids are opaque, so the hash-chained audit log never holds an identifier that deletion would have to scrub.
 - ADR 0006: protected BigQuery tables (tagged columns or row access policies) are created once and afterwards changed only by `MERGE` and DML, because `CREATE OR REPLACE TABLE` drops tags and row access policies and opens an exposure window before dbt re-applies them.
+- ADR 0007 (revision 3): production runs on the Workers Free plan: byte-capped Workflow steps under 10 ms of CPU, a daily admission cap, an exactly-once pulled audit copy instead of Basin Pipelines, Free retention constants, a 25% planning share of the shared account, and `peoplevault` names with scoped grants in the shared Google Cloud project.
 
 ---
 
@@ -1970,15 +2014,33 @@ Before the first commit: `git init`, `git config user.name "nitishsjsucs"`, `git
 | 25 | `docs: README results from local runs` | `npm run readme:results`; status table with "written, not yet executed" labels |
 | | **Core cut line**: everything above is P0. If the session must stop here, README status must say exactly what exists. | |
 | 26 | `feat(prod): executor workflow for GitHub Actions` | P1: `executor.yml` with concurrency group, log hygiene, doctor schedule check |
-| 27 | `feat(prod): Basin Pipelines audit stream` | P1: binding, stream, sink, pipeline, `audit.stream` pipelines mode |
+| 27 | `feat(prod): Basin Pipelines audit stream` | P1: binding, stream, sink, pipeline, `audit.stream` pipelines mode (done as commit 35; removed again by revision 3 commit M6, because Basin Pipelines is Workers Paid only) |
 | 28 | `feat(prod): authz:prod and production warm-up` | P1: exact runnable count, `seed:prod` KV warm-up and extracts |
 | 29 | `feat(web): privacy console and purpose-scoped browser` | P1 |
-| 30 | `feat(ai): schema-drift triage with Workers AI, llama-server and stub` | P1 |
-| 31 | `feat(lake): local audit export to Iceberg` | P1 |
+| 30 | `feat(ai): schema-drift triage with Workers AI, llama-server and stub` | P1, with the Free plan design of section 30.3.6 (neuron meter, 2,000 per day cap, resumable eval) |
+| 31 | `feat(lake): local audit export to Iceberg` | P1; absorbed by revision 3 commit M6 (one export path for local and production) |
 
 If time runs short inside P0, thin in this order and record each cut in README status and section 24: (1) D1 and KV residual kinds (keep Iceberg and BigQuery); (2) extract retention; (3) the 3 out-of-design fault variants. Never cut: the 100 cases, the six categories, independent verification with boundary-aware matching, the oracle, fault injection, holds, conditional R2 rewrites and the one-active-request index, opaque principal ids, merge-only protected tables, Iceberg and BigQuery residuals, `setup:prod`, `doctor`, and the dry-run and contract tests of the production paths.
 
 At the end of the session: `npm run stop:local`, confirm nothing listens on 8793, 9243, 8893 or 8170 from this repo, and leave `.wrangler/state` and `pipelines/.data` in place (gitignored).
+
+### 26.1 Revision 3 migration commits (Workers Free, shared accounts; builder 3 does these first)
+
+Builder 3 starts here, before the remaining P1 items 29 and 30. First it resolves the uncommitted `assets` line in `wrangler.jsonc` left by builder 2's P1 console work (`"assets": { "directory": "./dist/web", ... }`); that change belongs with item 29, not with these commits. Each commit keeps CI green (`types:check`, `typecheck`, `npm test`, `deploy:check`, ruff, `pv policy check`, `pv fixtures check`, pytest, and the ci eval gate where the commit touches the deletion path), updates README status and PROGRESS, and carries no `Co-Authored-By` trailer.
+
+| # | Commit | Contents |
+|---|---|---|
+| M1 | `fix(prod): remove Paid-only settings from the production path` | Template: drop `limits` and `pipelines`; add `DAILY_DELETION_STARTS`, `RETENTION_DAILY_MAX`, `RETENTION_CRON`, `R2_ERASE_STEP_BYTES`, `R2_PROBE_STEP_BYTES` (local values in `wrangler.jsonc`; regenerate `worker-configuration.d.ts`). `INSTANCE_RETENTION` 3 days. `D1_TIME_TRAVEL_DAYS` 7 in TypeScript and Python. BigQuery client: 20 polls, 10 pages, `maximumBytesBilled`. Python `maximum_bytes_billed` and dbt profile caps. Production poll intervals 5 s and 10 s. Doctor: Workers Paid check, `isWorkersPaid` and Billing Read removed. Tests: `free-plan.config.test.ts`, `test_bq_bytes_cap.py`, contract and residual-model updates |
+| M2 | `refactor(workflow): byte-capped cursor steps for R2 erasure and probing` | Line prefilter in `transformRows` (and retention minimization); `erase-r2-<n>` and `verify-r2-<n>` cursor steps with the listing digest; discovery of R2 and KV merged into erasure; byte counter in `withOpBudget`. Tests: `erase.prefilter.test.ts`, `workflow.deletion.cursor.test.ts`, `ops.budget.test.ts` at full-population sizes (30, 23 and 3 steps) |
+| M3 | `refactor(verify): match D1 tokens inside SQLite and give each D1 probe its own step` | `instr` prefilter; `verify-d1-identity` and `verify-d1-final` split out; batched writes; at most 40 D1 statements per step; audit append at most 8 attempts. Tests: probe equivalence, statement counts |
+| M4 | `refactor(audit): windowed chain verification and SQL report aggregation` | `audit/verify?after_seq&limit` (100), clients follow `nextAfterSeq` (eval, doctor); report in SQL with paged failures. Tests: window tampering, report equality |
+| M5 | `feat(retention): daily admission cap, reconcile of received requests and request-level idempotency` | Migration `0005_free_plan.sql` (`admitted_at`); `admit()`; deferred DSRs (202 `deferred`); cron reconcile then sweep when `RETENTION_CRON=on`; sweep admits at most `min(RETENTION_DAILY_MAX, remaining)`; `load-request` skips terminal or foreign instances; production eval precondition narrowed to DSRs and cohort subjects; canary first. Tests: `admission.test.ts`, `workflow.deletion.idempotent.test.ts`, eval precondition |
+| M6 | `feat(audit): exactly-once audit export into governance.audit_events, replacing Basin Pipelines` | Remove the stream code, binding, var, `audit-pipeline.sql`, setup and doctor lines, and goldens. Add the executor route and the `executor_audit_export` action, `pv audit export --target local\|prod [--rebuild]`, the schema moved to `infra/lake/audit-events.schema.json`, snapshot expiration on the table, the `executor.yml` step, eval `audit_copy` metrics (local and prod), and doctor lag lines. Tests: `audit.export.route.test.ts`, `test_audit_export.py`. Absorbs spec item 31 |
+| M7 | `fix(prod): shared Google Cloud project names and dataset-scoped grants` | `naming.prefix: peoplevault` in `policy.yaml`; regenerate `infra/bigquery/*`, dbt schemas, purpose views, fixtures and goldens; executor without project-level data roles; datacatalog viewer on the taxonomy; verifier keeps `peoplevault_` datasets; `job_id_prefix`; `setup:prod` refuses to adopt unrecorded Cloudflare resources. Tests: `test_shared_project_names.py`, setup goldens |
+| M8 | `feat(prod): Free plan budget model, doctor usage lines and bench:cpu` | `scripts/lib/free-budget.ts` (facts, 25% share, unit costs); `free-plan.budget.test.ts`; doctor lines of 22.1; `npm run bench:cpu` (the section 30.2 benchmark over `data/generated`, writing `evals/results/cpu-<date>.json` with command, date and machine) |
+| M9 | `docs: Workers Free production docs` | README (status, mermaid of section 2, the matrix of section 21, production setup, Results only from committed result files), `docs/PRODUCTION.md` (section 23 verbatim), CONTEXT.md terms (admission cap, cursor step, listing digest, audit copy, planning share) |
+
+After M9: item 29 (web console, including the `assets` configuration), item 30 (Workers AI with the Free design). Item 31 is done by M6.
 
 ---
 
@@ -2022,9 +2084,15 @@ At the end of the session: `npm run stop:local`, confirm nothing listens on 8793
 | Review 1: dbt adapters | dbt-bigquery 1.12.1 and dbt-duckdb 1.11.0 sources in a scratch venv | as cited in section 3 |
 | Review 1: GitHub docs | "Disabling and enabling a workflow" | public-repo schedules disabled after 60 days without activity |
 
+| Revision 3: Free plan facts | orchestrator's adversarial check of the official pages (F1 to F20 in 30.1); the architect re-read the D1 limits, KV limits, Workflows limits and pricing pages and the wrangler configuration page | D1: 50 queries per invocation on Free, per-statement limits apply inside batches, Time Travel 7 days; KV: a bulk get counts as 1 operation per invocation, daily billing not stated; Workflows: retention 3 days and only shortenable, retries not counted as steps, steps are not invocations; `limits` only for the Standard usage model |
+| Revision 3: account state (read-only) | `wrangler whoami`, `r2 bucket list`, `d1 list --json`, `kv namespace list`, `queues list`, `workflows list`; `gcloud config list`, `gcloud billing projects describe`, `gcloud services list --enabled`, `bq ls`, ADC file | one Cloudflare account `dc93c3bc8aa4f9e09a0d7e7354a80873`, no resources yet; project `master-magnet-444903-u4` has no datasets, `billingEnabled: false`, BigQuery and data policy APIs on, Data Catalog, IAM and IAM Credentials off, ADC quota project set |
+| Revision 3: CPU of Worker hot paths | scratch benchmark bundling the repo's modules with its esbuild over `data/generated` and the local D1 state, Node 25.9.0 on this Mac (numbers in 30.2) | current steps up to 19.5 ms; prefiltered erase 0.458 ms per MiB; probe 0.875 ms per MiB; audit verify 0.0128 ms per event; RSA-2048 import and sign 0.52 ms |
+| Revision 3: pyiceberg exactly-once append | `pyiceberg/table/__init__.py` and `table/update/snapshot.py` of the locked 0.12.0 | `append(..., snapshot_properties=...)` exists; append commits carry `AssertRefSnapshotId` on the branch |
+| Revision 3: Worker size | `wrangler deploy --dry-run` of the production template | 1,065.83 KiB uncompressed, 186.50 KiB gzip |
+
 Not verified (treat as assumptions; each is checked by a production script or test before any claim depends on it):
-- Zero Trust Free plan user limit (third-party sources say 50).
-- Workers Paid upgrade console path; whether R2 still needs a separate activation.
+- (Resolved in revision 3: the Zero Trust Free plan has 50 seats, F19.)
+- (Resolved in revision 3: no Workers Paid upgrade; R2 is activated with a card on file.)
 - Exact JSON body of the Access application API for a Worker destination (destination type names are verified).
 - That a Worker-level Access application forwards `Cf-Access-Jwt-Assertion` to the Worker (stated for Access applications in general).
 - R2 has no object versioning to purge.
@@ -2036,12 +2104,12 @@ Not verified (treat as assumptions; each is checked by a production script or te
 - BigQuery multi-statement transactions for the executor batch (well known, not re-checked).
 - pyiceberg delete and overwrite commits against the Basin Catalog REST endpoint, and whether the catalog vends data credentials to pyiceberg with only a token.
 - Minimum accepted values for `--older-than-days` and `--retain-last`, and how often Basin runs maintenance.
-- The exact `rate_plan` identifier of Workers Paid in the subscriptions API (doctor matches by name and warns on no match).
+- (Removed in revision 3: the doctor no longer checks the plan.)
 - Whether the 1,000-operation limit applies per Workflow step or per instance, and whether D1 calls count (the design assumes both, 14.1).
 - That a dataset-level grant of the custom time travel role is enough for `FOR SYSTEM_TIME AS OF` on a row-policy table (checked by `test_time_travel_read_as_executor`; fallback: grant the custom role at project level).
 - The exact error text BigQuery returns for a read before the time travel window of an existing table (the docs quote the "before its allowed time travel interval" message; the classifier fixture is constructed from the docs and replaced by a captured response after the first production run).
-- Whether `--no-http-enabled` is accepted by `wrangler basin pipelines streams create` (yargs negation is enabled by default; checked only by `--dry-run` golden output, P1).
-- Workers AI free allocation and AI Gateway pricing (P1).
+- (Removed in revision 3: no Basin Pipelines commands.)
+- (Resolved in revision 3: Workers AI 10,000 neurons per day and AI Gateway's free core features, F17 and F18.) Revision 3 adds its own open items in section 30.6: the Workflow scope of D1's 50-query limit, edge CPU against the Mac measurements, D1 batch and index counting, KV bulk read billing, step counting of waits and sleeps, behavior at the daily caps, queue consumer CPU, `usage` in Workers AI responses, and the `--token` flag of snapshot expiration.
 - `waitForEvent` maximum timeout (24 hours is used).
 
 ---
@@ -2056,7 +2124,13 @@ Not verified (treat as assumptions; each is checked by a production script or te
 | Policy tag and data policy semantics differ from the emulation | local authz passes, BigQuery fails | 48 live cases + 37 ceiling probes that bypass the purpose views (15.8); 30-minute propagation wait; query cache off |
 | `CREATE OR REPLACE TABLE` drops policy tags and row access policies; policy tags not propagated to derived tables | exposure window or silent loss of controls after a dbt run | protected tables are merge-only with `full_refresh: false` (ADR 0006); manifest tests on materializations and tags; `bq_controls.verify()` after every production build; live suite checks both |
 | Service account key creation blocked by org policy | no gateway credential for the Worker | doctor detects; section 23.1 step 14; the executor needs no key (impersonation); later Workload Identity Federation |
-| Workers Free CPU limits | Workflow steps fail | Workers Paid required and stated; `limits.cpu_ms` |
+| Workers Free CPU limit of 10 ms per step and request (revision 3) | a step fails after its retries and the request fails closed | byte-capped cursor steps, line prefilter, D1 matching in SQLite, windowed verify, SQL report; largest step 1.83 ms on this Mac (5.5 ms at 3 times); canary deletion; byte caps are vars; optional CPU p99 doctor line |
+| D1's 50 queries per invocation may apply per Workflow instance (revision 3, unverified) | deletions cannot complete | at most 40 statements per step by test; the canary deletion surfaces it before the other eval requests; requests fail closed, never clean |
+| Account-wide Free allowances shared with three other repos (revision 3) | another repo's burst (or this one's) exhausts Workflow steps, KV writes, D1 reads or neurons for everyone that day; behavior at the caps is partly undocumented | 25% planning share with the budget test; admission cap of 16 deletions a day; retention 8 a day; AI cap 2,000 neurons; doctor usage lines; coordinate caps across the four repos |
+| Free Queue retention fixed at 24 hours, dead letters included (revision 3) | a lost message strands a `received` request | cron reconcile re-admits requests admitted more than 6 hours ago without an instance; request-level idempotency in `load-request` |
+| Workflow instances kept only 3 days on Free (revision 3) | `createBatch` deduplication stops working for old ids | `load-request` ends instances of terminal or foreign requests without changes; receipts live in D1 |
+| Shared Google Cloud project (revision 3) | name collisions; one repo's identity reading another repo's data; shared free tier | `peoplevault` prefix on every name, dataset- and resource-scoped grants only (`roles/bigquery.jobUser` is the only project-level role), byte caps on every query, $1 budget alert; the verifier's scope is this repo's datasets, stated in the README |
+| Cloudflare resource names on a shared account (revision 3) | `setup:prod` adopts another repo's same-named bucket, database or queue | setup refuses to adopt a resource it has no record of |
 | KV eventual consistency | verification passes at one edge while another still serves a cached value | 70 s wait before verification; `kv_propagation` residual recorded |
 | D1 Time Travel keeps deleted identity rows for 30 days | identity recoverable by an account admin | tracked residual; disclosed in README and section 24 |
 | Executor not running in production | deletions wait, then fail after 24 hours | P0: Nitish runs `pv executor run --target prod --drain`; P1: hourly `executor.yml` with a concurrency group; doctor checks the workflow state and last successful run (public-repo schedules stop after 60 days without activity); request `retry` |
@@ -2139,4 +2213,251 @@ Minor
 | M17 | concurrency group and retry of concurrent-update aborts (14.2, 20) |
 | M18 | the reviewer's "verified correct" list needed no change |
 
+### Free plan review (2026-10-10, revision 3)
+
+Trigger: Nitish chose to stay on Workers Free, and production shares one Cloudflare account and one Google Cloud project with three other repos. The architect audited every production path against the Free plan facts (section 30.1), measured the CPU of the Worker's hot paths over the full synthetic population, and checked the account state read-only. No cloud resource was created, changed or deleted.
+
+| # | Finding | Verification | Resolution (where) |
+|---|---|---|---|
+| R3-1 | The Basin Pipelines audit stream is Workers Paid only | account error code 1021; pricing page has only a Paid column | exactly-once pull export into `governance.audit_events` (30.3.3); ADR 0007 |
+| R3-2 | `limits.cpu_ms` needs the Standard usage model | wrangler configuration page | removed (6.2, 30.3.5) |
+| R3-3 | Several steps and routes exceed 10 ms of CPU | measured: discovery 19.5 ms, HRIS erase 13.9 ms, audit verify 19.3 ms at 1,506 events, report 12.9 ms at about 10,000 rows | byte-capped cursor steps, line prefilter, D1 matching in SQLite, windowed verify, SQL report (30.3.1, 30.3.2) |
+| R3-4 | D1's 50 queries per invocation: the D1 probes inside larger steps and the retention inserts exceed or approach it | D1 limits page; counted from the code | at most 40 statements per step, D1 probes as their own steps, batched writes, admission caps (30.3.1, 30.3.4) |
+| R3-5 | Instance retention 30 days and D1 Time Travel 30 days are Paid values | Workflows limits page (3 days on Free, only shortenable); D1 limits page (7 days on Free) | 3 days; 7 days (14.1, 14.4) |
+| R3-6 | The first production retention sweep would start 70 deletions at once, 1,750 steps, more than half of the account's 3,000 daily steps | counted | daily admission cap, retention at 8 a day, cron off until the production eval (30.3.4) |
+| R3-7 | Free Queue retention is 24 hours, so a lost or dead-lettered message strands a `received` request forever | Queues limits page; code reading | cron reconcile and request-level idempotency (30.3.4) |
+| R3-8 | BigQuery client can exceed 50 external fetches and no query is byte-capped | code reading (`MAX_POLLS = 60`, unbounded pages) | 20 polls, 10 pages, byte caps in the Worker, Python and dbt (30.3.2, 30.3.8) |
+| R3-9 | The executor's project-level `dataViewer` and `metadataViewer` would read the other repos' datasets in the shared project; `pv` names may collide | `infra/bigquery/iam_bindings.json`, `bqinfra.py` | `peoplevault` prefix, dataset- and resource-scoped grants (30.3.8) |
+| R3-10 | Workers AI eval of 120 columns does not fit this repo's daily neuron share | arithmetic from the published rates | prompt and output caps, neuron meter, resumable 2-day eval (30.3.6) |
+
 Not adopted as proposed: the finding for B2 suggested listing every secret, local and production, in the local `secrets.required`; that is done, but the production template lists only production secrets, because wrangler 4.149.0 turns every listed secret into an inherit binding at deploy time and a local-only name would block the production deploy. I5 proposed treating D1 as part of the cap; the docs name only KV and R2, so D1 is counted as a conservative assumption, not as a documented fact.
+
+---
+
+## 30. Free plan design (2026-10-10)
+
+Decision, 2026-10-10: production runs on the Cloudflare **Workers Free** plan and nothing depends on Workers Paid. Google Cloud billing will be enabled (the BigQuery sandbox rejects INSERT, MERGE and DELETE with "DML queries are not allowed in the free tier", checked by Nitish; on 2026-10-10 the project still reports `billingEnabled: false`, setup step 11), usage is planned inside Google's free tier, and every query is capped with `maximum_bytes_billed`. One Cloudflare account (`dc93c3bc8aa4f9e09a0d7e7354a80873`, the only account visible to the wrangler login; no buckets, D1 databases, KV namespaces, queues or Workflows on it on 2026-10-10) and one Google Cloud project (`master-magnet-444903-u4`) serve four repos. Every Free allowance below is per account, so this repo plans for a **25% share** of each shared allowance on its worst-case day and shows margin against both the share and the whole allowance. ADR 0007 records the decision. Where this section and an earlier section disagree, this section wins; sections 1, 2, 4, 6, 14, 15, 16, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28 and 29 were edited to match.
+
+### 30.1 Verified Free plan facts
+
+Checked against the official pages on 2026-10-10 (most by the orchestrator's adversarial check, the rows marked "this session" by the architect). "Paid only" means unavailable on Workers Free.
+
+| # | Service | Free plan value this design uses | Paid only | Source | Confidence |
+|---|---|---|---|---|---|
+| F1 | Workers requests | 100,000 per day per account, reset 00:00 UTC, Error 1027 past it; Workflow invocations count against the same 100,000 ("Steps within a Workflow are not invocations") | no | https://developers.cloudflare.com/workers/platform/limits/ ; https://developers.cloudflare.com/workflows/reference/pricing/ | verified |
+| F2 | Workers CPU | 10 ms per HTTP request and per Cron Trigger; no duration limit for HTTP; Cron, alarms and queue consumers 15 min wall time | no | https://developers.cloudflare.com/workers/platform/limits/ ; https://developers.cloudflare.com/workers/platform/pricing/ | verified |
+| F3 | `limits.cpu_ms` | "Limits are only supported for the Standard Usage Model"; behavior on Free not stated | effectively yes | https://developers.cloudflare.com/workers/wrangler/configuration/ | verified (this session) |
+| F4 | Subrequests | 50 external plus 1,000 to Cloudflare services (R2, KV, D1) per invocation; each redirect hop counts | no | https://developers.cloudflare.com/workers/platform/limits/ ; https://developers.cloudflare.com/changelog/post/2026-02-11-subrequests-limit/ | verified |
+| F5 | Memory, size, startup, connections, vars | 128 MB per isolate; 64 MiB uncompressed script, no compressed limit since 2026-09-04; 1 s startup; 6 simultaneous outgoing connections; 64 environment variables | no | https://developers.cloudflare.com/workers/platform/limits/ ; https://developers.cloudflare.com/changelog/post/2026-09-04-increased-worker-size-limit/ | verified |
+| F6 | Cron Triggers, Workers | 5 Cron Triggers and 100 Workers per account | no | https://developers.cloudflare.com/workers/platform/limits/ | verified |
+| F7 | Workers Logs | 200,000 events per day, 3-day retention, 1% head sampling past the limit; Observability pricing from 2026-12-01 | no | https://developers.cloudflare.com/workers/observability/logs/workers-logs/ | verified |
+| F8 | Workflows | available on Free; 3,000 steps per day ("Step count does not include rollback handlers or retries"); 10 ms CPU per step; 1,024 steps per Workflow (`step.sleep` not counted); 100 concurrently running instances (waiting and sleeping ones do not count); 1 MiB per step result and event; 1 GB-month storage; completed instances kept 3 days, and `retention` can only shorten that; behavior at the 3,000-step cap not documented | no | https://developers.cloudflare.com/workflows/reference/limits/ ; https://developers.cloudflare.com/workflows/reference/pricing/ | verified (cap behavior unverified) |
+| F9 | Workflows subrequests | table: 50 "per Workflow instance" ("/request"); body: 50 external plus 1,000 to Cloudflare services per invocation; the scope (step or instance) is ambiguous | no | https://developers.cloudflare.com/workflows/reference/limits/ | verified, scope unverified |
+| F10 | Queues | on Free since 2026-02-04, all features; 10,000 operations per day, an operation per 64 KB written, read or deleted, per message: 3 per delivered message, +1 read per retry, +1 write per dead-letter hop; retention fixed at 24 h on Free; batch at most 100 messages, wait at most 60 s; consumer CPU on Free not stated | no | https://developers.cloudflare.com/changelog/post/2026-02-04-queues-free-plan/ ; https://developers.cloudflare.com/queues/platform/pricing/ ; https://developers.cloudflare.com/queues/platform/limits/ | verified (consumer CPU unverified) |
+| F11 | Durable Objects | SQLite storage backend only on Free; 100 classes; 100,000 requests and 13,000 GB-s per day; 5 GB | no | https://developers.cloudflare.com/durable-objects/platform/pricing/ ; https://developers.cloudflare.com/durable-objects/platform/limits/ | verified |
+| F12 | D1 | 5M rows read and 100,000 rows written per day, reset 00:00 UTC, queries fail past either; 10 databases of 500 MB, 5 GB per account; 50 queries per Worker invocation ("read subrequest limits"); limits for individual queries apply to each statement in a batch, but whether each batched statement counts toward the 50 is not stated; 100 bound parameters; 100 KB statements; 30 s per query or batch; Time Travel 7 days | no | https://developers.cloudflare.com/d1/platform/pricing/ ; https://developers.cloudflare.com/d1/platform/limits/ | verified (batch counting and Workflow scope unverified; limits page re-read this session) |
+| F13 | KV | 100,000 reads, 1,000 writes, 1,000 deletes and 1,000 lists per day, reset 00:00 UTC, errors past each; 1 GB; 1,000 operations per invocation, where a bulk get counts as 1; how a bulk get counts toward daily reads is not stated | no | https://developers.cloudflare.com/kv/platform/pricing/ ; https://developers.cloudflare.com/kv/platform/limits/ | verified (bulk billing unverified; this session) |
+| F14 | R2 | 10 GB-month, 1M Class A and 10M Class B operations per month (Standard storage), free egress | no | https://developers.cloudflare.com/r2/pricing/ | verified |
+| F15 | Basin Catalog | GA 2026-10-01 (formerly R2 Data Catalog); needs an active R2 subscription, not Workers Paid; per month 1M catalog operations, 10 GB compaction and 1M compaction objects included; compaction billed only when turned on; snapshot expiration free (defaults 30 days and 5 snapshots, both must hold; wrangler 4.56.0 or later); maintenance needs a token with R2 storage and catalog read/write | no | https://developers.cloudflare.com/r2/data-catalog/ ; https://developers.cloudflare.com/basin-catalog/platform/pricing/ ; https://developers.cloudflare.com/basin-catalog/manage-catalogs/ ; https://developers.cloudflare.com/basin-catalog/table-maintenance/ | verified; enabling it on this account works on Free |
+| F16 | Basin Pipelines | Workers Paid only ("Available on Workers Paid plan"; pricing has only a Paid column) | **yes** | https://developers.cloudflare.com/basin-pipelines/ ; https://developers.cloudflare.com/basin-pipelines/platform/pricing/ | verified; this account returned "This feature requires a Workers Paid plan [code: 1021]" |
+| F17 | Workers AI | 10,000 neurons per day per account, errors past it, no overage on Free; `@cf/meta/llama-3.3-70b-instruct-fp8-fast` 26,668 neurons per M input and 204,805 per M output tokens, 24,000-token context, stays active; `@cf/meta/llama-3.1-8b-instruct-fp8` 13,778 and 26,128; neither needs a paid billing method; avoid `llama-3.1-8b-instruct` and `-fp8-fast` (deprecated or 404) | no (some models yes) | https://developers.cloudflare.com/workers-ai/platform/pricing/ ; https://developers.cloudflare.com/changelog/post/2026-05-08-planned-model-deprecations/ ; https://developers.cloudflare.com/changelog/post/2026-07-28-models-require-workers-paid/ | verified, corrected |
+| F18 | AI Gateway | dashboard analytics, caching and rate limiting free; 10 gateways per account; Logpush Paid only; gateways first created after 2026-09-24 follow Workers Logs retention | no (Logpush yes) | https://developers.cloudflare.com/ai-gateway/reference/pricing/ ; https://developers.cloudflare.com/ai-gateway/reference/limits/ ; https://developers.cloudflare.com/ai-gateway/observability/logging/ | corrected |
+| F19 | Zero Trust Access | Free plan $0 with 50 seats (one per authenticating user); 50 service tokens per account, which use no seats; 500 applications; One-time PIN must be added to new organizations (single use, 10 minutes); Worker-level Access since 2026-08-14 | no (plan availability of service tokens and OTP inferred from no stated restriction) | https://www.cloudflare.com/zero-trust/products/access/ ; https://developers.cloudflare.com/cloudflare-one/team-and-resources/users/seat-management/ ; https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/ ; https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/ ; https://developers.cloudflare.com/workers/configuration/cloudflare-access/ | verified |
+| F20 | BigQuery | sandbox: no DML, 60-day table expiration (both seen on `master-magnet-444903-u4` by Nitish); free tier 1 TiB of query processing and 10 GiB of storage per month (section 23.4); on-demand bills at least 10 MB per referenced table (unverified, section 27) | n/a | https://cloud.google.com/bigquery/docs/sandbox ; https://cloud.google.com/bigquery/pricing | partly verified |
+
+### 30.2 Audit of every production path
+
+CPU numbers come from a scratch benchmark that bundled the repo's own modules (`transformRows`, `subjectMatchers`, `countMatches`, `chainHash`, `createPseudonymizer`) with the repo's esbuild and ran them on this Mac (Node 25.9.0) over `data/generated` (seed 20261010: 41 export objects, 9.70 MB; extracts 6 x about 211 KB from the local Miniflare state) and over the local D1 state left by the committed ci eval and the API authz run (11 tables, 3,645 rows, 1,506 audit events). Values are warm medians (cold first call in brackets). Workers runs the same V8; edge cores and cold isolates are assumed up to 3 times slower, so the design target is at most 2.5 ms on this Mac per invocation (7.5 ms at 3 times, 25% under the 10 ms limit). Spec item M8 turns the script into `npm run bench:cpu` so these numbers become reproducible repo output.
+
+| # | Path (code at commit 38) | Free limit at risk | Measured or counted | Verdict |
+|---|---|---|---|---|
+| A1 | Audit copy (P1, commit 35): Basin Pipelines stream `pv_audit_events`, sink `pv_audit_sink`, pipeline `pv_audit_pipeline`, `AUDIT_STREAM` binding, `AUDIT_STREAM_MODE=pipelines`, setup and doctor lines | F16 | creation fails on this account with code 1021 | **Paid only**: replaced (30.3.3) |
+| A2 | Production template `"limits": { "cpu_ms": 300000 }` | F3 | | **Paid only**: removed |
+| A3 | `discover-worker-assets`: parses every line of every object that contains the subject (all 13 HRIS snapshots contain every employee) | F8 10 ms per step | 19.49 ms (20.73) | exceeds: merged into erase (30.3.1) |
+| A4 | `erase-r2-exports-hris`: 13 objects, every line JSON-parsed | F8 | 13.85 ms (13.81); 1.02 ms per object | exceeds |
+| A5 | `erase-r2-exports-payroll`, `-performance`, `-leave`, `erase-r2-extracts` | F8 | 5.03 ms (6.27; character-by-character CSV parse), 1.71 ms, 0.04 ms; extracts 1.21 MiB | payroll has no margin at 3 times |
+| A6 | `verify-r2`: both whole buckets (10.46 MiB) in one step | F8 | 0.875 ms per MiB, 9.2 ms total | no margin |
+| A7 | `verify-d1` and the D1 probes inside `erase-identity-records` and `redact-request`: every TEXT cell of every table sent to the Worker | F8; F12 50 queries | 5.11 ms (7.74) over 3,645 rows, linear in the audit table; 1 + 2T queries (23 for 11 tables, 29 with the 3 eval tables), 35 to 40 with the other queries of those two steps | exceeds as the audit table grows; query count too close to 50 |
+| A8 | Retention `expire-r2-exports`: 8 objects fully parsed | F8 | 6.11 ms (6.57) | exceeds at 3 times |
+| A9 | Retention `enqueue-retention-subjects`: one INSERT per eligible subject | F12 50 queries | 72 eligible on the first production sweep, so 74 or more queries | exceeds |
+| A10 | Audit append: head read plus guarded insert, up to 25 attempts | F12 | worst case 50 queries in one invocation | capped (8 attempts) |
+| A11 | `GET /api/v1/privacy/audit/verify`: the whole chain in one request | F2 | 19.26 ms (20.29) at 1,506 events; 0.0128 ms per event | exceeds |
+| A12 | `GET /api/v1/privacy/reports/deletion`: every result row to JavaScript, every `finding_json` parsed | F2 | 12.93 ms at 10,048 rows (about 2 months at the admission cap) | exceeds as data grows |
+| A13 | BigQuery REST client: `MAX_POLLS = 60`, unbounded pages, no `maximumBytesBilled` | F4 50 external | token 1 + `generateAccessToken` 1 + query 1 + 60 polls + pages | can exceed 50 |
+| A14 | `INSTANCE_RETENTION = 30 days` (`src/worker/requests.ts`) | F8 3 days | | not available on Free: 3 days |
+| A15 | `d1_time_travel` residual modeled at 30 days (TypeScript and `residuals/model.py`) | F12 7 days | | wrong on Free: 7 days |
+| A16 | Queue `pv-retention-sweep` and `pv-retention-dlq`: a lost or dead-lettered message leaves a `received` request that every later sweep counts as `already_active` | F10 24 h retention | | silent loss: reconcile (30.3.4) |
+| A17 | Workflow steps: 25 per deletion; the first production sweep would start 70 deletions at once | F8 3,000 per day per account | 1,750 steps on day one, 58% of the account | exceeds the 750-step share: admission cap |
+| A18 | Executor thread poll 0.5 s and eval request poll 2 s in production | F1 | up to 9,000 requests per hour of eval | fits, wasteful: 5 s and 10 s |
+| A19 | Doctor "Workers Paid" check, `isWorkersPaid`, Billing Read permission, docs step 2, README "Workers Paid deployment", section 23.4 costs | | | removed |
+| A20 | KV: production warm-up 23 entries (of 420, the ones persona service tokens reach), authz:prod cache fills, probes | F13 | at most 109 writes on the worst day | fits |
+| A21 | Durable Objects | F11 | none declared (the Workflows engine is Cloudflare's) | fits; a test keeps it so |
+| A22 | Cron Triggers | F6 | 1 (`0 3 * * *`) | fits; no trigger added |
+| A23 | Workers AI (P1 spec item 30, not built): `llama-3.3-70b-instruct-fp8-fast`, 120-column eval, no budget in the design | F17 | at most 25.8 neurons per call with the caps of 30.3.6, so 3,098 for the eval | exceeds a 2,500 share in one day: resumable over 2 days (30.3.6) |
+| A24 | Access: owner plus 4 plus-addresses, 5 service tokens, 1 application | F19 | 5 seats, 5 tokens, 1 app | fits |
+| A25 | Script size | F5 | 1,065.83 KiB uncompressed, 186.50 KiB gzip (`wrangler deploy --dry-run` of the template on 2026-10-10) | fits (1.6%) |
+| A26 | Shared Google Cloud project (not Cloudflare): datasets `pv_*`, service accounts `pv-*`, data policies `pv_*`, role `pvTimeTravelReader`, project-level `roles/bigquery.dataViewer` and `metadataViewer` for `pv-executor`, no byte cap on any query | shared-project rule; F20 | | rename, scope grants, cap bytes (30.3.8) |
+
+Other paths checked and fine as they are: JWT verification (RS256 verify 0.026 ms), pseudonyms (0.03 ms for 4 kinds), audit chain hash per append (0.01 ms), the gateway assertion on a token-cache miss (RSA-2048 PKCS#8 import plus sign 0.52 ms), KV probe CPU over 420 values (0.33 ms), executor claim and complete, the Queue consumer (`createBatch` of at most 25), the cron handler, `GET /api/v1/privacy/assets` (2 R2 lists, 2 KV lists), the audit list (200 rows).
+
+### 30.3 Redesign
+
+#### 30.3.1 Workflow steps that fit 10 ms
+
+Per-step invariants, counted by `withOpBudget` (extended with byte, statement and fetch counters) and asserted in tests:
+
+| Invariant | Value | Why |
+|---|---|---|
+| R2 bytes decoded per erase or retention step | at most `R2_ERASE_STEP_BYTES` = 4,194,304 | 0.458 ms per MiB measured, so 1.83 ms |
+| R2 bytes decoded per probe step | at most `R2_PROBE_STEP_BYTES` = 2,097,152 | 0.875 ms per MiB measured, so 1.75 ms |
+| objects per step | whole objects only; a step always takes at least one (largest 0.60 MiB) | |
+| D1 statements per step | at most 40, every statement inside `batch()` counted | F12 50 per invocation |
+| KV, R2 and D1 calls | at most 500 per step and 900 per instance | F4, F9 1,000 |
+| external `fetch` in Workflows | 0 | F9 50 |
+| concurrent binding calls | sequential within a step | F5 6 connections |
+
+Both byte caps are Worker vars, so they can be lowered without a code change if production CPU readings disagree (30.6).
+
+- **Line prefilter.** `transformRows` keeps lines that do not contain the subject's id verbatim without parsing; only candidate lines are parsed (JSONL) or split (CSV, leading-field check first). Output is byte-identical to the current transform (test over all 41 generated objects for a sample that includes managers, reviewers and a held-reference conflict). Measured: all 41 objects in 4.24 ms (0.458 ms per MiB) against 13.85 ms for the 13 HRIS objects today. Retention minimization uses the same prefilter with the held subjects' ids.
+- **Cursor steps.** `erase-r2-<n>` walks the registered parts in policy order (the 4 export families, then the extracts); `verify-r2-<n>` walks both whole buckets (`pv-source-exports`, then `pv-derived`). The cursor is `{ part, pos, digest }`: each step lists its current part or bucket, computes the SHA-256 of the newline-joined sorted keys, checks it against the digest the first step recorded, and continues at index `pos`. A changed digest (an object added or removed between steps) restarts that part at `pos = 0` with the new digest, at most 3 times, then the step throws and the request fails closed. Step outputs carry indexes, digests and counts only, never a key (fault 6 of the eval puts an employee id in a key name). Erasure is idempotent, so a restart only costs time; the probe rescans, so nothing is skipped.
+- **Discovery merged.** `discover-worker-assets` keeps only the D1 identity count. R2 applicability comes from the compare-and-swap rewrites (rows removed plus references scrubbed equals rows before; `present` when above 0, recorded per part in `finding_json`), and KV applicability from `erase-kv-caches`, which now lists and bulk-reads once instead of twice.
+- **D1 probe inside SQLite.** One query per table: `SELECT <text columns> FROM t WHERE instr(c1, ?1) > 0 OR instr(c1, ?2) > 0 ...` over every TEXT column and token (6 tokens bound once and reused, well under 100 parameters and 100 KB). Only candidate rows reach the Worker, where the boundary-aware matchers decide (equal tokens are also substrings, so exact columns are covered). A clean deletion returns no rows, so Worker CPU no longer grows with the audit table. D1 rows read are unchanged (full scans). `redact-request` checks `deletion_requests` and `executor_tasks` the same way.
+- **D1 probes as their own steps.** `verify-d1`, `verify-d1-identity` (split from `erase-identity-records`) and `verify-d1-final` (split from `redact-request`). Each uses 1 + 2T statements; up to 19 tables stay at 39 or fewer, and beyond that the probe continues in a second step by table index.
+- **Batched writes.** `record-held` writes 13 results in one batch; `record-executor-erase` batches its upserts (at most 30 statements per batch, further findings in a follow-up step `record-executor-erase-2`, reachable only with more than 25 unregistered findings). The retention sweep inserts at most `RETENTION_DAILY_MAX` new requests (30.3.4). Audit appends try at most 8 times (16 statements), then throw (a step retries; a request answers 503).
+
+Step plan for a completed deletion at the full population (41 export objects of 9.25 MiB, 6 extracts of 1.21 MiB): `load-request`, `check-legal-hold`, `start-and-suppress`, `discover-worker-assets`, `erase-r2-1` to `erase-r2-3` (6 + 6 HRIS objects, then 1 HRIS plus every payroll, leave, performance and extract object, 3.22 MiB), `erase-kv-caches`, `enqueue-executor-erase`, `wait-executor-erase`, `record-executor-erase`, `kv-propagation` (sleep), `verify-r2-1` to `verify-r2-6` (3 HRIS objects per step), `verify-kv`, `verify-d1`, `combine-verdicts`, `decide-identity-erasure`, `erase-identity-records`, `verify-d1-identity`, `wait-executor-identity`, `record-executor-identity`, `record-residuals`, `redact-request`, `verify-d1-final`, `finalize`: **30 steps** (29 without the sleep; 25 before). A request that fails verification ends after `decide-identity-erasure` with `finalize`: 23 steps. A held request: 3 steps. Retention sweep: `load-holds`, `expire-r2-1` and further expiry steps (the first sweep after the cron is turned on finds every HRIS snapshot older than 56 days past retention, up to 7.84 MiB, so 2 or 3 steps; later sweeps see objects already minimized to held rows, so 1), `expire-r2-extracts`, `enqueue-executor-retention`, `wait-executor-retention`, `enqueue-retention-subjects`, `record-run`: 7 to 9 steps. Steps per instance stay far below 1,024.
+
+#### 30.3.2 HTTP routes and clients
+
+- `GET /api/v1/privacy/audit/verify?after_seq=<n>&limit=<1..100>` verifies one window: it reads the anchor hash of row `after_seq` (genesis for 0) and up to 100 rows, and returns `{ ok, from, to, lastHash, nextAfterSeq, complete, brokenAtSeq? }`. Clients (`pv eval deletion`, the doctor, the console) follow `nextAfterSeq` until `complete` and also check that each window starts where the previous one ended. A 100-event window measured 1.52 ms (200 events: 3.04 ms). 1,506 events take 16 requests.
+- `GET /api/v1/privacy/reports/deletion` computes coverage, per-category counts, held pairs, aggregate rebuilds and residual counts with SQL `GROUP BY` (the same definitions as section 8.6), and returns at most 100 failures (`limit` and `cursor` for more). A test compares the SQL result with today's JavaScript result over the fixture world and the committed eval states.
+- BigQuery REST client: `MAX_POLLS` 20 and at most 10 result pages, so a request makes at most 1 JWKS + 2 token + 1 query + 20 + 10 = 34 external fetches (F4: 50). Every `jobs.query` body sets `maximumBytesBilled: "104857600"` (100 MiB; a purpose query references at most 3 small tables).
+- Production polling: `pv executor run --target prod` and the executor thread of the production eval poll every 5 s (local stays 0.5 s); the production eval waits for requests with a 10 s poll (local stays 2 s).
+
+#### 30.3.3 Audit copy without Basin Pipelines
+
+D1's hash chain stays the source of truth. The Iceberg copy `governance.audit_events` in the Basin Catalog is pulled by the Python side instead of streamed by the Worker:
+
+1. New executor route `GET /api/v1/executor/audit-export?after_seq=<n>&limit=<1..500>` (executor principal only; new system action `executor_audit_export` in `policy.yaml`) returns rows with `seq > n` in `seq` order with exactly the 16 schema fields (no `detail_json`, as before) and `headSeq`. Each page is one D1 query and one audit event. 500 rows (about 256 KB of JSON) measured 0.64 ms to decode and encode.
+2. `pv audit export --target local|prod` (`peoplevault/lake/audit_export.py`) opens the catalog (SqlCatalog locally, the Basin Catalog REST catalog in production), creates the unpartitioned table from `infra/lake/audit-events.schema.json` (moved from `infra/cloudflare/audit-stream.schema.json`, same 16 fields) if needed, reads `pv.audit.last_seq` and `pv.audit.last_hash` from the current snapshot's summary (0 and the genesis hash for a new table), pages from there, and checks that the chain links: the first row's `prev_hash` equals `last_hash`, and every later `prev_hash` equals the previous `hash`. A broken link stops the run without committing.
+3. It appends everything it read (at most 20,000 rows per run) in **one** commit, `table.append(rows, snapshot_properties={"pv.audit.last_seq": ..., "pv.audit.last_hash": ...})`. pyiceberg 0.12.0 sends `AssertRefSnapshotId` with every append commit (`table/update/snapshot.py`), so a concurrent exporter's commit makes this one fail, and the run restarts from the new cursor (at most 3 times). The effect is exactly once: the cursor and the rows commit together, a rerun copies nothing, and nothing is duplicated or skipped.
+4. Replay: D1 keeps every row, so `pv audit export --rebuild` writes `governance.audit_events_rebuild` from `seq` 0 and swaps names only after its count and last hash match D1.
+5. Cadence: `executor.yml` exports when at least 1,000 events are waiting or the last commit is more than 24 hours old (at most a few commits a day, so few small Parquet files); the production eval exports after its requests finish and reports `audit_copy: { rows, chain_length, last_hash_matches }`; the local eval does the same against SqlCatalog. This is P1 spec item 31 done for both targets with one code path.
+6. Basin snapshot expiration with the defaults (30 days, keep 5; free) on `governance.audit_events` bounds metadata. Compaction stays off.
+7. Removed: the `pipelines` binding, `AUDIT_STREAM` in `env-extra.d.ts`, `AUDIT_STREAM_MODE`, the pipelines mode of `audit-stream.ts` (Workflows and routes call `createAuditLog` directly), `infra/cloudflare/audit-pipeline.sql`, the three `wrangler basin pipelines ... create` commands and their `--catalog-token` handling in `setup:prod`, and the doctor's stream, sink and pipeline lines. `/api/health` reports `auditCopy: "executor_export"` instead of `auditStream`. The doctor reports the copy lag (`headSeq - last_seq`) and the age of the last commit, warning above 26 hours.
+
+Rejected: Worker to Queue to a batching consumer. Delivery costs 3 Queue operations per message (F10); about 1,000 audit events on the worst day would cost about 3,000 operations, 30% of the account's 10,000 and above this repo's 2,500 share. It would also be at-least-once with drops on send failures, where the pull export is exactly once.
+
+#### 30.3.4 Daily admission, recovery and idempotency
+
+- Migration `0005_free_plan.sql`: `ALTER TABLE deletion_requests ADD COLUMN admitted_at TEXT` plus an index on it.
+- Production vars: `DAILY_DELETION_STARTS="16"`, `RETENTION_DAILY_MAX="8"`, `RETENTION_CRON="off"`. Local: `""` (unlimited), `""` and `"on"`, so the local and CI evals are unchanged.
+- `admit(db, cap)` counts requests with `admitted_at` on the current UTC day (DSRs, retention requests and retries alike). The DSR route inserts the request and, when admitted, sets `admitted_at` and creates the instance; when the cap is reached it answers 202 `{ requestId, status: "received", deferred: true }` without an instance. The retry route is admitted the same way.
+- The cron (`0 3 * * *`, the only trigger) always runs `reconcileReceived` first: requests in `received` with `admitted_at` null (deferred) or older than 6 hours (admitted but never started, for example a message lost after Free's fixed 24-hour Queue retention or expired in the dead letter queue) are admitted oldest first up to today's remaining cap and sent as `{ requestId }` to `pv-retention-sweep` (the consumer's `createBatch` acks ids that already exist). Then, only when `RETENTION_CRON=on`, it creates `retention-<date>`, whose `enqueue-retention-subjects` admits at most `min(RETENTION_DAILY_MAX, remaining cap)` new subjects in employee id order; held subjects are still recorded `held`. The 70 subjects eligible on the first production run drain in 9 days.
+- `RETENTION_CRON` stays `off` in production until the production eval result is committed (its truth assumes no sweep ran, section 19.1, and its 12 requests must fit the day's cap); `npm run setup:prod -- --only worker --retention-cron on` re-renders and redeploys, and the doctor warns while it is off. The production eval refuses to start only when a DSR or a request for one of its cohort subjects exists (retention subjects are disjoint from the eval cohorts by construction).
+- Request-level idempotency: `load-request` ends the instance without changes when the request is terminal, or when `deletion_requests.workflow_instance_id` names another instance. Free keeps finished instances only 3 days (F8), so `createBatch`'s "already exists" is no longer enough to stop a re-sent message from re-running a finished deletion; with this check a duplicate instance can never turn a completed request into `failed`.
+
+#### 30.3.5 Plan-dependent constants
+
+- Production template: no `limits`, no `pipelines`; new vars `DAILY_DELETION_STARTS`, `RETENTION_DAILY_MAX`, `RETENTION_CRON`, `R2_ERASE_STEP_BYTES`, `R2_PROBE_STEP_BYTES` (23 vars and 2 secrets, under 64).
+- `INSTANCE_RETENTION = { successRetention: "3 days", errorRetention: "3 days" }` (receipts live in D1, so nothing is lost).
+- `D1_TIME_TRAVEL_DAYS = 7` in `src/worker/residuals/residuals.ts` and `pipelines/src/peoplevault/residuals/model.py`: deleted identity rows stay recoverable for 7 days on Free, not 30.
+- Workers Logs keep identifier-free console lines for 3 days (invocation logs stay off).
+
+#### 30.3.6 Workers AI and AI Gateway (P1 spec item 30, designed for Free)
+
+- Production triage model: `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (F17: active, not on the paid-billing list, 24,000-token context), called through the `AI` binding with `gateway: { id: "peoplevault", collectLog: false, skipCache: true }`, so the gateway stores no prompt or response (the sample values come from quarantined exports and may contain identifiers). The gateway (1 of the account's 10) has a rate limit of 10 requests per minute.
+- Every call is capped at 600 input tokens (the prompt is rejected above 2,400 characters) and `max_tokens: 48`. Worst case per call: 600 x 26,668 / 1M + 48 x 204,805 / 1M = 16.00 + 9.83 = **25.8 neurons**; the 120-column eval needs at most 3,098.
+- Neuron accounting: after each call the Worker adds `prompt_tokens` and `completion_tokens` from the response's `usage` (when absent: characters / 4 for input and `max_tokens` for output) times the model's published rates (a dated table with the source URL in `src/worker/ai/rates.ts`) into D1 `ai_usage(day, model, neurons, calls)` (migration in the P1 commit). Before a call it refuses with 503 `ai_budget_exhausted` when today's total plus 25.8 would pass `AI_DAILY_NEURONS` = 2,000 (80% of this repo's 2,500 share, 20% of the account's 10,000). The route then falls back to the rule class only; the policy never depends on the model.
+- Eval (`pv eval drift --target prod`): resumable. It checkpoints every column to `evals/results/.checkpoints/drift-prod-<model>.jsonl` (gitignored), stops cleanly at the daily budget, resumes the next UTC day, and writes `evals/results/drift-prod-<date>.json` only when all 120 columns are done, with `model`, `neurons_total`, `days` and `calls`. At 2,000 neurons a day it takes 2 days in the worst case.
+- Which model produces which number: the production `sensitive_recall` comes only from `@cf/meta/llama-3.3-70b-instruct-fp8-fast`; the local number comes only from Qwen3-1.7B Q4_0 on llama-server (port 8170); the deterministic stub produces no reported number. The README names the model next to every number.
+
+#### 30.3.7 Access on the Free Zero Trust plan
+
+Team `old-truth-a7dc` (`ACCESS_TEAM_DOMAIN=https://old-truth-a7dc.cloudflareaccess.com`, Free plan, created by Nitish); One-time PIN is being added by Nitish. The Worker is `https://peoplevault.nitish-ratakonda.workers.dev`. Human sign-ins: `nitishsancs@gmail.com` (owner) and `nitishsancs+hr@gmail.com`, `+mgr`, `+analyst`, `+privacy`, which is 5 of the account's 50 seats (each plus-address is a distinct user). Service tokens: `pv-executor` and 4 persona tokens, 5 of 50, no seats. The Access application and its two policies are unchanged (section 16.2).
+
+#### 30.3.8 Shared Google Cloud project `master-magnet-444903-u4`
+
+- Names: one prefix in `policy.yaml` (`naming.prefix: peoplevault`) drives every generated name in both dialects, so DuckDB schemas keep the same names as BigQuery datasets:
+  - datasets `peoplevault_raw`, `peoplevault_core`, `peoplevault_snapshots`, `peoplevault_restricted`, `peoplevault_marts` and `peoplevault_purpose_<purpose>`; the probe dataset `peoplevault_authz_probe`; eval fault dataset `peoplevault_scratch`;
+  - service accounts `peoplevault-er-reader`, `-tm-reader`, `-wa-reader`, `-pc-reader`, `-lh-reader`, `peoplevault-gateway` and `peoplevault-executor` (all within the 6 to 30 character limit);
+  - custom role `peoplevaultTimeTravelReader`; data policies `peoplevault_<class>_<expression>`; taxonomy `peoplevault` (unchanged).
+  - Python jobs use `job_id_prefix="peoplevault_"`, and Worker queries carry the label `app: peoplevault` (the `jobs.query` API cannot take a job id). There are no secrets in Secret Manager and no Artifact Registry repository or Cloud Run job in v1.
+- Grants: the only project-level role is `roles/bigquery.jobUser` (creates jobs, reads no data) for the 5 purpose service accounts and the executor. The executor loses project-level `roles/bigquery.dataViewer` and `roles/bigquery.metadataViewer`; it keeps `dataOwner` on its 10 datasets, the custom role on the 3 row-policy datasets, Fine-Grained Reader on the 6 tags and `roles/datacatalog.viewer` on the taxonomy resource instead of the project. No identity of this repo can read another repo's datasets, and no other repo's identity is granted on this repo's datasets.
+- Verifier scope: `scan_warehouse` lists the datasets the executor can see (BigQuery lists only datasets the caller can access) and keeps those starting with `peoplevault_`. A copy placed by someone else in another repo's dataset of the shared project is outside the scan; the README says so. The eval's warehouse faults plant only inside the prefix.
+- Byte caps: the Worker uses 100 MiB per query; Python `QueryJobConfig(maximum_bytes_billed=1 GiB)` everywhere (executor, loaders, verifiers, residual checks, authz runner); the ceiling probes use 100 MiB; the dbt profiles set `maximum_bytes_billed: 1073741824`. A capped query fails without being billed, and the executor reports `ok: false` (fail closed).
+- `PV_GCP_PROJECT=master-magnet-444903-u4`. APIs already enabled on 2026-10-10: `bigquery.googleapis.com`, `bigquerydatapolicy.googleapis.com`. `pv setup gcp` enables `datacatalog`, `iam` and `iamcredentials`. ADC's quota project is already this project.
+
+#### 30.3.9 Shared Cloudflare account
+
+- `setup:prod` never adopts a same-named resource it has no record of in `.secrets/prod-resources.json`. It stops and prints the conflict, because another repo on the account may own it.
+- No Durable Object class, `durable_objects` binding or `migrations` block (any future one must use `new_sqlite_classes`, F11).
+- Exactly one Cron Trigger, 2 queues, 1 Worker (`peoplevault`; `peoplevault-local` is never deployed), and 1 AI gateway (P1).
+
+### 30.4 Usage budget
+
+Planning share = 25% of each per-account allowance. "Worst-case day" stacks, on one UTC day: the first `setup:prod` and `seed:prod`, `authz:prod`, the production eval (12 requests: 6 completed, 1 held, 5 failed by planted faults) plus 4 more completed deletions to reach the cap of 16, a retention sweep, 24 hourly executor runs, one audit export and three doctor runs. Unit costs per completed deletion (full population): 30 steps; 9,000 D1 rows read (3 probes x about 2,900 rows in the scanned tables after the eval day, plus about 300 for other queries); 150 D1 rows written (indexes counted as extra rows, assumed); up to 200 KV key reads (2 bulk passes over at most 100 cache keys, counted per key); 4 KV deletes; 3 KV lists; 52 R2 Class A operations (18 lists, up to 34 puts); 94 Class B (gets); about 394 KV, R2 and D1 calls per instance.
+
+| Resource | Account allowance | Share (25%) | Worst-case day (derivation) | % of share | % of account |
+|---|---|---|---|---|---|
+| Workflow steps | 3,000 per day | 750 | 16 x 30 + 9 (sweep, worst case) = 489; eval day alone 6 x 30 + 1 x 3 + 5 x 23 = 298 | 65% | 16% |
+| Workers requests | 100,000 per day | 25,000 | seed 33 + authz:prod about 170 + eval (23 warm-up, 12 DSRs, 720 executor polls at 5 s and 360 status polls at 10 s over at most 1 hour, about 30 claims and completes, 16 verify windows) about 1,160 + executor.yml 40 + export and windows 15 + doctor 30 + about 20 Workflow, queue and cron invocations = about 1,470 | 6% | 1.5% |
+| Workers CPU per invocation | 10 ms | | largest redesigned path 1.83 ms measured (erase step at 4 MiB), 5.5 ms at 3 times | | 55% of the limit at 3 times |
+| Subrequests per Workflow instance | 1,000 internal, 50 external | | about 394 internal (erase 114, probe 71, KV 14, D1 probes 87, other steps 108), 0 external; budget 900 | | 39% internal |
+| Subrequests per HTTP request | 50 external | | at most 34 (BigQuery data route on a cold isolate) | | 68% |
+| D1 queries per invocation | 50 | | at most 40 by test (largest: a D1 probe step, 1 + 2 x 14 = 29 with the 3 eval tables) | | 80% |
+| D1 rows read | 5,000,000 per day | 1,250,000 | 16 x 9,000 = 144,000 + oracle at most 35,000 + seed checks 10,000 + status polls 6,000 + doctor 5,000 + sweep 1,200 + routes and appends 3,000 = about 205,000 | 16% | 4.1% |
+| D1 rows written | 100,000 per day | 25,000 | seed about 9,000 (identity_map 1,200 x 7 with its 6 indexes, principals 137 x 4, holds) + 16 x 150 = 2,400 + 1,000 audit events x 3 = 3,000 + residual updates 512 + task updates 200 = about 15,100 (about 6,100 on days without a seed) | 60% | 15% |
+| D1 storage | 500 MB per database, 5 GB | | about 2 MB today, under 10 MB after a year | | under 2% |
+| KV reads | 100,000 per day | 25,000 | 16 x 200 + 300 route gets + 100 oracle = 3,600 | 14% | 3.6% |
+| KV writes | 1,000 per day | 250 | warm-ups 23 + 23 + authz:prod at most 60 + planted faults 3 = 109 | 44% | 11% |
+| KV deletes | 1,000 per day | 250 | 16 x 4 + 3 fault cleanups = 67 | 27% | 6.7% |
+| KV lists | 1,000 per day | 250 | 16 x 3 + 10 (assets route, doctor, oracle) = 58 | 23% | 5.8% |
+| Queue operations | 10,000 per day | 2,500 | retention 8 messages x 7 (write, 4 reads with 3 retries, delete, dead-letter write) = 56 + reconcile at most 16 x 7 = 112 = 168; eval day 0 (cron off) | 6.7% | 1.7% |
+| Workflow concurrency | 100 running | 25 | at most 16 running | 64% | 16% |
+| Workflow storage | 1 GB-month | 250 MB | about 16 instances x 150 KB x 3 days, under 10 MB | under 4% | under 1% |
+| Cron Triggers | 5 per account | 1.25 | 1 | 80% | 20% |
+| Workers Logs | 200,000 per day | 50,000 | 5 console call sites, at most 1 line per invocation, under 2,000 | under 4% | 1% |
+| R2 Class A | 1,000,000 per month | 250,000 | at the cap every day: 480 deletions x 52 + about 1,000 (seed 41 puts, lake commits, audit exports) = about 26,000 | 10% | 2.6% |
+| R2 Class B | 10,000,000 per month | 2,500,000 | 480 x (94 + about 50 lake reads by the verifiers) = about 69,000 | 2.8% | 0.7% |
+| R2 storage | 10 GB-month | 2.5 GB | exports 9.7 MB + extracts 1.3 MB + lake and audit copy under 40 MB = under 50 MB | 2% | 0.5% |
+| Basin Catalog operations | 1,000,000 per month | 250,000 | about 20 per deletion x 480 + exports and doctor = about 11,000; compaction off ($0); snapshot expiration free | 4.4% | 1.1% |
+| Workers AI neurons (P1) | 10,000 per day | 2,500 | cap `AI_DAILY_NEURONS` 2,000; the eval needs at most 3,098 over 2 days; triage at most 5 calls a day (129) | 80% at the cap | 20% |
+| AI Gateway (P1) | 10 gateways | 2.5 | 1; no stored logs | 40% | 10% |
+| Access seats | 50 | 12.5 | 5 (owner plus 4 plus-addresses) | 40% | 10% |
+| Access service tokens | 50 | 12.5 | 5 | 40% | 10% |
+| Worker script size | 64 MiB | | 1,065.83 KiB | | 1.6% |
+| BigQuery queries (estimate, 10 MB per-table minimum assumed) | 1 TiB per month | 256 GiB | worst day about 12 GB (Worker reads about 200 x 20 MB = 4 GB, verification 12 x 320 MB = 3.8 GB, residual checks 1.4 GB, dbt 1.2 GB, authz and ceiling probes 1.4 GB, erase DML 0.6 GB); about 30 GB in the eval month | 12% | 3% |
+| BigQuery storage | 10 GiB per month | 2.5 GiB | about 50 MB | 2% | 0.5% |
+
+The two tightest daily rows are D1 rows written on the seed day (60% of the share, a one-off) and Workflow steps at the admission cap (65%). Both stay under the share on the worst-case day, and the budget test fails if a constant change pushes any row past it (section 18.5).
+
+### 30.5 What changed
+
+| Area | Before | After |
+|---|---|---|
+| Plan | Workers Paid required (16.4) | Workers Free; no Paid feature; ADR 0007 |
+| Production template | `limits.cpu_ms`, `pipelines` binding, `AUDIT_STREAM_MODE=pipelines` | none of these; 5 new vars (30.3.5) |
+| Deletion Workflow | 25 steps; R2 and KV discovery plus one step per export family; one whole-store probe step; D1 probes in JavaScript inside larger steps | 30 steps; byte-capped cursor steps with a line prefilter; discovery merged into erasure; D1 probes in SQLite as their own steps; at most 40 D1 statements per step |
+| Retention | 72 subjects in one sweep; a lost message stranded a request | at most 8 a day; daily cap of 16 starts; cron reconcile; request-level idempotency; cron off until the production eval |
+| Audit copy | Basin Pipelines stream, sink and pipeline (Paid) | `pv audit export` pull with an exactly-once cursor in the Iceberg snapshot summary; absorbs P1 item 31 |
+| Routes | whole-chain verify; JavaScript report | windowed verify (100); SQL report |
+| BigQuery | 60 polls, unbounded pages, no byte cap | 20 polls, 10 pages, 100 MiB (Worker) and 1 GiB (Python, dbt) caps |
+| Residuals | D1 Time Travel 30 days; instance retention 30 days | 7 days; 3 days |
+| Google Cloud | dedicated project, `pv` names, project-level data roles for the executor | shared `master-magnet-444903-u4`, `peoplevault` names, dataset- and resource-scoped grants only |
+| Workers AI (P1) | one call per column, no budget | 2,000 neurons a day cap, resumable eval, gateway without logs |
+| Doctor | Workers Paid check; stream lines | Free-plan lines: retention cron state, admissions today, audit copy lag, D1 rows per probe projected at the cap; optional CPU p99 from Workers analytics |
+
+### 30.6 Still unverified, and how each is checked
+
+| Assumption | Risk if wrong | Check |
+|---|---|---|
+| A Workflow step is one invocation for D1's 50-query limit (F12); if the limit applies per instance, a deletion (about 150 D1 statements) cannot run | deletions fail | the production eval submits one DSR alone first (canary) and waits for it before the other 11; a D1 limit error fails that request closed and stops the eval; nothing is reported clean |
+| Mac CPU times 3 covers edge cores and cold isolates | a step exceeds 10 ms and fails after its retries | canary deletion; doctor line reading CPU p99 per invocation from Workers analytics when `PV_CF_API_TOKEN` has Account Analytics Read (optional); the byte caps are vars |
+| Each statement in a D1 batch counts toward the 50 (conservative) and indexes add rows written (conservative) | only the margin changes | budget uses the conservative reading |
+| KV bulk reads bill per key (conservative) | only the margin changes | same |
+| `waitForEvent` and `sleep` count toward the 3,000 daily steps (conservative) | only the margin changes | same |
+| Behavior at the 3,000-step cap and past the 10,000 Queue operations is undocumented | other repos' work fails that day | admission cap keeps this repo at 16% of the account |
+| Queue consumer CPU on Free (10 ms or 30 s) | none: the consumer measures under 1 ms of work (`createBatch` of at most 25) | |
+| `usage` token counts in Workers AI responses (P1) | neuron accounting falls back to the worst case | fallback counts characters / 4 and `max_tokens` |
+| `wrangler basin catalog snapshot-expiration enable` takes `--token` like compaction | setup step fails | `setup:prod --dry-run` golden plus `--help` check at build time; the R2 catalog token has R2 storage and catalog permissions |
