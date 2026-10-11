@@ -2,7 +2,6 @@
 import type { Context, MiddlewareHandler } from "hono";
 import type { AppEnv, BuildAppOptions } from "./app.ts";
 import { createAuditLog, type AuditEventInput } from "./audit/audit-log.ts";
-import { auditStreamFor, withAuditStream } from "./audit/audit-stream.ts";
 import { createPseudonymizer, type Pseudonymizer } from "./pseudo/hmac.ts";
 import { createWarehouseClient } from "./warehouse/client.ts";
 
@@ -18,20 +17,11 @@ export function services(opts: BuildAppOptions): MiddlewareHandler<AppEnv> {
     const cfg = c.get("cfg");
     c.set("pseudo", pseudonymizerFor(cfg.masterKeyB64));
     c.set("warehouse", opts.warehouseFactory ? opts.warehouseFactory(c.env, cfg) : createWarehouseClient(c.env, cfg));
-    c.set("audit", withAuditStream(createAuditLog(c.env.DB), auditStreamFor(c.env), backgroundOf(c)));
+    c.set("audit", createAuditLog(c.env.DB));
     await next();
   };
 }
 
-/** ctx.waitUntil when the request has an execution context (always in the runtime; some tests call fetch without one). */
-function backgroundOf(c: Context<AppEnv>): ((p: Promise<unknown>) => void) | undefined {
-  try {
-    const ctx = c.executionCtx;
-    return (p) => ctx.waitUntil(p);
-  } catch {
-    return undefined;
-  }
-}
 
 export type AuditFields = Omit<AuditEventInput, "actor" | "actorKind" | "persona">;
 

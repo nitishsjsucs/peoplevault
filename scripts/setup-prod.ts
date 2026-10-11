@@ -149,6 +149,10 @@ export function planSetup(s: SetupState, env: Record<string, string>, render: st
   if (!s.accessApp || s.renderedText?.includes(AUD_PENDING)) add("access", "access:redeploy", `render ACCESS_AUD from the Access application into ${RENDERED_REL}, then npm run deploy`);
   // data
   if (!s.dataLoaded) add("data", "data:seed", "npm run seed:prod (remote D1 seed and principal mapping, 41 export objects, lake self-test and table, snapshot expiration, pv load --target prod, counts and controls)");
+  // the audit copy (SPEC.md section 30.3.3): the first export creates governance.audit_events, then its snapshot
+  // expiration with the defaults (30 days, keep 5; free; a table-level setting needs no --token)
+  if (!s.resources.audit_copy_table) add("data", "data:audit-copy", "uv run --project pipelines pv audit export --target prod (creates the Basin Catalog table governance.audit_events and copies the audit chain)");
+  if (!s.resources.audit_copy_expiration) add("data", "data:audit-expiration", `${W} basin catalog snapshot-expiration enable pv-lake governance audit_events`);
   // github (P1 executor.yml; asks before writing)
   steps.push(...planGithub(s, env));
   return steps;
@@ -394,6 +398,14 @@ async function applyStep(st: Step, s: SetupState, env: Record<string, string>): 
     }
     case "data:seed":
       await run(process.execPath, [path.join(REPO_ROOT, "scripts", "seed-prod.ts")]);
+      return;
+    case "data:audit-copy":
+      process.stdout.write((await pv(["audit", "export", "--target", "prod"])).stdout);
+      writeResources({ audit_copy_table: true });
+      return;
+    case "data:audit-expiration":
+      await wrangler(["basin", "catalog", "snapshot-expiration", "enable", "pv-lake", "governance", "audit_events"]);
+      writeResources({ audit_copy_expiration: true });
       return;
     case "github:executor-key":
       process.stdout.write((await pv(["setup", "actions-key", "--repo", s.github.repo!])).stdout);

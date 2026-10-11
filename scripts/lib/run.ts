@@ -1,6 +1,6 @@
 // Spawn helper: never uses a shell, captures output, optional retries. Same behavior on macOS and Linux.
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -74,36 +74,19 @@ export function wranglerBin(): string {
   return bin;
 }
 
+/** Every Worker var and secret name of wrangler.jsonc (both configs declare the same var names). */
+export function workerEnvNames(): Set<string> {
+  const text = readFileSync(path.join(REPO_ROOT, "wrangler.jsonc"), "utf8")
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/,(\s*[}\]])/g, "$1");
+  const cfg = JSON.parse(text) as { vars?: Record<string, string>; secrets?: { required?: string[] } };
+  return new Set([...Object.keys(cfg.vars ?? {}), ...(cfg.secrets?.required ?? [])]);
+}
+
 /** Environment for wrangler children: drops every Worker var or secret name so wrangler dev never reads them
  * from process.env (with `secrets` defined, wrangler dev reads listed keys from the environment). */
 export function wranglerEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const blocked = new Set([
-    "DEV_ACCESS_JWKS",
-    "DEV_ACCESS_PRIVATE_JWK",
-    "PV_PSEUDONYM_MASTER_KEY",
-    "WAREHOUSE_SHIM_TOKEN",
-    "GCP_GATEWAY_SA_KEY",
-    "PV_ENV",
-    "AUTH_MODE",
-    "WAREHOUSE_MODE",
-    "AUDIT_STREAM_MODE",
-    "KV_PROPAGATION_WAIT",
-    "EXECUTOR_WAIT_TIMEOUT",
-    "RETENTION_AS_OF",
-    "DEV_ACCESS_ISSUER",
-    "DEV_ACCESS_AUD",
-    "WAREHOUSE_SHIM_URL",
-    "ACCESS_TEAM_DOMAIN",
-    "ACCESS_AUD",
-    "GCP_PROJECT_ID",
-    "BQ_LOCATION",
-    "BQ_GATEWAY_SA_EMAIL",
-    "BQ_PURPOSE_SA_EMPLOYEE_RELATIONS",
-    "BQ_PURPOSE_SA_TEAM_MANAGEMENT",
-    "BQ_PURPOSE_SA_WORKFORCE_ANALYTICS",
-    "BQ_PURPOSE_SA_PRIVACY_COMPLIANCE",
-    "BQ_PURPOSE_SA_LEGAL_HOLD_MANAGEMENT",
-  ]);
+  const blocked = workerEnvNames();
   const out: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) if (!blocked.has(k)) out[k] = v;
   return { ...out, WRANGLER_SEND_METRICS: "false", CI: "true", ...extra };

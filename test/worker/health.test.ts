@@ -7,7 +7,7 @@ describe("GET /api/health", () => {
     const res = await exports.default.fetch("http://127.0.0.1/api/health");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ ok: true, env: "local", authMode: "local-jwks", warehouse: "local-shim", auditStream: "disabled_local" });
+    expect(body).toEqual({ ok: true, env: "local", authMode: "local-jwks", warehouse: "local-shim", auditCopy: "executor_export" });
     const text = JSON.stringify(body);
     expect(text).not.toContain(env.PV_PSEUDONYM_MASTER_KEY);
     expect(text).not.toContain("test-shim-token");

@@ -32,7 +32,7 @@ All workforce data is synthetic and generated deterministically. No real person'
 | Workers Free production template (no `limits`, no `pipelines`, Free capacity vars), 3-day Workflow retention, 7-day D1 Time Travel residual, byte-capped BigQuery queries (Worker 100 MiB, Python and dbt 1 GiB) | built, tested; not yet executed |
 | Workflow steps sized for Free's 10 ms of CPU and 50 D1 queries: byte-capped cursor steps for R2 erasure (4 MiB) and probing (2 MiB) with a line prefilter, D1 token matching inside SQLite in steps of at most 16 tables, windowed audit verification (100 events per request), the deletion report in SQL; 30 steps per completed deletion | built, tested locally (Miniflare does not enforce CPU or query limits; the budgets are counted in tests) |
 | Daily admission cap (16 deletion starts per UTC day in production, 8 of them retention; unlimited locally), cron reconcile of deferred and orphaned requests, request-level idempotency, retention cron off in production until the production eval result is committed | built, tested locally |
-| Audit copy into the Iceberg table `governance.audit_events` | Basin Pipelines removed from the production path (Workers Paid only); the pulled replacement `pv audit export` is not built yet |
+| Audit copy into the Iceberg table `governance.audit_events` (`pv audit export`: pulled through the executor API, one commit per run with its cursor in the snapshot summary, exactly once; replaces the Basin Pipelines stream, which needs Workers Paid) | built; runs locally in the ci eval (pyiceberg SqlCatalog); the production export (Basin Catalog, hourly in `executor.yml` when due) is written, not yet executed |
 
 Nothing in this repository has run against Cloudflare or Google Cloud. Local stand-ins are never described as the production service.
 
@@ -107,7 +107,7 @@ flowchart LR
 | Warehouse | DuckDB file, dbt-duckdb, shim on 8893 with emulated ceilings | BigQuery US, dbt-bigquery, purpose service accounts, authorized views and table functions, policy tags, data masking, row access policies |
 | Recovery windows | modeled from the 48 h setting (labeled modeled) | observed with time travel queries; fail-safe modeled |
 | Iceberg archive | pyiceberg SqlCatalog, explicit expiry and orphan purge | Basin Catalog on `pv-lake`, managed snapshot expiration |
-| Audit copy | D1 only | D1 only until `pv audit export` lands (Basin Pipelines is Workers Paid only) |
+| Audit copy | `pv audit export --target local` into the SqlCatalog table `governance.audit_events` | the same command into the Basin Catalog table `governance.audit_events` (exactly once), from `executor.yml` or the production eval; no Basin Pipelines (Workers Paid only) |
 | Executor | `pv serve` thread | `pv executor run --target prod` from the owner's machine (impersonating `pv-executor`), or hourly in GitHub Actions (`executor.yml`, with a `pv-executor` key held only as a repository secret) |
 | Production API calls | recorded-response contract tests and `--dry-run` golden plans only | live, after setup |
 

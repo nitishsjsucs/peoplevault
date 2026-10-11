@@ -70,6 +70,9 @@ export interface ProdResources {
   catalog_warehouse?: string;
   /** RETENTION_CRON of the rendered config; off until the production eval result is committed (SPEC.md 30.3.4) */
   retention_cron?: "on" | "off";
+  /** the audit copy table exists (first `pv audit export --target prod`) and its snapshot expiration is enabled */
+  audit_copy_table?: boolean;
+  audit_copy_expiration?: boolean;
   service_tokens?: Record<string, { id: string; client_id: string }>;
   policy_tags?: Record<string, string>;
   taxonomy?: string;

@@ -26,7 +26,7 @@ HUMAN_ACTIONS: tuple[str, ...] = (
     "create_deletion_request", "read_deletion_request", "place_legal_hold", "release_legal_hold", "read_legal_holds",
     "read_assets", "read_report", "read_audit", "run_retention",
 )
-SYSTEM_ACTIONS: tuple[str, ...] = ("executor_claim", "executor_complete", "executor_suppression")
+SYSTEM_ACTIONS: tuple[str, ...] = ("executor_claim", "executor_complete", "executor_suppression", "executor_audit_export")
 PROFILE_BASE_SOURCES = ("profile_base", "attrition_features", "headcount_monthly")
 PARAM_TYPES = ("string", "string_array", "date")
 

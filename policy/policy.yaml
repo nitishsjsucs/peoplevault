@@ -29,7 +29,7 @@ personas:
 # System principals are not personas. They may call only these actions, and humans may never call them.
 system_roles:
   executor:
-    actions: [executor_claim, executor_complete, executor_suppression]
+    actions: [executor_claim, executor_complete, executor_suppression, executor_audit_export]
 
 purposes:
   employee_relations:

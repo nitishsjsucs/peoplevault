@@ -24,3 +24,5 @@ export const ReportQuery = z
     cursor: z.string().regex(/^[A-Za-z0-9_-]{1,600}$/).nullable(),
   })
   .strict();
+/** GET /api/v1/executor/audit-export?after_seq&limit (SPEC.md section 30.3.3) */
+export const AuditExportQuery = z.object({ after_seq: z.coerce.number().int().min(0), limit: z.coerce.number().int().min(1).max(500) }).strict();

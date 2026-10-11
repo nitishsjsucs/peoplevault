@@ -34,7 +34,6 @@
     "PV_ENV": "local",
     "AUTH_MODE": "local-jwks",
     "WAREHOUSE_MODE": "local-shim",
-    "AUDIT_STREAM_MODE": "disabled",
     "KV_PROPAGATION_WAIT": "1 second",
     "EXECUTOR_WAIT_TIMEOUT": "1 hour",
     // Free plan capacity (SPEC.md section 30.3.4): "" means unlimited locally, so the local and CI evals are unchanged.

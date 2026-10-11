@@ -33,7 +33,8 @@ const prod = {
 describe("loadConfig", () => {
   it("accepts the local configuration", () => {
     const cfg = loadConfig(env);
-    expect(cfg).toMatchObject({ env: "local", authMode: "local-jwks", warehouseMode: "local-shim", auditStreamMode: "disabled", retentionAsOf: "2026-09-30" });
+    expect(cfg).toMatchObject({ env: "local", authMode: "local-jwks", warehouseMode: "local-shim", retentionAsOf: "2026-09-30" });
+    expect(cfg).not.toHaveProperty("auditStreamMode");
   });
   it("reads the Free plan capacity vars: unlimited locally, capped in production (SPEC.md 30.3.4)", () => {
     expect(loadConfig(env)).toMatchObject({ dailyDeletionStarts: null, retentionDailyMax: null, retentionCron: "on", r2EraseStepBytes: 4194304, r2ProbeStepBytes: 2097152 });
@@ -58,7 +59,6 @@ describe("loadConfig", () => {
     ["bigquery needs the gateway key", { GCP_GATEWAY_SA_KEY: "" }, /GCP_GATEWAY_SA_KEY/],
     ["production rejects the test-vector master key", { PV_PSEUDONYM_MASTER_KEY: vectors.master_key_b64 }, /test-vector/],
     ["production rejects a short master key", { PV_PSEUDONYM_MASTER_KEY: btoa("short-key-16byte") }, /32 bytes/],
-    ["pipelines mode needs the binding", { AUDIT_STREAM_MODE: "pipelines" }, /AUDIT_STREAM/],
     ["local-jwks requires PV_ENV=local", { AUTH_MODE: "local-jwks" }, /PV_ENV=local/],
   ])("%s", (_name, patch, msg) => {
     expect(() => loadConfig({ ...prod, ...patch })).toThrow(ConfigError);

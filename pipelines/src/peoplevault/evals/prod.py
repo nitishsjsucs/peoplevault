@@ -27,6 +27,7 @@ from peoplevault.evals.deletion import (
     RunData,
     _log,
     _wait_requests,
+    audit_copy_metrics,
     score,
     verify_audit_chain,
     write,
@@ -157,6 +158,8 @@ def run_prod(*, keep_faults: bool = False) -> dict:
         check_out = json.dumps(check_prod(prod_api(), wh, cat))
         report = client.request("privacy-01", "GET", "/api/v1/privacy/reports/deletion").json()
         audit_ok = verify_audit_chain(client)
+        _log("audit copy into the Basin Catalog table governance.audit_events")
+        audit_copy = audit_copy_metrics(cat, prod_api().audit_export, audit_ok)
         _log("oracle over the production stores")
         requests = d1_query("SELECT id, kind, subject_ref, status, created_at, completed_at FROM deletion_requests")
         results = d1_query("SELECT request_id, asset_id, category, applicability, action_status, verify_status, verify_matches FROM deletion_asset_results")
@@ -176,7 +179,7 @@ def run_prod(*, keep_faults: bool = False) -> dict:
         profile="prod", run_header=run_header, t_start=t_start, truth=truth, cohorts={**cohorts, "R": []}, tokens=tokens, expected=expected, warmup=warmup,
         principal_of=principal_of, planted=planted, submitted=submitted, requests=requests, results=results, residual_rows=residual_rows, found=found,
         retention_run=None, report_before=report_before, report=report, audit_ok=audit_ok, warmup_counts={**warm, "kv_keys_after_warmup": kv_after},
-        expire_out="not run in production (managed snapshot expiration, ADR 0004)", check_out=check_out,
+        expire_out="not run in production (managed snapshot expiration, ADR 0004)", check_out=check_out, audit_copy=audit_copy,
     ))
     write(result)
     return result

@@ -39,7 +39,6 @@
     "PV_ENV": "production",
     "AUTH_MODE": "access",
     "WAREHOUSE_MODE": "bigquery",
-    "AUDIT_STREAM_MODE": "disabled",
     "KV_PROPAGATION_WAIT": "70 seconds",
     "EXECUTOR_WAIT_TIMEOUT": "24 hours",
     // Free plan capacity (SPEC.md section 30.3.4): at most 16 deletion starts per UTC day, 8 of them retention; the

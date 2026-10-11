@@ -13,7 +13,6 @@ import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import { asset, ASSETS, PYTHON_ASSETS } from "../assets/registry.ts";
 import { loadSubject, type SubjectIdentifiers } from "../assets/subject.ts";
 import { createAuditLog } from "../audit/audit-log.ts";
-import { auditStreamFor, withAuditStream } from "../audit/audit-stream.ts";
 import { buildReceipt, isApplicable } from "../audit/receipts.ts";
 import { loadConfig } from "../env.ts";
 import { countIdentityRecords, eraseIdentityRecords } from "../erase/d1-identity.ts";
@@ -123,7 +122,7 @@ export class SubjectDeletionWorkflow extends WorkflowEntrypoint<Env, DeletionPar
               requestId,
               ASSETS.map((a) => ({ assetId: a.id, category: a.category, applicability: "held", actionStatus: "skipped_hold", verifyStatus: "not_applicable" })),
             );
-            await withAuditStream(createAuditLog(e.DB), auditStreamFor(e)).append({ actor: "workflow", actorKind: "system", action: "deletion_held", requestId, decision: "info", reason: "legal_hold", detail: { assets: ASSETS.length } });
+            await createAuditLog(e.DB).append({ actor: "workflow", actorKind: "system", action: "deletion_held", requestId, decision: "info", reason: "legal_hold", detail: { assets: ASSETS.length } });
             return { assets: ASSETS.length };
           }),
         );
@@ -526,7 +525,7 @@ export class SubjectDeletionWorkflow extends WorkflowEntrypoint<Env, DeletionPar
     const completedAt = new Date().toISOString();
     const { receipt, hash } = await buildReceipt(e.DB, requestId, status, startedAt, completedAt);
     await e.DB.prepare("UPDATE deletion_requests SET status = ?, completed_at = ?, summary_json = ? WHERE id = ?").bind(status, completedAt, JSON.stringify(receipt), requestId).run();
-    await withAuditStream(createAuditLog(e.DB), auditStreamFor(e)).append({
+    await createAuditLog(e.DB).append({
       actor: "workflow",
       actorKind: "system",
       action: "deletion_receipt",

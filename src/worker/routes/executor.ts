@@ -2,9 +2,10 @@
 // only asset ids, counts, enums, snapshot ids and timestamps: identifiers cannot leak into D1 or Workflow events.
 import { Hono, type Context } from "hono";
 import { z } from "zod";
-import { ClaimBody } from "../../shared/api-schemas.ts";
+import { AuditExportQuery, ClaimBody } from "../../shared/api-schemas.ts";
 import type { AppEnv } from "../app.ts";
 import { audit, errorJson } from "../context.ts";
+import { AUDIT_EXPORT_PAGE_MAX, exportColumns, type AuditExportRecord } from "../audit/audit-export.ts";
 import { ExecutorResult, TaskError, createTaskStore } from "../executor/task-store.ts";
 import { decide, type Action } from "../policy/pdp.ts";
 
@@ -84,4 +85,22 @@ executor.get(RESIDUALS, async (c) => {
   const state = c.req.query("state") ?? "pending";
   const { results } = await c.env.DB.prepare("SELECT id, request_id, asset_id, kind, state, evidence, expected_clear_at, cleared_at, detail_json FROM residuals WHERE state = ? ORDER BY id").bind(state).all();
   return c.json({ residuals: results });
+});
+
+// Audit copy (SPEC.md section 30.3.3): rows after `after_seq` in seq order, exactly the 16 fields of the Iceberg
+// schema, at most 500 per page, plus the chain head. One D1 batch and one audit event per page.
+const AUDIT_EXPORT = "/api/v1/executor/audit-export";
+executor.get(AUDIT_EXPORT, async (c) => {
+  const denied = await authorize(c, "executor_audit_export", AUDIT_EXPORT);
+  if (denied) return denied;
+  const q = AuditExportQuery.safeParse({ after_seq: c.req.query("after_seq") ?? "0", limit: c.req.query("limit") ?? String(AUDIT_EXPORT_PAGE_MAX) });
+  if (!q.success) return errorJson(c, 400, "invalid_query");
+  const [page, head] = await c.env.DB.batch([
+    c.env.DB.prepare(`SELECT ${exportColumns()} FROM audit_events WHERE seq > ? ORDER BY seq LIMIT ?`).bind(q.data.after_seq, q.data.limit),
+    c.env.DB.prepare("SELECT COALESCE(MAX(seq), 0) AS head FROM audit_events"),
+  ]);
+  const rows = page!.results as AuditExportRecord[];
+  const headSeq = (head!.results[0] as { head: number }).head;
+  await audit(c, { action: "executor_audit_export", route: AUDIT_EXPORT, decision: "allow", reason: "ok", rowCount: rows.length });
+  return c.json({ rows, headSeq, nextAfterSeq: rows.length ? rows[rows.length - 1]!.seq : q.data.after_seq, complete: rows.length < q.data.limit });
 });

@@ -47,6 +47,15 @@ describe("readme:results", () => {
     expect(text).not.toMatch(/BigQuery|Basin/);
   });
 
+  it("renders the audit verification windows and the audit copy when the result has them", () => {
+    const f = deletionFile();
+    f.data.audit_chain = { ok: true, length: 963, windows: 10 };
+    f.data.audit_copy = { table: "governance.audit_events", rows: 970, copied_this_run: 970, last_seq: 970, chain_length: 963, last_hash_matches: true, lag_after_export: 2 };
+    const text = renderResults([f]);
+    expect(text).toContain("verified over 963 events (10 windows of at most 100)");
+    expect(text).toContain("Audit copy (`pv audit export`, pyiceberg SqlCatalog table `governance.audit_events`): 970 rows, 970 copied by this run; last hash equals D1's at seq 970");
+  });
+
   it("refuses files with a missing header field or from a dirty tree", () => {
     for (const k of ["command", "date", "git_sha", "git_dirty", "environment"]) {
       const f = deletionFile();

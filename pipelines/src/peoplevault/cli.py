@@ -348,6 +348,54 @@ def lake_expire(target: str) -> None:
 
 
 @main.group()
+def audit() -> None:
+    """Audit copy into the Iceberg table governance.audit_events (SPEC.md section 30.3.3)."""
+
+
+def _audit_target(target: str):
+    from peoplevault.lake.catalog import open_catalog
+
+    if target == "prod":
+        from peoplevault.executor.prod import prod_api
+
+        return open_catalog("prod"), prod_api()
+    from peoplevault.executor.local import local_api
+
+    return open_catalog("local"), local_api()
+
+
+@audit.command("export")
+@click.option("--target", type=click.Choice(["local", "prod"]), default="local", show_default=True)
+@click.option("--rebuild", is_flag=True, help="copy the whole chain into audit_events_rebuild, check it, then swap it in")
+@click.option("--if-due", is_flag=True, help="only when 1,000 events wait or the last commit is more than 24 hours old")
+def audit_export_cmd(target: str, rebuild: bool, if_due: bool) -> None:
+    from peoplevault.lake import audit_export as ax
+
+    cat, api = _audit_target(target)
+    if if_due and not rebuild:
+        status = ax.copy_status(cat, api.audit_export, count_rows=False)
+        if not ax.due(status):
+            click.echo(f"audit export: not due (lag {status.lag} events, last commit {status.last_commit_age_hours or 0:.1f} h ago)")
+            return
+    res = ax.rebuild(cat, api.audit_export) if rebuild else ax.export_audit(cat, api.audit_export)
+    click.echo(f"audit export: {res.rows} row(s) copied into {res.table} (last seq {res.last_seq}, head {res.head_seq}, attempt {res.attempts})")
+
+
+@audit.command("status")
+@click.option("--target", type=click.Choice(["local", "prod"]), default="prod", show_default=True)
+@click.option("--json", "as_json", is_flag=True)
+def audit_status_cmd(target: str, as_json: bool) -> None:
+    import json as _json
+
+    from peoplevault.lake import audit_export as ax
+
+    cat, api = _audit_target(target)
+    st = ax.copy_status(cat, api.audit_export, count_rows=False)
+    out = {"exists": st.exists, "last_seq": st.last_seq, "head_seq": st.head_seq, "lag": st.lag, "last_commit_age_hours": st.last_commit_age_hours, "last_hash_matches": st.last_hash_matches}
+    click.echo(_json.dumps(out) if as_json else f"audit copy: lag {st.lag} events, last commit {st.last_commit_age_hours} h ago, last hash matches D1: {st.last_hash_matches}")
+
+
+@main.group()
 def residuals() -> None:
     """Residual tracking."""
 

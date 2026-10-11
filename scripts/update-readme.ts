@@ -61,7 +61,11 @@ function deletion(f: ResultFile): string[] {
   }
   const aa = d.applicability_agreement;
   lines.push(`- Applicability agreement with ground truth: ${aa.agree} of ${aa.pairs} pairs` + (aa.disagreements?.length ? ` (${aa.disagreements.map((x: Json) => `${x.asset_id}: system ${x.system}, truth ${x.truth}`).join("; ")})` : ""));
-  lines.push(`- Audit hash chain: ${d.audit_chain.ok ? "verified" : "BROKEN"} over ${d.audit_chain.length} events`);
+  lines.push(`- Audit hash chain: ${d.audit_chain.ok ? "verified" : "BROKEN"} over ${d.audit_chain.length} events` + (d.audit_chain.windows ? ` (${d.audit_chain.windows} windows of at most 100)` : ""));
+  if (d.audit_copy) {
+    const where = String(d.environment).startsWith("local") ? "pyiceberg SqlCatalog" : "Basin Catalog";
+    lines.push(`- Audit copy (\`pv audit export\`, ${where} table \`${d.audit_copy.table}\`): ${d.audit_copy.rows} rows, ${d.audit_copy.copied_this_run} copied by this run; last hash ${d.audit_copy.last_hash_matches ? "equals" : "DIFFERS FROM"} D1's at seq ${d.audit_copy.last_seq}`);
+  }
   lines.push(`- Workflow duration (create to terminal${String(d.environment).startsWith("local") ? ", local" : ""}): p50 ${(d.timing_ms.workflow_p50 / 1000).toFixed(1)} s, p95 ${(d.timing_ms.workflow_p95 / 1000).toFixed(1)} s`);
   lines.push(`- Gate: ${d.gate.passed ? "passed" : "FAILED"}`);
   return lines;

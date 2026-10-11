@@ -76,6 +76,10 @@ describe("executor.yml", () => {
     const residuals = job.steps.find((s) => (s.run ?? "").includes("residuals check"))!;
     expect(residuals.run).toBe("uv run --project pipelines pv --log-level warning residuals check --target prod");
     expect(residuals.if).toBe("steps.clock.outputs.hour == '04' || inputs.residuals");
+    // the audit copy replaces Basin Pipelines (Workers Paid only): pulled hourly when due (SPEC.md section 30.3.3)
+    const exportStep = job.steps.find((s) => (s.run ?? "").includes("audit export"))!;
+    expect(exportStep.run).toBe("uv run --project pipelines pv --log-level warning audit export --target prod --if-due");
+    expect(exportStep.if).toBeUndefined();
     expect(text).not.toMatch(/store[-_]failures|--log-level (debug|info)\b|set -x/);
   });
 });

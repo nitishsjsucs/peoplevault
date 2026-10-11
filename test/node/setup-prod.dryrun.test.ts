@@ -49,7 +49,7 @@ function complete(): SetupState {
     queues: ["pv-retention-sweep", "pv-retention-dlq"], catalogEnabled: true, workerId: "w-1",
     workerSecrets: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"],
     accessApp: { id: "app-1", aud: "aud-123" }, serviceTokens: tokens,
-    resources: { d1_id: "11111111-2222-3333-4444-555555555555", kv_id: "0123456789abcdef0123456789abcdef", policy_tags: TAGS },
+    resources: { d1_id: "11111111-2222-3333-4444-555555555555", kv_id: "0123456789abcdef0123456789abcdef", policy_tags: TAGS, audit_copy_table: true, audit_copy_expiration: true },
     workerSecretsFile: ["PV_PSEUDONYM_MASTER_KEY", "GCP_GATEWAY_SA_KEY"], renderedText: null, gcpMissing: [], dataLoaded: true,
     github: { authed: true, repo: REPO, secrets: [...GITHUB_SECRETS], variables: { PV_PROD_ENABLED: "true" }, workflowState: "active", lastSuccess: "2026-10-10T03:07:00Z" },
   };
@@ -129,6 +129,14 @@ describe("setup:prod --dry-run", () => {
     expect(ids).toContain("github:blocked");
     expect(ids.indexOf("github:blocked")).toBeLessThan(ids.indexOf("github:variable"));
     expect(planGithub(s, { ...ENV_FULL }).find((x) => x.id === "github:blocked")!.display).toContain("PV_BASE_URL");
+  });
+
+  it("the audit copy: the first export creates governance.audit_events, then its snapshot expiration (no token for a table)", () => {
+    const text = plan(partial(), { ...ENV_FULL });
+    expect(text).toContain("uv run --project pipelines pv audit export --target prod (creates the Basin Catalog table governance.audit_events");
+    expect(text).toContain("npx wrangler basin catalog snapshot-expiration enable pv-lake governance audit_events");
+    expect(text).not.toContain("--token");
+    expect(planSetup(complete(), completeEnv(), null).map((x) => x.id)).not.toContain("data:audit-copy");
   });
 
   it("Workers Free: no plan creates Basin Pipelines resources or checks a Workers Paid plan", () => {

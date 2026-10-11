@@ -56,3 +56,9 @@ class WorkerApi:
         r = self.client.post(f"{self.base_url}/api/v1/executor/residuals", headers=self._headers(), json=updates)
         r.raise_for_status()
         return r.json()["updated"]
+
+    def audit_export(self, after_seq: int, limit: int = 500) -> dict:
+        """One page of the audit copy (SPEC.md section 30.3.3): rows after `after_seq` with the 16 schema fields."""
+        r = self.client.get(f"{self.base_url}/api/v1/executor/audit-export", headers=self._headers(), params={"after_seq": after_seq, "limit": limit})
+        r.raise_for_status()
+        return r.json()

@@ -9,7 +9,6 @@ import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { WorkflowEvent, WorkflowStep } from "cloudflare:workers";
 import { asset } from "../assets/registry.ts";
 import { createAuditLog } from "../audit/audit-log.ts";
-import { auditStreamFor, withAuditStream } from "../audit/audit-stream.ts";
 import { loadConfig } from "../env.ts";
 import { transformRows } from "../erase/jsonl-objects.ts";
 import { ExecutorResult, createTaskStore, type ExecutorResult as ExecutorResultT } from "../executor/task-store.ts";
@@ -279,7 +278,7 @@ export class RetentionSweepWorkflow extends WorkflowEntrypoint<Env, RetentionPar
         };
         const status = summary.executorOk ? "completed" : "failed";
         await e.DB.prepare("UPDATE retention_runs SET finished_at = ?, status = ?, summary_json = ? WHERE id = ?").bind(new Date().toISOString(), status, JSON.stringify(summary), runId).run();
-        await withAuditStream(createAuditLog(e.DB), auditStreamFor(e)).append({
+        await createAuditLog(e.DB).append({
           actor: "retention-sweep",
           actorKind: "system",
           action: "retention_run",

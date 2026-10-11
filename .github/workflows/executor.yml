@@ -1,5 +1,7 @@
 # Production executor (SPEC.md sections 14.2 and 20). Claims the Workflow tasks that need Python (warehouse DML, the
-# aggregate rebuild, Iceberg) from the deployed Worker every hour and drains them; once a day it also runs the
+# aggregate rebuild, Iceberg) from the deployed Worker every hour and drains them; copies the audit chain into the
+# Basin Catalog table governance.audit_events when 1,000 events wait or the last copy is a day old (`pv audit export`,
+# exactly once; it replaces the Basin Pipelines stream, which needs Workers Paid); once a day it also runs the
 # token-free residual check. Skipped until `npm run setup:prod -- --only github` sets the repository variable
 # PV_PROD_ENABLED to true together with the secrets below.
 #
@@ -60,6 +62,8 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp.json" >> "$GITHUB_ENV"
       - name: Drain executor tasks
         run: uv run --project pipelines pv --log-level warning executor run --target prod --drain
+      - name: Audit copy (when 1,000 events wait or the last commit is a day old)
+        run: uv run --project pipelines pv --log-level warning audit export --target prod --if-due
       - name: Clock
         id: clock
         run: echo "hour=$(date -u +%H)" >> "$GITHUB_OUTPUT"

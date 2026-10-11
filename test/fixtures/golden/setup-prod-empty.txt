@@ -39,7 +39,9 @@ access: 7 step(s)
   POST /client/v4/accounts/<ACCOUNT_ID>/access/service_tokens {"name":"pv-persona-privacy","duration":"8760h"} (client id and secret into .secrets/prod.env as PV_CF_ACCESS_CLIENT_ID_PRIVACY / PV_CF_ACCESS_CLIENT_SECRET_PRIVACY)
   POST /client/v4/accounts/<ACCOUNT_ID>/access/apps (infra/cloudflare/access-app.template.json: worker destination for peoplevault, allow-owner for 0 email(s), service-tokens for 5 tokens)
   render ACCESS_AUD from the Access application into infra/cloudflare/wrangler.production.jsonc, then npm run deploy
-data: 1 step(s)
+data: 3 step(s)
   npm run seed:prod (remote D1 seed and principal mapping, 41 export objects, lake self-test and table, snapshot expiration, pv load --target prod, counts and controls)
+  uv run --project pipelines pv audit export --target prod (creates the Basin Catalog table governance.audit_events and copies the audit chain)
+  npx wrangler basin catalog snapshot-expiration enable pv-lake governance audit_events
 github: 1 step(s) (asks first)
   gh is not logged in: run gh auth login, then setup again

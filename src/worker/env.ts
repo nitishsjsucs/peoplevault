@@ -18,7 +18,6 @@ export interface Config {
   env: "local" | "production";
   authMode: "access" | "local-jwks";
   warehouseMode: "local-shim" | "bigquery";
-  auditStreamMode: "disabled" | "pipelines";
   kvPropagationWait: string;
   executorWaitTimeout: string;
   retentionAsOf: string | null;
@@ -83,8 +82,6 @@ export function loadConfig(envIn: Env | Record<string, unknown>): Config {
   if (!authMode.success) throw new ConfigError("AUTH_MODE must be access or local-jwks");
   const warehouseMode = z.enum(["local-shim", "bigquery"]).safeParse(env.WAREHOUSE_MODE);
   if (!warehouseMode.success) throw new ConfigError("WAREHOUSE_MODE must be local-shim or bigquery");
-  const auditMode = z.enum(["disabled", "pipelines"]).safeParse(env.AUDIT_STREAM_MODE);
-  if (!auditMode.success) throw new ConfigError("AUDIT_STREAM_MODE must be disabled or pipelines");
   const kvWait = duration.safeParse(env.KV_PROPAGATION_WAIT);
   if (!kvWait.success) throw new ConfigError("KV_PROPAGATION_WAIT must be a duration");
   const execWait = duration.safeParse(env.EXECUTOR_WAIT_TIMEOUT);
@@ -151,15 +148,10 @@ export function loadConfig(envIn: Env | Record<string, unknown>): Config {
     shim = { url: req(env, "WAREHOUSE_SHIM_URL", "WAREHOUSE_MODE=local-shim"), token: req(env, "WAREHOUSE_SHIM_TOKEN", "WAREHOUSE_MODE=local-shim") };
   }
 
-  if (auditMode.data === "pipelines" && !env.AUDIT_STREAM) {
-    throw new ConfigError("AUDIT_STREAM_MODE=pipelines requires the AUDIT_STREAM binding");
-  }
-
   return {
     env: pvEnv.data,
     authMode: authMode.data,
     warehouseMode: warehouseMode.data,
-    auditStreamMode: auditMode.data,
     kvPropagationWait: kvWait.data,
     executorWaitTimeout: execWait.data,
     retentionAsOf: asOf,

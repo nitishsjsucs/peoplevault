@@ -21,9 +21,10 @@ export type Action =
   | "run_retention"
   | "executor_claim"
   | "executor_complete"
-  | "executor_suppression";
+  | "executor_suppression"
+  | "executor_audit_export";
 
-export const SYSTEM_ACTIONS: ReadonlySet<Action> = new Set(["executor_claim", "executor_complete", "executor_suppression"]);
+export const SYSTEM_ACTIONS: ReadonlySet<Action> = new Set(["executor_claim", "executor_complete", "executor_suppression", "executor_audit_export"]);
 
 export type RowScope =
   | { kind: "org_units"; orgUnits: string[] }

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { CF_API } from "../../scripts/lib/cf-api.ts";
-import { exitCode, githubChecks, localChecks, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
+import { auditCopyCheck, exitCode, githubChecks, localChecks, prodChecks, render, type DoctorDeps } from "../../scripts/lib/checks.ts";
 import { GITHUB_SECRETS, readGithubState, type GithubState } from "../../scripts/lib/github.ts";
 import { REPO_ROOT, type RunResult } from "../../scripts/lib/run.ts";
 
@@ -210,5 +210,16 @@ describe("doctor --prod: the scheduled executor on GitHub", () => {
   it("the full production run includes the GitHub group", async () => {
     const r = await prodChecks(deps());
     expect(r.find((x) => x.group === "GitHub")).toMatchObject({ name: "gh login", status: "missing" });
+  });
+});
+
+describe("doctor --prod: the audit copy (pv audit status --json)", () => {
+  const status = (o: Record<string, unknown>) => ok(JSON.stringify({ exists: true, lag: 12, last_commit_age_hours: 3.5, last_hash_matches: true, last_seq: 900, head_seq: 912, ...o }));
+  it("ok with its lag and age, warn after 26 hours, missing without the table or with a hash that differs", () => {
+    expect(auditCopyCheck(status({}))).toMatchObject({ status: "ok", detail: "lag 12 events, last commit 3.5 h ago" });
+    expect(auditCopyCheck(status({ last_commit_age_hours: 27 }))).toMatchObject({ status: "warn", fix: "uv run --project pipelines pv audit export --target prod" });
+    expect(auditCopyCheck(status({ exists: false, lag: 40 }))).toMatchObject({ status: "missing", detail: "governance.audit_events not created yet (40 events waiting)" });
+    expect(auditCopyCheck(status({ last_hash_matches: false }))).toMatchObject({ status: "missing", fix: "uv run --project pipelines pv audit export --target prod --rebuild" });
+    expect(auditCopyCheck(fail)).toMatchObject({ status: "missing" });
   });
 });

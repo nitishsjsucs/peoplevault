@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "policyHash": "76fb3a0f9d189ca7f43eede4b3ce3bce3b4ccd11da168f8644bdb2680d54a5a8",
+  "policyHash": "991e640702e5a4921b5c1632f03c771004ebab1c2b694d4d9c4d3bafc3e8078e",
   "personas": {
     "hr_partner": {
       "label": "HR Business Partner",
@@ -70,7 +70,8 @@
       "actions": [
         "executor_claim",
         "executor_complete",
-        "executor_suppression"
+        "executor_suppression",
+        "executor_audit_export"
       ]
     }
   },

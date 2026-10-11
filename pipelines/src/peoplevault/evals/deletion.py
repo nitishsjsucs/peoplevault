@@ -216,6 +216,11 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
         check_out = _pv(["residuals", "check", "--target", "local"])
         report = client.request("privacy-01", "GET", "/api/v1/privacy/reports/deletion").json()
         audit_ok = verify_audit_chain(client)
+        _log("audit copy into the local Iceberg table governance.audit_events (pyiceberg SqlCatalog)")
+        from peoplevault.executor.local import local_api
+        from peoplevault.lake.catalog import open_catalog
+
+        audit_copy = audit_copy_metrics(open_catalog("local"), local_api().audit_export, audit_ok)
     finally:
         if stack_started:
             _node(["scripts/stop-local.ts"], check=False)
@@ -229,7 +234,7 @@ def run(profile: str, *, no_seed: bool = False) -> dict:
         profile=profile, run_header=run_header, t_start=t_start, truth=truth, cohorts=cohorts, tokens=tokens, expected=expected, warmup=warmup,
         principal_of=principal_of, planted=planted, submitted=submitted, requests=requests, results=results, residual_rows=residual_rows, found=found,
         retention_run=retention_run, report_before=report_before, report=report, audit_ok=audit_ok,
-        warmup_counts={**warm, "kv_keys_after_warmup": kv_keys_after_warmup, **extracts}, expire_out=expire_out, check_out=check_out,
+        warmup_counts={**warm, "kv_keys_after_warmup": kv_keys_after_warmup, **extracts}, expire_out=expire_out, check_out=check_out, audit_copy=audit_copy,
     ))
     write(result)
     return result
@@ -261,6 +266,19 @@ class RunData:
     warmup_counts: dict
     expire_out: str
     check_out: str
+    audit_copy: dict | None = None
+
+
+def audit_copy_metrics(cat, page, chain: dict) -> dict:
+    """Exports the audit chain into governance.audit_events (the same code as production, SPEC.md section 30.3.3) and
+    reports the copy: rows in the table, rows this run copied, the D1 chain length verified just before, and whether
+    the copy's last hash equals D1's hash at that seq."""
+    from peoplevault.lake import audit_export as ax
+
+    res = ax.export_audit(cat, page)
+    st = ax.copy_status(cat, page)
+    return {"table": ax.TABLE, "rows": st.rows, "copied_this_run": res.rows, "last_seq": st.last_seq, "chain_length": chain.get("length"),
+            "last_hash_matches": st.last_hash_matches, "lag_after_export": st.lag}
 
 
 def score(d: RunData) -> dict:
@@ -386,6 +404,7 @@ def score(d: RunData) -> dict:
         "residuals": {"by_kind": {k: dict(v) for k, v in res_counts.items()}, "before_lake_expiry": before, "lake_expire": d.expire_out, "residual_check": d.check_out},
         "warmup": d.warmup_counts,
         "audit_chain": d.audit_ok,
+        "audit_copy": d.audit_copy,
         "report": {"coverage": d.report.get("coverage"), "requests": d.report.get("requests")},
         "timing_ms": {"workflow_p50": statistics.median(durations) if durations else None, "workflow_p95": durations[int(0.95 * (len(durations) - 1))] if durations else None,
                       "total_run": int((time.time() - d.t_start) * 1000)},

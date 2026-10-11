@@ -192,6 +192,7 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
     out.push(hasD1 ? ok(R, "D1", "pv-control") : missing(R, "D1", "pv-control missing", "npm run setup:prod"));
   }
   out.push(env.PV_R2_CATALOG_TOKEN ? ok(R, "PV_R2_CATALOG_TOKEN", "set (checked by the Google Cloud group's lake check)") : missing(R, "PV_R2_CATALOG_TOKEN", "not set", "create an R2 API token (docs/PRODUCTION.md step 8) and add it to .secrets/prod.env"));
+  if (env.PV_R2_CATALOG_TOKEN && env.PV_BASE_URL) out.push(auditCopyCheck(await d.run("uv", ["run", "--project", "pipelines", "pv", "audit", "status", "--target", "prod", "--json"])));
   const W = "Worker";
   if (!d.exists(PROD_CONFIG)) out.push(missing(W, "production config", `${PROD_CONFIG} not rendered`, "npm run setup:prod"));
   else {
@@ -247,6 +248,24 @@ export async function prodChecks(d: DoctorDeps): Promise<CheckResult[]> {
   }
   out.push(...githubChecks(await readGithubState(d.run, env), (d.now ?? Date.now)()));
   return out;
+}
+
+/** The audit copy in the Basin Catalog (SPEC.md section 30.3.3): lag and the age of the last export commit. */
+export function auditCopyCheck(res: RunResult): CheckResult {
+  const G = "Cloudflare resources";
+  const fix = "uv run --project pipelines pv audit export --target prod";
+  let s: { exists: boolean; lag: number; last_commit_age_hours: number | null; last_hash_matches: boolean };
+  try {
+    s = jsonFrom(res.stdout) as typeof s;
+  } catch {
+    return missing(G, "audit copy", "could not read governance.audit_events (catalog or Worker unreachable)", fix);
+  }
+  if (res.code !== 0 || !s || typeof s.exists !== "boolean") return missing(G, "audit copy", "could not read governance.audit_events", fix);
+  if (!s.exists) return missing(G, "audit copy", `governance.audit_events not created yet (${s.lag} events waiting)`, fix);
+  if (!s.last_hash_matches) return missing(G, "audit copy", "the copy's last hash differs from D1's at that seq", `${fix} --rebuild`);
+  const age = s.last_commit_age_hours;
+  const detail = `lag ${s.lag} events, last commit ${age === null ? "never" : `${age.toFixed(1)} h ago`}`;
+  return age !== null && age > 26 ? warn(G, "audit copy", `${detail} (more than 26 hours)`, fix) : ok(G, "audit copy", detail);
 }
 
 /** The scheduled production executor (P1 executor.yml): logged in, secrets and variable set, schedule alive. */
