@@ -565,6 +565,18 @@ def live_state(request: Callable) -> LiveState:
     return LiveState(out)
 
 
+def unknown_principals(request: Callable, principals: set[str]) -> list[str]:
+    """Token principals the Worker no longer knows: their D1 principal row is gone because a deletion erased the employee
+    behind it (the full local deletion eval deletes the subject of `mgr-001`). Every case of such a principal would fail
+    with `unknown_principal`, so the run stops before the first case instead."""
+    gone: list[str] = []
+    for p in sorted(principals):
+        r = request(p, "GET", "/api/v1/me", None, False)
+        if r.status_code == 403 and r.json().get("code") == "unknown_principal":
+            gone.append(p)
+    return gone
+
+
 def master_key_b64(target: str) -> bytes:
     if target == "local":
         return config.local_settings().master_key
@@ -649,6 +661,11 @@ def run_api(target: str, *, allow_writes: bool = False, start: bool = False, wri
         environment = PROD_ENVIRONMENT
         name = "authz-prod"
     try:
+        gone = unknown_principals(env.request, env.principals)
+        if gone:
+            reseed = "npm run seed:local -- --fresh" if target == "local" else "npm run seed:prod"
+            raise RuntimeError(f"the Worker does not know principal {', '.join(gone)}: a deletion erased the employee behind it (locally, "
+                               f"`npm run eval:deletion` deletes the subject of mgr-001), so its cases cannot run; reseed with `{reseed}` first")
         run_header = header(command, environment=environment)
         pop = Population.load(gen_dir, master_key_b64(target))
         cases = load_cases()

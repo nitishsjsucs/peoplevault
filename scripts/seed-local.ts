@@ -8,7 +8,7 @@
 //   7. verify counts against data/expected_counts.json; exit 1 on any mismatch
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { startLocalStack } from "./dev.ts";
+import { busyStackPorts, startLocalStack } from "./dev.ts";
 import { stopAll } from "./lib/pids.ts";
 import { REPO_ROOT, parseJsonOutput, pv, wrangler } from "./lib/run.ts";
 
@@ -58,6 +58,13 @@ async function main(): Promise<void> {
   const fresh = process.argv.includes("--fresh");
   if (!existsSync(path.join(REPO_ROOT, ".dev.vars"))) {
     console.error("[seed:local] .dev.vars is missing; run `npm run dev:keys` first");
+    process.exit(1);
+  }
+  // Step 6 starts its own stack, so a running one (npm run dev) would stop this run minutes later, after the state it
+  // serves had been rebuilt underneath it. Refuse before touching anything.
+  const busy = await busyStackPorts();
+  if (busy.length) {
+    console.error(`[seed:local] ${busy.join(", ")} in use: a local stack is running; stop it (Ctrl+C in npm run dev, or npm run stop:local) first`);
     process.exit(1);
   }
   if (fresh) {

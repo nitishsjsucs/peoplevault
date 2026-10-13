@@ -133,6 +133,17 @@ def test_write_bodies_pass_the_api_schemas(pop):
     assert set(dsr) == {"employee_ref", "reason"}
 
 
+def test_a_deleted_persona_principal_is_named_before_any_case_runs():
+    # after the full local deletion eval, mgr-001's employee is erased and its principal row with it
+    def responder(who, method, path, body, omit):
+        assert (method, path) == ("GET", "/api/v1/me")
+        return FakeResponse(403, {"error": "forbidden", "code": "unknown_principal"}) if who == "mgr-001" else FakeResponse(200, {"principalId": who})
+
+    assert ar.unknown_principals(fake_env(responder).request, set(ar.TOKEN_PRINCIPALS)) == ["mgr-001"]
+    assert ar.unknown_principals(lambda *a: FakeResponse(200, {}), set(ar.TOKEN_PRINCIPALS)) == []
+    assert ar.unknown_principals(lambda *a: FakeResponse(403, {"code": "principal_disabled"}), {"hrbp-01"}) == []
+
+
 @pytest.mark.e2e
 def test_authz_api_local_stack():
     """Against the seeded local stack (npm run seed:local): every runnable case passes."""

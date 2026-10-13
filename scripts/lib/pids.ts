@@ -104,3 +104,12 @@ export async function waitForHttp(url: string, timeoutMs = 60000): Promise<boole
   }
   return false;
 }
+
+/** Keeps a foreground script (`npm run dev`, `npm run llm:serve`) running until one of its signal handlers exits it.
+ * The servers are detached, unref'd process groups, so a bare never-settling promise leaves the event loop empty and
+ * Node exits at once with code 13 ("unsettled top-level await"), with the servers still running and nothing for
+ * Ctrl+C to stop. The interval holds the event loop open. */
+export function waitForSignal(): Promise<never> {
+  setInterval(() => {}, 2 ** 30);
+  return new Promise<never>(() => {});
+}

@@ -5,7 +5,7 @@
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { LOCAL_PORTS, portOpen, startGroup, stopAll, waitForHttp } from "./lib/pids.ts";
+import { LOCAL_PORTS, portOpen, startGroup, stopAll, waitForHttp, waitForSignal } from "./lib/pids.ts";
 
 export const DEFAULT_MODEL = path.join(os.homedir(), "Developer", "projects", "_models", "Qwen3-1.7B-Q4_0-rtn.gguf");
 
@@ -47,7 +47,7 @@ async function main(): Promise<void> {
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
-  await new Promise(() => {});
+  await waitForSignal();
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

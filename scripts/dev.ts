@@ -2,7 +2,7 @@
 // 8893 + executor loop) as detached process groups with pidfiles, waits for both, and stops both on exit (Ctrl+C).
 // Logs: .dev/logs/.
 import path from "node:path";
-import { LOCAL_PORTS, portOpen, startGroup, stopAll, waitForHttp } from "./lib/pids.ts";
+import { LOCAL_PORTS, portOpen, startGroup, stopAll, waitForHttp, waitForSignal } from "./lib/pids.ts";
 import { REPO_ROOT, wrangler, wranglerBin, wranglerEnv } from "./lib/run.ts";
 import { ensureWebBuild } from "./lib/web-build.ts";
 
@@ -14,10 +14,18 @@ export function wranglerDevArgs(aiMode: LocalAiMode | null = null): string[] {
   return ["dev", "--port", String(LOCAL_PORTS.worker), "--inspector-port", String(LOCAL_PORTS.inspector), "--ip", "127.0.0.1", "--show-interactive-dev-session=false", ...(aiMode ? ["--var", `AI_MODE:${aiMode}`] : [])];
 }
 
-export async function startLocalStack(opts: { executor?: boolean; aiMode?: LocalAiMode | null } = {}): Promise<void> {
+/** The local stack's ports that already accept connections, as "port 8793 (worker)"; empty when the stack can start. */
+export async function busyStackPorts(): Promise<string[]> {
+  const busy: string[] = [];
   for (const [name, port] of Object.entries({ worker: LOCAL_PORTS.worker, inspector: LOCAL_PORTS.inspector, shim: LOCAL_PORTS.shim })) {
-    if (await portOpen(port)) throw new Error(`port ${port} (${name}) is already in use; run \`npm run stop:local\``);
+    if (await portOpen(port)) busy.push(`port ${port} (${name})`);
   }
+  return busy;
+}
+
+export async function startLocalStack(opts: { executor?: boolean; aiMode?: LocalAiMode | null } = {}): Promise<void> {
+  const busy = await busyStackPorts();
+  if (busy.length) throw new Error(`${busy[0]} is already in use; run \`npm run stop:local\``);
   // wrangler dev serves the privacy console from dist/web and refuses to start without it
   await ensureWebBuild();
   // the local D1 state follows the migrations (a no-op when it is current), so a newer migration needs no reseed
@@ -58,7 +66,7 @@ async function main(): Promise<void> {
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
-  await new Promise(() => {});
+  await waitForSignal();
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

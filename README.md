@@ -171,12 +171,14 @@ npm ci
 uv sync --project pipelines --locked
 npm run dev:keys                      # .dev.vars with local-only keys
 npm run seed:local                    # synthesize, migrate, load, warm caches, verify every count
-npm run dev                           # builds the console if stale; wrangler dev on 127.0.0.1:8793 and pv serve (shim and executor) on 8893
+npm run dev                           # builds the console if stale; wrangler dev on 127.0.0.1:8793 and pv serve (shim and executor) on 8893; stays in the foreground
+# in a second terminal while npm run dev runs:
 open http://127.0.0.1:8793/           # the privacy console: pick a fixture principal (for example privacy-01 or hrbp-01)
 npm run dev:token -- privacy-01       # a local Access-style JWT for a persona
+# then Ctrl+C in the first terminal: the evals start and stop their own stack, and seeding refuses to run beside one
 npm run eval:deletion:ci              # the ci deletion eval (seeds again, then oracle and gate)
 npm run authz:api:local               # the 100-case file through the local API against the full population
-npm run stop:local
+npm run stop:local                    # stops anything a failed run left behind
 ```
 
 ## Tests and evals
@@ -187,6 +189,7 @@ npm run build:web           # the privacy console into dist/web (npm run dev, de
 npm run test:py             # pytest (the live BigQuery suite and the end-to-end API run are opt-in markers)
 npm run eval:authz          # the 100 authorization cases at the decision point and the 48 warehouse cases on DuckDB
 npm run eval:deletion:ci    # the ci deletion eval and its gate (CI runs it); npm run eval:deletion runs the full profile
+                            # (it deletes the employee behind the manager principal mgr-001: npm run seed:local -- --fresh before authz:api:local)
 npm run bench:cpu           # CPU of the Worker's hot paths over the generated population (local)
 uv run --project pipelines pv eval drift --target local --start --ai-mode llama-server   # schema-drift triage over 120 labeled columns (starts llama-server and the Worker, stops both)
 ```
